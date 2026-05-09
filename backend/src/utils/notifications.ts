@@ -16,7 +16,16 @@ interface NotificationPayload {
   agentType?: string;
 }
 
+/** 校验 URL scheme 只允许 https（防止 SSRF） */
+function assertHttpsUrl(url: string, label: string): void {
+  const parsed: URL = new URL(url);
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`${label} must use HTTPS protocol, got: ${parsed.protocol}`);
+  }
+}
+
 async function postJson(url: string, body: unknown) {
+  assertHttpsUrl(url, 'Notification URL');
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

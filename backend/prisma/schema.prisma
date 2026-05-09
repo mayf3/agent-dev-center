@@ -44,29 +44,39 @@ model User {
   role      UserRole @default(requester)
   createdAt DateTime @default(now())
 
+  requestedRequirements Requirement[] @relation("RequesterRequirements")
+  assignedRequirements  Requirement[] @relation("AssigneeRequirements")
+
   @@map("users")
 }
 
 model Requirement {
-  id           String              @id @default(uuid()) @db.Uuid
-  title        String
-  description  String              @db.Text
-  priority     RequirementPriority @default(P2)
-  status       RequirementStatus   @default(pending)
-  requester    String
-  department   String
-  assignee     String?
-  dueDate      DateTime?
-  attachment   String?
-  rejectReason String?             @db.Text
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  tasks        Task[]
+  id            String              @id @default(uuid()) @db.Uuid
+  title         String
+  description   String              @db.Text
+  priority      RequirementPriority @default(P2)
+  status        RequirementStatus   @default(pending)
+  requester     String
+  requesterId   String?             @db.Uuid
+  department    String
+  assignee      String?
+  assigneeId    String?             @db.Uuid
+  dueDate       DateTime?
+  attachment    String?
+  rejectReason  String?             @db.Text
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  tasks         Task[]
+
+  requesterUser User?               @relation("RequesterRequirements", fields: [requesterId], references: [id])
+  assigneeUser  User?               @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
 
   @@index([status])
   @@index([priority])
   @@index([requester])
+  @@index([requesterId])
   @@index([assignee])
+  @@index([assigneeId])
   @@map("requirements")
 }
 

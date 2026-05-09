@@ -90,7 +90,7 @@ function editPayload(values: EditRequirementValues) {
 export function RequirementDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { message } = AntApp.useApp();
   const [assignmentForm] = Form.useForm<AssignmentValues>();
   const [rejectForm] = Form.useForm<RejectValues>();
@@ -332,7 +332,7 @@ export function RequirementDetailPage() {
           </Typography.Text>
         </div>
         <Space wrap>
-          {isAdmin ? (
+          {isAdmin && isAuthenticated ? (
             <>
               <Button
                 type="primary"
@@ -349,7 +349,7 @@ export function RequirementDetailPage() {
               </Button>
             </>
           ) : null}
-          {canRequesterEdit ? (
+          {canRequesterEdit && isAuthenticated ? (
             <Button icon={<EditOutlined />} onClick={openEdit}>
               编辑需求
             </Button>

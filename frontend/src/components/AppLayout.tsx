@@ -13,6 +13,9 @@ import { useAuth } from '../contexts/AuthContext';
 
 const { Header, Content, Sider } = Layout;
 
+const isPublic = import.meta.env.VITE_IS_PUBLIC === 'true';
+const isPublicMode = import.meta.env.VITE_IS_PUBLIC_MODE === 'true';
+
 export function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -29,11 +32,16 @@ export function AppLayout() {
       icon: <UnorderedListOutlined />,
       label: '需求列表'
     },
-    {
-      key: '/requirements/new',
-      icon: <PlusCircleOutlined />,
-      label: '提交需求'
-    },
+    // 外网/生产环境隐藏"提交需求"
+    ...(!isPublic && !isPublicMode
+      ? [
+          {
+            key: '/requirements/new',
+            icon: <PlusCircleOutlined />,
+            label: '提交需求'
+          }
+        ]
+      : []),
     {
       key: '/kanban',
       icon: <ProjectOutlined />,
@@ -84,9 +92,11 @@ export function AppLayout() {
                 <Tag color="blue">{roleLabels[user.role]}</Tag>
               </Space>
             ) : null}
-            <Button icon={<LogoutOutlined />} onClick={handleLogout}>
-              退出
-            </Button>
+            {user && (
+              <Button icon={<LogoutOutlined />} onClick={handleLogout}>
+                退出
+              </Button>
+            )}
           </Space>
         </Header>
         <Content className="app-content">

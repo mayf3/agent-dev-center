@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
-import { signAuthToken } from '../middleware/auth.js';
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js';
 import { loginSchema, registerSchema } from '../schemas/auth.js';
 import { ipWhitelist } from '../middleware/ip-whitelist.js';
 
@@ -35,10 +35,12 @@ authRouter.post(
       select: { id: true, name: true, email: true, role: true }
     });
 
-    const token = signAuthToken(user);
+    const accessToken = signAccessToken(user);
+    const refreshToken = signRefreshToken(user);
 
     res.status(201).json({
-      token,
+      accessToken,
+      refreshToken,
       user: toSafeUser(user)
     });
   })
@@ -68,11 +70,49 @@ authRouter.post(
       role: user.role
     });
 
-    const token = signAuthToken(safeUser);
+    const accessToken = signAccessToken(safeUser);
+    const refreshToken = signRefreshToken(safeUser);
 
     res.json({
-      token,
+      accessToken,
+      refreshToken,
       user: safeUser
+    });
+  })
+);
+
+authRouter.post(
+  '/refresh',
+  asyncHandler(async (req, res) => {
+    const { refreshToken } = req.body as { refreshToken?: string };
+
+    if (!refreshToken) {
+      throw new HttpError(401, '缺少 refreshToken');
+    }
+
+    let payload: { sub: string };
+    try {
+      payload = verifyRefreshToken(refreshToken);
+    } catch {
+      throw new HttpError(401, 'Refresh token 已失效，请重新登录');
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, name: true, email: true, role: true }
+    });
+
+    if (!user) {
+      throw new HttpError(401, '用户不存在或已被禁用');
+    }
+
+    const accessToken = signAccessToken(user);
+    const newRefreshToken = signRefreshToken(user);
+
+    res.json({
+      accessToken,
+      refreshToken: newRefreshToken,
+      user: toSafeUser(user)
     });
   })
 );
