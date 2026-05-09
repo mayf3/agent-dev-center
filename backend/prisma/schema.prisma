@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  requester
+  developer
+}
+
+enum RequirementPriority {
+  P0
+  P1
+  P2
+  P3
+}
+
+enum RequirementStatus {
+  pending
+  approved
+  rejected
+  in_progress @map("in-progress")
+  testing
+  review
+  done
+}
+
+enum TaskStatus {
+  todo
+  in_progress @map("in-progress")
+  done
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(requester)
+  createdAt DateTime @default(now())
+
+  @@map("users")
+}
+
+model Requirement {
+  id           String              @id @default(uuid()) @db.Uuid
+  title        String
+  description  String              @db.Text
+  priority     RequirementPriority @default(P2)
+  status       RequirementStatus   @default(pending)
+  requester    String
+  department   String
+  assignee     String?
+  dueDate      DateTime?
+  attachment   String?
+  rejectReason String?             @db.Text
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  tasks        Task[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([requester])
+  @@index([assignee])
+  @@map("requirements")
+}
+
+model Task {
+  id            String      @id @default(uuid()) @db.Uuid
+  requirementId String      @db.Uuid
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  title         String
+  description   String      @db.Text
+  agentType     String
+  status        TaskStatus  @default(todo)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([requirementId])
+  @@index([status])
+  @@index([agentType])
+  @@map("tasks")
+}
