@@ -1,6 +1,12 @@
 import bcrypt from 'bcrypt';
 import { prisma } from '../src/lib/prisma.js';
 
+// 生产环境禁止执行 seed
+if (process.env.NODE_ENV === 'production') {
+  console.log('Seed skipped: NODE_ENV is production.');
+  process.exit(0);
+}
+
 async function main() {
   const password = await bcrypt.hash('PASSWORD_REMOVED_BY_SECURITY_CLEANUP', 10);
   const requesterPassword = await bcrypt.hash('requester123', 10);

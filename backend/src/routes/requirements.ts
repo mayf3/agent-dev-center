@@ -22,30 +22,39 @@ export const requirementsRouter = Router();
 
 requirementsRouter.use(authRequired);
 
-function canReadRequirement(user: Express.AuthUser, requirement: { requester: string; assignee: string | null }) {
+/** 权限判断：是否可查看该需求（基于 user.id） */
+function canReadRequirement(user: Express.AuthUser, requirement: { requesterId: string | null; requester: string; assigneeId: string | null; assignee: string | null }) {
   if (user.role === 'admin') {
     return true;
   }
 
   if (user.role === 'requester') {
-    return requirement.requester === user.name || requirement.requester === user.email;
+    // 优先用 ID 匹配，兼容旧数据用 name/email fallback
+    return requirement.requesterId === user.id ||
+           requirement.requester === user.name ||
+           requirement.requester === user.email;
   }
 
-  return requirement.assignee === user.name || requirement.assignee === user.email;
+  // developer
+  return requirement.assigneeId === user.id ||
+         requirement.assignee === user.name ||
+         requirement.assignee === user.email;
 }
 
-function canEditRequirement(user: Express.AuthUser, requirement: { requester: string; status: unknown }) {
+/** 权限判断：是否可编辑该需求（基于 user.id） */
+function canEditRequirement(user: Express.AuthUser, requirement: { requesterId: string | null; requester: string; status: unknown }) {
   if (user.role === 'admin') {
     return true;
   }
 
   return (
     user.role === 'requester' &&
-    requirement.requester === user.name &&
+    (requirement.requesterId === user.id || requirement.requester === user.name) &&
     ['pending', 'rejected'].includes(String(requirement.status))
   );
 }
 
+/** 基于角色过滤查询条件（使用 user.id） */
 function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.RequirementWhereInput {
   if (user.role === 'admin') {
     return {};
@@ -53,12 +62,12 @@ function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.RequirementWh
 
   if (user.role === 'requester') {
     return {
-      OR: [{ requester: user.name }, { requester: user.email }]
+      OR: [{ requesterId: user.id }, { requester: user.name }, { requester: user.email }]
     };
   }
 
   return {
-    OR: [{ assignee: user.name }, { assignee: user.email }]
+    OR: [{ assigneeId: user.id }, { assignee: user.name }, { assignee: user.email }]
   };
 }
 
@@ -78,6 +87,7 @@ requirementsRouter.post(
         description: body.description,
         priority: body.priority,
         requester: body.requester ?? actor.name,
+        requesterId: actor.id,
         department: body.department,
         assignee: body.assignee,
         dueDate: body.dueDate,
@@ -207,11 +217,24 @@ requirementsRouter.patch(
       existing.tasks.length === 0;
 
     const updated = await prisma.$transaction(async (tx) => {
+      // 如果指定了 assignee，查找对应的 userId
+      let assigneeId = existing.assigneeId;
+      if (body.assignee && body.assignee !== existing.assignee) {
+        const assigneeUser = await tx.user.findFirst({
+          where: {
+            OR: [{ name: body.assignee }, { email: body.assignee }]
+          },
+          select: { id: true }
+        });
+        assigneeId = assigneeUser?.id ?? null;
+      }
+
       await tx.requirement.update({
         where: { id: params.id },
         data: {
           status: buildStatusData(body.status),
           assignee: body.assignee,
+          assigneeId,
           rejectReason: body.status === 'rejected' ? body.rejectReason : body.status ? null : body.rejectReason
         }
       });
@@ -266,6 +289,22 @@ requirementsRouter.put(
       throw new HttpError(403, '无权编辑该需求');
     }
 
+    // 解析 assignee 对应的 userId
+    let assigneeId = existing.assigneeId;
+    if (body.assignee !== undefined) {
+      if (body.assignee) {
+        const assigneeUser = await prisma.user.findFirst({
+          where: {
+            OR: [{ name: body.assignee }, { email: body.assignee }]
+          },
+          select: { id: true }
+        });
+        assigneeId = assigneeUser?.id ?? null;
+      } else {
+        assigneeId = null;
+      }
+    }
+
     const updated = await prisma.requirement.update({
       where: { id: params.id },
       data: {
@@ -275,6 +314,7 @@ requirementsRouter.put(
         requester: body.requester,
         department: body.department,
         assignee: body.assignee,
+        assigneeId,
         dueDate: body.dueDate,
         attachment: body.attachment
       },

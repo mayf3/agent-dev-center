@@ -165,11 +165,11 @@ function KanbanColumn({
 
 export function KanbanBoardPage() {
   const { message } = AntApp.useApp();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeRequirement, setActiveRequirement] = useState<Requirement | null>(null);
-  const dragDisabled = user?.role === 'requester';
+  const dragDisabled = !isAuthenticated || user?.role === 'requester';
 
   const sensors = useSensors(
     useSensor(PointerSensor, {

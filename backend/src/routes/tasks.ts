@@ -23,9 +23,10 @@ function roleAwareTaskWhere(user: Express.AuthUser): Prisma.TaskWhereInput {
     };
   }
 
+  // requester: 基于 requesterId 匹配，兼容旧数据用 name/email fallback
   return {
     requirement: {
-      OR: [{ requester: user.name }, { requester: user.email }]
+      OR: [{ requesterId: user.id }, { requester: user.name }, { requester: user.email }]
     }
   };
 }
@@ -43,11 +44,20 @@ tasksRouter.post(
       throw new HttpError(404, '需求不存在');
     }
 
+    // 查找 assignee 对应的 userId
+    const assigneeUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ name: body.agentType }, { email: body.agentType }]
+      },
+      select: { id: true }
+    });
+
     const task = await prisma.$transaction(async (tx) => {
       await tx.requirement.update({
         where: { id: body.requirementId },
         data: {
           assignee: body.agentType,
+          assigneeId: assigneeUser?.id ?? null,
           status: requirement.status === 'pending' || requirement.status === 'rejected' ? 'approved' : undefined,
           rejectReason: null
         }

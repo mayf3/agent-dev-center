@@ -24,6 +24,7 @@ import type {
 import { PriorityTag } from '../components/PriorityTag';
 import { StatusTag } from '../components/StatusTag';
 import { priorityLabels, statusLabels } from '../constants/options';
+import { useAuth } from '../contexts/AuthContext';
 
 interface FilterValues {
   search?: string;
@@ -34,6 +35,7 @@ interface FilterValues {
 export function RequirementListPage() {
   const { message } = AntApp.useApp();
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const [form] = Form.useForm<FilterValues>();
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(false);
@@ -141,9 +143,11 @@ export function RequirementListPage() {
           <Typography.Title level={3}>需求列表</Typography.Title>
           <Typography.Text type="secondary">按状态、优先级和关键词筛选需求</Typography.Text>
         </div>
-        <Button type="primary" onClick={() => navigate('/requirements/new')}>
-          提交需求
-        </Button>
+        {isAuthenticated && (
+          <Button type="primary" onClick={() => navigate('/requirements/new')}>
+            提交需求
+          </Button>
+        )}
       </div>
 
       <Card>

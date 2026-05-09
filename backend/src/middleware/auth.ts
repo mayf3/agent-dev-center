@@ -11,14 +11,20 @@ interface TokenPayload {
   sub: string;
 }
 
-export function signAuthToken(user: Express.AuthUser) {
-  const options: SignOptions = {
-    expiresIn: env.JWT_EXPIRES_IN as SignOptions['expiresIn']
-  };
-
+export function signAccessToken(user: Express.AuthUser): string {
   return jwt.sign({ sub: user.id }, env.JWT_SECRET, {
-    ...options
+    expiresIn: env.JWT_EXPIRES_IN as SignOptions['expiresIn']
   });
+}
+
+export function signRefreshToken(user: Express.AuthUser): string {
+  return jwt.sign({ sub: user.id }, env.JWT_REFRESH_SECRET, {
+    expiresIn: env.JWT_REFRESH_EXPIRES_IN as SignOptions['expiresIn']
+  });
+}
+
+export function verifyRefreshToken(token: string): TokenPayload {
+  return jwt.verify(token, env.JWT_REFRESH_SECRET) as TokenPayload;
 }
 
 export const authRequired = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {

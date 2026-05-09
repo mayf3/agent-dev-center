@@ -72,8 +72,8 @@ services:
       PORT: 4000
       FRONTEND_ORIGIN: ${FRONTEND_URL:-http://8.163.44.127}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
-    expose:
-      - "4000"
+    ports:
+      - "127.0.0.1:4000:4000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,7 +101,7 @@ services:
     image: agent-dev-center-frontend:prod
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "127.0.0.1:8080:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -127,4 +127,4 @@ networks:
     driver: bridge
   backend:
     driver: bridge
-    internal: true
+    # internal: true — removed because it breaks host port publishing (127.0.0.1:4000)

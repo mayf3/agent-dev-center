@@ -19,6 +19,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   login: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
+  loginWithToken: (token: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -64,6 +65,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register: async (input) => {
         const { data } = await api.post<AuthResponse>('/auth/register', input);
         persistAuth(data);
+      },
+      loginWithToken: async (rawToken: string) => {
+        // 用 Token 直接换取用户信息
+        const { data } = await api.get<User>('/auth/me', {
+          headers: { Authorization: `Bearer ${rawToken}` }
+        });
+        localStorage.setItem(tokenKey, rawToken);
+        localStorage.setItem(userKey, JSON.stringify(data));
+        setToken(rawToken);
+        setUser(data);
       },
       logout: () => {
         localStorage.removeItem(tokenKey);

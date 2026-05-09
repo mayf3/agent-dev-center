@@ -1,25 +1,26 @@
 import {
   DashboardOutlined,
-  LogoutOutlined,
-  PlusCircleOutlined,
+  EyeOutlined,
+  LoginOutlined,
   ProjectOutlined,
   UnorderedListOutlined
 } from '@ant-design/icons';
-import { Button, Layout, Menu, Space, Tag, Typography } from 'antd';
+import { Alert, Button, Layout, Menu, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { roleLabels } from '../constants/options';
 import { useAuth } from '../contexts/AuthContext';
 
 const { Header, Content, Sider } = Layout;
 
-const isPublic = import.meta.env.VITE_IS_PUBLIC === 'true';
-const isPublicMode = import.meta.env.VITE_IS_PUBLIC_MODE === 'true';
-
-export function AppLayout() {
+export function PublicLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { isAuthenticated } = useAuth();
+
+  // 已登录用户走 ProtectedRoute，这里不渲染
+  if (isAuthenticated) {
+    return null;
+  }
 
   const menuItems: MenuProps['items'] = [
     {
@@ -32,16 +33,6 @@ export function AppLayout() {
       icon: <UnorderedListOutlined />,
       label: '需求列表'
     },
-    // 外网/生产环境隐藏"提交需求"
-    ...(!isPublic && !isPublicMode
-      ? [
-          {
-            key: '/requirements/new',
-            icon: <PlusCircleOutlined />,
-            label: '提交需求'
-          }
-        ]
-      : []),
     {
       key: '/kanban',
       icon: <ProjectOutlined />,
@@ -52,18 +43,11 @@ export function AppLayout() {
   const selectedKey =
     location.pathname === '/'
       ? '/'
-      : location.pathname.startsWith('/requirements/new')
-        ? '/requirements/new'
-        : location.pathname.startsWith('/requirements')
-          ? '/requirements'
-          : location.pathname.startsWith('/kanban')
-            ? '/kanban'
-            : '/';
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login', { replace: true });
-  };
+      : location.pathname.startsWith('/requirements')
+        ? '/requirements'
+        : location.pathname.startsWith('/kanban')
+          ? '/kanban'
+          : '/';
 
   return (
     <Layout className="app-shell">
@@ -86,20 +70,23 @@ export function AppLayout() {
             Agent开发中心
           </Typography.Title>
           <Space size="middle">
-            {user ? (
-              <Space size={8}>
-                <span className="user-name">{user.name}</span>
-                <Tag color="blue">{roleLabels[user.role]}</Tag>
-              </Space>
-            ) : null}
-            {user && (
-              <Button icon={<LogoutOutlined />} onClick={handleLogout}>
-                退出
-              </Button>
-            )}
+            <Space size={4}>
+              <EyeOutlined />
+              <span className="user-name">只读模式</span>
+            </Space>
+            <Button icon={<LoginOutlined />} type="primary" onClick={() => navigate('/login')}>
+              登录
+            </Button>
           </Space>
         </Header>
         <Content className="app-content">
+          <Alert
+            message="只读模式"
+            description="您正在以只读模式浏览。登录后可提交需求和管理看板。"
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
           <Outlet />
         </Content>
       </Layout>
