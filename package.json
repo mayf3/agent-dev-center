@@ -1,0 +1,21 @@
+{
+  "name": "agent-dev-center",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent开发中心 - demand-driven development management platform",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "prisma:generate": "npm --workspace backend run prisma:generate",
+    "prisma:migrate": "npm --workspace backend run prisma:migrate",
+    "seed": "npm --workspace backend run seed"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  }
+}
