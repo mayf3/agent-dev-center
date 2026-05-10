@@ -43,7 +43,15 @@ export const statusColors: Record<RequirementStatus, string> = {
 export const taskStatusLabels: Record<TaskStatus, string> = {
   todo: '待处理',
   'in-progress': '进行中',
+  testing: '测试中',
   done: '已完成'
+};
+
+export const taskStatusColors: Record<TaskStatus, string> = {
+  todo: 'default',
+  'in-progress': 'processing',
+  testing: 'purple',
+  done: 'success',
 };
 
 export const agentOptions = [

@@ -8,7 +8,7 @@ export type RequirementStatus =
   | 'testing'
   | 'review'
   | 'done';
-export type TaskStatus = 'todo' | 'in-progress' | 'done';
+export type TaskStatus = 'todo' | 'in-progress' | 'testing' | 'done';
 
 export interface User {
   id: string;
