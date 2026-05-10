@@ -46,6 +46,7 @@ model User {
 
   requestedRequirements Requirement[] @relation("RequesterRequirements")
   assignedRequirements  Requirement[] @relation("AssigneeRequirements")
+  requirementRevisions  RequirementRevision[] @relation("RequirementRevisionOperator")
 
   @@map("users")
 }
@@ -67,6 +68,7 @@ model Requirement {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   tasks         Task[]
+  revisions     RequirementRevision[]
 
   requesterUser User?               @relation("RequesterRequirements", fields: [requesterId], references: [id])
   assigneeUser  User?               @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
@@ -95,4 +97,27 @@ model Task {
   @@index([status])
   @@index([agentType])
   @@map("tasks")
+}
+
+model RequirementRevision {
+  id            String            @id @default(uuid()) @db.Uuid
+  requirementId String            @db.Uuid
+  requirement   Requirement       @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  title         String
+  description   String            @db.Text
+  priority      RequirementPriority
+  status        RequirementStatus
+  requester     String
+  department    String
+  assignee      String?
+  dueDate       DateTime?
+  attachment    String?
+  revisionNote  String?           @db.Text
+  operatorId    String?           @db.Uuid
+  operator      User?             @relation("RequirementRevisionOperator", fields: [operatorId], references: [id])
+  createdAt     DateTime          @default(now())
+
+  @@index([requirementId])
+  @@index([createdAt])
+  @@map("requirement_revisions")
 }
