@@ -17,6 +17,7 @@ import {
   type RequirementStatusApi
 } from '../utils/status.js';
 import { notifyEvent } from '../utils/notifications.js';
+import { listRevisionsSchema } from '../schemas/revision.js';
 
 export const requirementsRouter = Router();
 
@@ -184,6 +185,40 @@ requirementsRouter.get(
   })
 );
 
+// 获取需求修订历史
+requirementsRouter.get(
+  '/:id/revisions',
+  asyncHandler(async (req, res) => {
+    const { params, query } = listRevisionsSchema.parse({ params: req.params, query: req.query });
+
+    const requirement = await prisma.requirement.findUnique({ where: { id: params.id } });
+    if (!requirement) throw new HttpError(404, '需求不存在');
+    if (!canReadRequirement(req.user!, requirement)) throw new HttpError(403, '无权查看');
+
+    const skip = (query.page - 1) * query.pageSize;
+    const [revisions, total] = await prisma.$transaction([
+      prisma.requirementRevision.findMany({
+        where: { requirementId: params.id },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: query.pageSize,
+        include: { operator: { select: { id: true, name: true } } },
+      }),
+      prisma.requirementRevision.count({ where: { requirementId: params.id } }),
+    ]);
+
+    res.json({
+      data: revisions,
+      meta: {
+        page: query.page,
+        pageSize: query.pageSize,
+        total,
+        totalPages: Math.ceil(total / query.pageSize),
+      },
+    });
+  })
+);
+
 requirementsRouter.patch(
   '/:id',
   requireRoles('admin', 'developer'),
@@ -236,6 +271,24 @@ requirementsRouter.patch(
           assignee: body.assignee,
           assigneeId,
           rejectReason: body.status === 'rejected' ? body.rejectReason : body.status ? null : body.rejectReason
+        }
+      });
+
+      // 自动记录修订历史
+      await tx.requirementRevision.create({
+        data: {
+          requirementId: params.id,
+          title: existing.title,
+          description: existing.description,
+          priority: existing.priority,
+          status: existing.status,
+          requester: existing.requester,
+          department: existing.department,
+          assignee: existing.assignee,
+          dueDate: existing.dueDate,
+          attachment: existing.attachment,
+          revisionNote: body.status ? `状态变更: ${body.status}` : undefined,
+          operatorId: req.user!.id,
         }
       });
 
@@ -319,6 +372,24 @@ requirementsRouter.put(
         attachment: body.attachment
       },
       include: { tasks: true }
+    });
+
+    // 自动记录修订历史
+    await prisma.requirementRevision.create({
+      data: {
+        requirementId: params.id,
+        title: existing.title,
+        description: existing.description,
+        priority: existing.priority,
+        status: existing.status,
+        requester: existing.requester,
+        department: existing.department,
+        assignee: existing.assignee,
+        dueDate: existing.dueDate,
+        attachment: existing.attachment,
+        revisionNote: '内容已编辑更新',
+        operatorId: req.user!.id,
+      }
     });
 
     void notifyEvent('requirement.updated', {
