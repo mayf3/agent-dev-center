@@ -50,6 +50,23 @@ export interface Requirement {
   tasks?: Task[];
 }
 
+export type ReportType = 'DEV_SELF_CHECK' | 'SECURITY_REVIEW' | 'TEST_REPORT' | 'CTO_REVIEW' | 'DEPLOY_CONFIRM';
+export type ReportStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested';
+
+export interface RequirementReport {
+  id: string;
+  requirementId: string;
+  reportType: ReportType;
+  content: Record<string, unknown>;
+  submittedBy: string;
+  submittedById?: string | null;
+  status: ReportStatus;
+  reviewComment?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   meta: {
