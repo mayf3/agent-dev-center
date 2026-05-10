@@ -18,6 +18,7 @@ import {
   Space,
   Spin,
   Table,
+  Tabs,
   Typography
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -25,10 +26,11 @@ import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Requirement, RequirementPriority, Task, TaskStatus } from '../api/types';
 import { PriorityTag } from '../components/PriorityTag';
+import { ReportsTimeline } from '../components/ReportsTimeline';
 import { StatusTag, TaskStatusTag } from '../components/StatusTag';
 import {
   agentOptions,
@@ -103,6 +105,8 @@ export function RequirementDetailPage() {
   const [assignmentMode, setAssignmentMode] = useState<'approve' | 'assign'>('assign');
   const [rejectOpen, setRejectOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'description';
 
   const loadRequirement = useCallback(async () => {
     if (!id) {
@@ -358,23 +362,49 @@ export function RequirementDetailPage() {
       </div>
 
       <div className="detail-grid">
-        <Space direction="vertical" size="large" className="page-stack">
-          <Card title="需求描述">
-            <div className="markdown-body">
-              <ReactMarkdown>{requirement.description}</ReactMarkdown>
-            </div>
-          </Card>
+        <Tabs
+          activeKey={activeTab}
+          onChange={(key) => {
+            if (key === 'description') {
+              searchParams.delete('tab');
+            } else {
+              searchParams.set('tab', key);
+            }
+            setSearchParams(searchParams);
+          }}
+          items={[
+            {
+              key: 'description',
+              label: '需求描述',
+              children: (
+                <Space direction="vertical" size="large" className="page-stack">
+                  <Card title="需求描述">
+                    <div className="markdown-body">
+                      <ReactMarkdown>{requirement.description}</ReactMarkdown>
+                    </div>
+                  </Card>
 
-          <Card title="相关任务">
-            <Table
-              rowKey="id"
-              columns={taskColumns}
-              dataSource={requirement.tasks ?? []}
-              pagination={false}
-              scroll={{ x: 760 }}
-            />
-          </Card>
-        </Space>
+                  <Card title="相关任务">
+                    <Table
+                      rowKey="id"
+                      columns={taskColumns}
+                      dataSource={requirement.tasks ?? []}
+                      pagination={false}
+                      scroll={{ x: 760 }}
+                    />
+                  </Card>
+                </Space>
+              )
+            },
+            {
+              key: 'reports',
+              label: '验收报告',
+              children: (
+                <ReportsTimeline requirementId={requirement.id} isAdmin={isAdmin} />
+              )
+            }
+          ]}
+        />
 
         <Card title="需求信息">
           <Descriptions bordered size="small" column={1}>

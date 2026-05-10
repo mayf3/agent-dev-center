@@ -1,4 +1,4 @@
-import type { RequirementPriority, RequirementStatus, TaskStatus, UserRole } from '../api/types';
+import type { ReportStatus, ReportType, RequirementPriority, RequirementStatus, TaskStatus, UserRole } from '../api/types';
 
 export const roleLabels: Record<UserRole, string> = {
   admin: 'CTO',
@@ -55,3 +55,33 @@ export const agentOptions = [
 ];
 
 export const departmentOptions = ['平台产品', '游戏业务', '移动应用', '小程序', '增长运营', '内部效率'];
+
+export const reportTypeLabels: Record<ReportType, string> = {
+  DEV_SELF_CHECK: '开发自检',
+  SECURITY_REVIEW: '安全检查',
+  TEST_REPORT: '测试报告',
+  CTO_REVIEW: 'CTO 验收',
+  DEPLOY_CONFIRM: '发布确认',
+};
+
+export const reportStatusLabels: Record<ReportStatus, string> = {
+  pending: '待审核',
+  approved: '已通过',
+  rejected: '已拒绝',
+  changes_requested: '需修改',
+};
+
+export const reportStatusColors: Record<ReportStatus, string> = {
+  pending: 'orange',
+  approved: 'green',
+  rejected: 'red',
+  changes_requested: 'blue',
+};
+
+export const reportTypeOrder: ReportType[] = [
+  'DEV_SELF_CHECK',
+  'SECURITY_REVIEW',
+  'TEST_REPORT',
+  'CTO_REVIEW',
+  'DEPLOY_CONFIRM',
+];

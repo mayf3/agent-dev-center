@@ -6,7 +6,6 @@ import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js';
 import { loginSchema, registerSchema } from '../schemas/auth.js';
-import { ipWhitelist } from '../middleware/ip-whitelist.js';
 import { env } from '../config/env.js';
 
 export const authRouter = Router();
@@ -53,9 +52,15 @@ authRouter.get(
 
 authRouter.post(
   '/register',
-  ipWhitelist,
   asyncHandler(async (req, res) => {
     const { body } = registerSchema.parse({ body: req.body });
+
+    // 邀请码校验：如果配置了 REGISTER_INVITE_CODE，则必须匹配
+    if (env.REGISTER_INVITE_CODE) {
+      if (body.inviteCode !== env.REGISTER_INVITE_CODE) {
+        throw new HttpError(403, '邀请码无效，无法注册');
+      }
+    }
     const password = await bcrypt.hash(body.password, 10);
 
     const user = await prisma.user.create({
