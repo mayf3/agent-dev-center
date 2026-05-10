@@ -3,7 +3,9 @@ import {
   LogoutOutlined,
   PlusCircleOutlined,
   ProjectOutlined,
-  UnorderedListOutlined
+  UnorderedListOutlined,
+  CheckSquareOutlined,
+  AppstoreOutlined
 } from '@ant-design/icons';
 import { Button, Layout, Menu, Space, Tag, Typography } from 'antd';
 import type { MenuProps } from 'antd';
@@ -32,7 +34,6 @@ export function AppLayout() {
       icon: <UnorderedListOutlined />,
       label: '需求列表'
     },
-    // 外网/生产环境隐藏"提交需求"
     ...(!isPublic && !isPublicMode
       ? [
           {
@@ -46,6 +47,16 @@ export function AppLayout() {
       key: '/kanban',
       icon: <ProjectOutlined />,
       label: '开发看板'
+    },
+    {
+      key: '/tasks',
+      icon: <CheckSquareOutlined />,
+      label: '任务列表'
+    },
+    {
+      key: '/tasks/kanban',
+      icon: <AppstoreOutlined />,
+      label: '任务看板'
     }
   ];
 
@@ -58,7 +69,11 @@ export function AppLayout() {
           ? '/requirements'
           : location.pathname.startsWith('/kanban')
             ? '/kanban'
-            : '/';
+            : location.pathname.startsWith('/tasks/kanban')
+              ? '/tasks/kanban'
+              : location.pathname.startsWith('/tasks')
+                ? '/tasks'
+                : '/';
 
   const handleLogout = () => {
     logout();
@@ -68,9 +83,10 @@ export function AppLayout() {
   return (
     <Layout className="app-shell">
       <Sider breakpoint="lg" collapsedWidth="0" className="app-sider">
-        <div className="brand">
-          <span className="brand-mark">A</span>
-          <span className="brand-name">Agent开发中心</span>
+        <div className="app-logo">
+          <Typography.Title level={4} style={{ margin: 0, color: '#fff' }}>
+            🛠️ Dev Center
+          </Typography.Title>
         </div>
         <Menu
           theme="dark"
@@ -82,16 +98,15 @@ export function AppLayout() {
       </Sider>
       <Layout>
         <Header className="app-header">
-          <Typography.Title level={4} className="page-title">
-            Agent开发中心
-          </Typography.Title>
           <Space size="middle">
-            {user ? (
-              <Space size={8}>
-                <span className="user-name">{user.name}</span>
-                <Tag color="blue">{roleLabels[user.role]}</Tag>
-              </Space>
-            ) : null}
+            {user && (
+              <>
+                <Typography.Text style={{ color: '#fff' }}>
+                  👤 {user.name}
+                </Typography.Text>
+                <Tag>{roleLabels[user.role]}</Tag>
+              </>
+            )}
             {user && (
               <Button icon={<LogoutOutlined />} onClick={handleLogout}>
                 退出

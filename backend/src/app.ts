@@ -12,6 +12,9 @@ import { HttpError } from './utils/http-error.js';
 
 export const app = express();
 
+// Nginx 反向代理，需要信任 proxy header
+app.set('trust proxy', 1);
+
 app.use((req, res, next) => {
   const requestId = randomUUID();
   req.requestId = requestId;

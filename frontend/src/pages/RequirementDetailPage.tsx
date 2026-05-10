@@ -3,6 +3,7 @@ import {
   CloseCircleOutlined,
   EditOutlined,
   LeftOutlined,
+  PlusOutlined,
   UserAddOutlined
 } from '@ant-design/icons';
 import {
@@ -14,11 +15,13 @@ import {
   Form,
   Input,
   Modal,
+  Progress,
   Select,
   Space,
   Spin,
   Table,
   Tabs,
+  Tag,
   Typography
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -105,6 +108,9 @@ export function RequirementDetailPage() {
   const [assignmentMode, setAssignmentMode] = useState<'approve' | 'assign'>('assign');
   const [rejectOpen, setRejectOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [createTaskForm] = Form.useForm();
+  const [createTaskLoading, setCreateTaskLoading] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'description';
 
@@ -252,6 +258,29 @@ export function RequirementDetailPage() {
     }
   };
 
+  const handleCreateTask = async () => {
+    if (!requirement || !id) return;
+    setCreateTaskLoading(true);
+    try {
+      const values = await createTaskForm.validateFields();
+      await api.post('/tasks', {
+        requirementId: id,
+        title: values.title,
+        description: values.description || '',
+        agentType: values.agentType,
+      });
+      message.success('任务创建成功');
+      setCreateTaskOpen(false);
+      createTaskForm.resetFields();
+      await loadRequirement();
+    } catch (err) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return; // form validation
+      message.error(getErrorMessage(err, '任务创建失败'));
+    } finally {
+      setCreateTaskLoading(false);
+    }
+  };
+
   const taskColumns: ColumnsType<Task> = [
     {
       title: '任务',
@@ -282,7 +311,7 @@ export function RequirementDetailPage() {
       width: 170,
       render: (value: string) => formatDateTime(value)
     },
-    ...(isDeveloper
+    ...(isDeveloper || isAdmin
       ? [
           {
             title: '操作',
@@ -384,7 +413,47 @@ export function RequirementDetailPage() {
                     </div>
                   </Card>
 
-                  <Card title="相关任务">
+                  <Card
+                    title="相关任务"
+                    extra={
+                      (isAdmin || isDeveloper) && (
+                        <Button
+                          type="primary"
+                          size="small"
+                          icon={<PlusOutlined />}
+                          onClick={() => setCreateTaskOpen(true)}
+                        >
+                          创建任务
+                        </Button>
+                      )
+                    }
+                  >
+                    {(requirement.tasks ?? []).length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <Space style={{ width: '100%' }} direction="vertical" size={4}>
+                          <Space split={<Typography.Text type="secondary">|</Typography.Text>}>
+                            <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                              总计 <strong>{(requirement.tasks ?? []).length}</strong> 个任务
+                            </Typography.Text>
+                            <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                              完成 <strong>{(requirement.tasks ?? []).filter((t) => t.status === 'done').length}</strong>
+                            </Typography.Text>
+                            <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                              进行中 <strong>{(requirement.tasks ?? []).filter((t) => t.status === 'in-progress').length}</strong>
+                            </Typography.Text>
+                          </Space>
+                          <Progress
+                            percent={Math.round(
+                              ((requirement.tasks ?? []).filter((t) => t.status === 'done').length /
+                                Math.max((requirement.tasks ?? []).length, 1)) *
+                                100
+                            )}
+                            size="small"
+                            strokeColor="#1677ff"
+                          />
+                        </Space>
+                      </div>
+                    )}
                     <Table
                       rowKey="id"
                       columns={taskColumns}
@@ -562,6 +631,44 @@ export function RequirementDetailPage() {
 
           <Form.Item label="附件链接" name="attachment" rules={[{ type: 'url', message: '请输入有效 URL' }]}>
             <Input placeholder="https://example.com/spec.pdf" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/** 创建任务弹窗 */}
+      <Modal
+        title="创建任务"
+        open={createTaskOpen}
+        onCancel={() => {
+          setCreateTaskOpen(false);
+          createTaskForm.resetFields();
+        }}
+        onOk={() => void handleCreateTask()}
+        confirmLoading={createTaskLoading}
+        okText="创建"
+        cancelText="取消"
+      >
+        <Form form={createTaskForm} layout="vertical">
+          <Form.Item
+            label="任务标题"
+            name="title"
+            rules={[{ required: true, message: '请输入任务标题' }]}
+          >
+            <Input placeholder="简要描述任务" />
+          </Form.Item>
+          <Form.Item label="任务描述" name="description">
+            <Input.TextArea rows={4} placeholder="详细描述任务内容（可选）" />
+          </Form.Item>
+          <Form.Item
+            label="开发 Agent"
+            name="agentType"
+            rules={[{ required: true, message: '请选择开发 Agent' }]}
+          >
+            <Select
+              showSearch
+              options={agentOptions.map((agent) => ({ label: agent, value: agent }))}
+              placeholder="选择负责的 Agent"
+            />
           </Form.Item>
         </Form>
       </Modal>
