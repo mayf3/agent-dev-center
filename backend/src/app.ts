@@ -6,6 +6,7 @@ import { env } from './config/env.js';
 import { authRouter } from './routes/auth.js';
 import { requirementsRouter } from './routes/requirements.js';
 import { tasksRouter } from './routes/tasks.js';
+import { reportsRouter } from './routes/reports.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { HttpError } from './utils/http-error.js';
 
@@ -45,6 +46,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/requirements', requirementsRouter);
+app.use('/api/requirements/:id/reports', reportsRouter);
 app.use('/api/tasks', tasksRouter);
 
 app.use((_req, _res, next) => {

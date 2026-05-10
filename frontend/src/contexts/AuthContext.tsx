@@ -71,6 +71,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data } = await api.get<User>('/auth/me', {
           headers: { Authorization: `Bearer ${rawToken}` }
         });
+        if (!data || !data.id) {
+          throw new Error('Token 验证失败：服务器返回数据异常');
+        }
         localStorage.setItem(tokenKey, rawToken);
         localStorage.setItem(userKey, JSON.stringify(data));
         setToken(rawToken);

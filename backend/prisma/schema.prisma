@@ -36,6 +36,21 @@ enum TaskStatus {
   done
 }
 
+enum ReportType {
+  DEV_SELF_CHECK
+  SECURITY_REVIEW
+  TEST_REPORT
+  CTO_REVIEW
+  DEPLOY_CONFIRM
+}
+
+enum ReportStatus {
+  pending
+  approved
+  rejected
+  changes_requested
+}
+
 model User {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
@@ -47,6 +62,7 @@ model User {
   requestedRequirements Requirement[] @relation("RequesterRequirements")
   assignedRequirements  Requirement[] @relation("AssigneeRequirements")
   requirementRevisions  RequirementRevision[] @relation("RequirementRevisionOperator")
+  submittedReports      RequirementReport[] @relation("ReportSubmitter")
 
   @@map("users")
 }
@@ -69,6 +85,7 @@ model Requirement {
   updatedAt     DateTime            @updatedAt
   tasks         Task[]
   revisions     RequirementRevision[]
+  reports       RequirementReport[]
 
   requesterUser User?               @relation("RequesterRequirements", fields: [requesterId], references: [id])
   assigneeUser  User?               @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
@@ -120,4 +137,26 @@ model RequirementRevision {
   @@index([requirementId])
   @@index([createdAt])
   @@map("requirement_revisions")
+}
+
+model RequirementReport {
+  id              String       @id @default(uuid()) @db.Uuid
+  requirementId   String       @db.Uuid
+  requirement     Requirement  @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  reportType      ReportType
+  content         Json
+  submittedBy     String
+  submittedById   String?      @db.Uuid
+  submittedByUser User?        @relation("ReportSubmitter", fields: [submittedById], references: [id])
+  status          ReportStatus @default(pending)
+  reviewComment   String?      @db.Text
+  reviewedAt      DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([requirementId])
+  @@index([reportType])
+  @@index([submittedBy])
+  @@index([status])
+  @@map("requirement_reports")
 }
