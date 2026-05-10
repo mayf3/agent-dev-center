@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js';
 import { loginSchema, registerSchema } from '../schemas/auth.js';
 import { ipWhitelist } from '../middleware/ip-whitelist.js';
+import { env } from '../config/env.js';
 
 export const authRouter = Router();
 
@@ -17,6 +19,37 @@ function toSafeUser(user: {
 }) {
   return user;
 }
+
+// GET /auth/me - Token 验证，返回当前用户信息
+authRouter.get(
+  '/me',
+  asyncHandler(async (req, res) => {
+    const authorization = req.header('authorization');
+    const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
+
+    if (!token) {
+      throw new HttpError(401, '请先登录');
+    }
+
+    let payload: { sub: string };
+    try {
+      payload = jwt.verify(token, env.JWT_SECRET) as { sub: string };
+    } catch {
+      throw new HttpError(401, 'Token 已失效，请重新登录');
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, name: true, email: true, role: true }
+    });
+
+    if (!user) {
+      throw new HttpError(401, '用户不存在或已被禁用');
+    }
+
+    res.json(toSafeUser(user));
+  })
+);
 
 authRouter.post(
   '/register',
