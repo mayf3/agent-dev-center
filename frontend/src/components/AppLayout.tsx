@@ -7,9 +7,11 @@ import {
   CheckSquareOutlined,
   AppstoreOutlined,
   UserOutlined,
-  MenuOutlined
+  MenuOutlined,
+  MobileOutlined,
+  DownloadOutlined
 } from '@ant-design/icons';
-import { Button, Drawer, Layout, Menu, Space, Tag, Typography } from 'antd';
+import { Button, Drawer, Layout, Menu, Space, Tag, Typography, Popover } from 'antd';
 import type { MenuProps } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -20,6 +22,7 @@ const { Header, Content, Sider } = Layout;
 
 const isPublicMode = import.meta.env.VITE_IS_PUBLIC_MODE === 'true';
 const MOBILE_BREAKPOINT = 768;
+const APK_URL = '/downloads/AgentDevCenter-v1.1.0.apk';
 
 export function AppLayout() {
   const location = useLocation();
@@ -73,23 +76,20 @@ export function AppLayout() {
   };
 
   // Full menu items for sidebar / drawer
+  // 精简导航：合并重复页面（开发看板=任务看板，需求列表含"我的"筛选）
+  // 任务详情通过 API 提供给 Agent，人类用户看需求管理 + 开发看板即可
   const fullMenuItems: MenuProps['items'] = [
     { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
-    { key: '/requirements', icon: <UnorderedListOutlined />, label: '需求列表' },
-    { key: '/requirements?my=1', icon: <UserOutlined />, label: '我的任务' },
+    { key: '/requirements', icon: <UnorderedListOutlined />, label: '需求管理' },
     ...(!isPublicMode ? [{ key: '/requirements/new', icon: <PlusCircleOutlined />, label: '提交需求' }] : []),
     { key: '/kanban', icon: <ProjectOutlined />, label: '开发看板' },
-    { key: '/tasks', icon: <CheckSquareOutlined />, label: '任务列表' },
-    { key: '/tasks/kanban', icon: <AppstoreOutlined />, label: '任务看板' },
   ];
 
-  // Bottom tab bar items for mobile (limited to 5 key items)
+  // Bottom tab bar items for mobile (4 key items)
   const bottomNavItems: { key: string; icon: React.ReactNode; label: string }[] = [
     { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
     { key: '/requirements', icon: <UnorderedListOutlined />, label: '需求' },
-    { key: '/requirements?my=1', icon: <UserOutlined />, label: '我的' },
     { key: '/kanban', icon: <ProjectOutlined />, label: '看板' },
-    { key: '/tasks', icon: <CheckSquareOutlined />, label: '任务' },
   ];
 
   // Bottom nav active key mapping
@@ -158,6 +158,17 @@ export function AppLayout() {
             onClick={handleMenuClick}
             style={{ border: 'none' }}
           />
+          <div style={{ padding: '16px 0 0', borderTop: '1px solid #f0f0f0', marginTop: 8 }}>
+            <Button
+              type="primary"
+              icon={<MobileOutlined />}
+              block
+              href={APK_URL}
+              download
+            >
+              下载 APP (v1.1.0)
+            </Button>
+          </div>
         </Drawer>
       </Layout>
     );
@@ -166,7 +177,7 @@ export function AppLayout() {
   // Desktop Layout (original)
   return (
     <Layout className="app-shell">
-      <Sider breakpoint="lg" collapsedWidth="0" className="app-sider">
+      <Sider breakpoint="lg" collapsedWidth="0" className="app-sider" style={{ display: 'flex', flexDirection: 'column' }}>
         <div className="app-logo">
           <Typography.Title level={4} style={{ margin: 0, color: '#fff' }}>
             🛠️ Dev Center
@@ -178,7 +189,55 @@ export function AppLayout() {
           selectedKeys={[selectedKey]}
           items={fullMenuItems}
           onClick={handleMenuClick}
+          style={{ flex: 1 }}
         />
+        {/* Sidebar download entry */}
+        <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <Popover
+            title="扫码下载 APP"
+            trigger="click"
+            placement="rightTop"
+            content={
+              <div style={{ textAlign: 'center', padding: 8 }}>
+                <div style={{
+                  width: 140, height: 140, background: '#f5f5f5',
+                  border: '1px dashed #d9d9d9', borderRadius: 8,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto'
+                }}>
+                  <Space direction="vertical" size={2}>
+                    <MobileOutlined style={{ fontSize: 28, color: '#1677ff' }} />
+                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                      扫码下载
+                    </Typography.Text>
+                  </Space>
+                </div>
+                <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
+                  v1.1.0 · Android
+                </Typography.Text>
+              </div>
+            }
+          >
+            <Button
+              type="primary"
+              ghost
+              icon={<DownloadOutlined />}
+              block
+              style={{ color: 'rgba(255,255,255,0.85)', borderColor: 'rgba(255,255,255,0.3)', marginBottom: 8 }}
+            >
+              扫码下载 APP
+            </Button>
+          </Popover>
+          <Button
+            type="primary"
+            icon={<MobileOutlined />}
+            block
+            href={APK_URL}
+            download
+          >
+            直接下载 APK
+          </Button>
+        </div>
       </Sider>
       <Layout>
         <Header className="app-header">
