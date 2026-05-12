@@ -384,7 +384,9 @@ requirementsRouter.patch(
       title: updated.title,
       status: body.status,
       actor: req.user!.name,
-      assignee: updated.assignee
+      assignee: updated.assignee,
+      requesterId: updated.requesterId,
+      assigneeId: updated.assigneeId
     });
 
     res.json(serializeRequirement(updated));

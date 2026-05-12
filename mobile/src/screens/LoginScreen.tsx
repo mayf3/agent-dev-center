@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../constants';
 import type { AuthStackParamList } from '../navigation/AppNavigator';
 
 type Nav = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
+
+const TODO_TOKEN_KEY = 'llm-todo-token';
 
 export default function LoginScreen() {
   const navigation = useNavigation<Nav>();
@@ -16,12 +19,28 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [todoToken, setTodoToken] = useState('');
+  const [showTokenInput, setShowTokenInput] = useState(false);
+  const [savedToken, setSavedToken] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const t = await SecureStore.getItemAsync(TODO_TOKEN_KEY);
+        if (t) setSavedToken(t);
+      } catch {}
+    })();
+  }, []);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) { Alert.alert('提示', '请输入邮箱和密码'); return; }
     try {
       setLoading(true);
       await login(email.trim(), password);
+      // 如果有 Todo Token 则保存
+      if (todoToken.trim()) {
+        await SecureStore.setItemAsync(TODO_TOKEN_KEY, todoToken.trim());
+      }
     } catch (e: any) {
       Alert.alert('登录失败', e.message || '请检查邮箱和密码');
     } finally { setLoading(false); }
@@ -49,6 +68,21 @@ export default function LoginScreen() {
               <Ionicons name={showPw ? 'eye-outline' : 'eye-off-outline'} size={20} color={COLORS.textSecondary} />
             </TouchableOpacity>
           </View>
+          {showTokenInput && (
+            <View style={s.inputBox}>
+              <Ionicons name="key-outline" size={20} color={COLORS.textSecondary} />
+              <TextInput style={s.input} placeholder="LLM Todo Token（可选）" placeholderTextColor={COLORS.textTertiary}
+                value={todoToken} onChangeText={setTodoToken} autoCapitalize="none" />
+            </View>
+          )}
+          {showTokenInput && savedToken && (
+            <Text style={{ fontSize: 12, color: COLORS.textTertiary, marginBottom: 8, marginLeft: 4 }}>
+              已有保存的 Token（{savedToken.substring(0, 8)}...），输入新值覆盖
+            </Text>
+          )}
+          <TouchableOpacity onPress={() => setShowTokenInput(!showTokenInput)} style={{ alignSelf: 'flex-end', marginBottom: 6 }}>
+            <Text style={{ fontSize: 13, color: COLORS.textTertiary }}>{showTokenInput ? '收起' : '配置 LLM Todo Token'}</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={[s.btn, loading && { opacity: 0.7 }]} onPress={handleLogin} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>登 录</Text>}
           </TouchableOpacity>

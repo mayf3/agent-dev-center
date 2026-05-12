@@ -1,0 +1,37 @@
+<!-- pages/requirement-submit/index.wxml -->
+<view class="page">
+  <form catchsubmit="handleSubmit">
+    <view class="card">
+      <view class="form-group">
+        <view class="form-label">需求标题 <text class="required">*</text></view>
+        <input class="form-input" placeholder="请输入需求标题" value="{{title}}" bindinput="onTitleInput" maxlength="120" />
+      </view>
+
+      <view class="form-group">
+        <view class="form-label">需求描述 <text class="required">*</text></view>
+        <textarea class="form-textarea" placeholder="请描述业务背景、目标和验收标准" value="{{description}}" bindinput="onDescInput" maxlength="2000" />
+      </view>
+
+      <view class="form-group">
+        <view class="form-label">优先级 <text class="required">*</text></view>
+        <picker mode="selector" range="{{priorityOptions}}" value="{{priorityIndex}}" bindchange="onPriorityChange">
+          <view class="form-input">{{priorityOptions[priorityIndex]}}</view>
+        </picker>
+      </view>
+
+      <view class="form-group">
+        <view class="form-label">业务部门 <text class="required">*</text></view>
+        <picker mode="selector" range="{{departmentOptions}}" value="{{departmentIndex}}" bindchange="onDeptChange">
+          <view class="form-input">{{departmentOptions[departmentIndex]}}</view>
+        </picker>
+      </view>
+    </view>
+
+    <view class="submit-bar">
+      <button class="btn-cancel-btn" form-type="reset" bindtap="goBack">取消</button>
+      <button class="btn-primary submit-btn" form-type="submit" loading="{{loading}}" disabled="{{loading}}">
+        提交需求
+      </button>
+    </view>
+  </form>
+</view>

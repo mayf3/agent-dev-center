@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "宝宝成长追踪",
+    "slug": "baby-growth-tracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FF6B9D"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FF6B9D"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.babytracker.app"
+    },
+    "extra": {
+      "appVersion": "1.0.0"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}
