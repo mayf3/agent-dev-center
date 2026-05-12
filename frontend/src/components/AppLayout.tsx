@@ -5,7 +5,8 @@ import {
   ProjectOutlined,
   UnorderedListOutlined,
   CheckSquareOutlined,
-  AppstoreOutlined
+  AppstoreOutlined,
+  UserOutlined
 } from '@ant-design/icons';
 import { Button, Layout, Menu, Space, Tag, Typography } from 'antd';
 import type { MenuProps } from 'antd';
@@ -15,13 +16,12 @@ import { useAuth } from '../contexts/AuthContext';
 
 const { Header, Content, Sider } = Layout;
 
-const isPublic = import.meta.env.VITE_IS_PUBLIC === 'true';
 const isPublicMode = import.meta.env.VITE_IS_PUBLIC_MODE === 'true';
 
 export function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   const menuItems: MenuProps['items'] = [
     {
@@ -34,7 +34,12 @@ export function AppLayout() {
       icon: <UnorderedListOutlined />,
       label: '需求列表'
     },
-    ...(!isPublic && !isPublicMode
+    {
+      key: '/requirements?my=1',
+      icon: <UserOutlined />,
+      label: '我的任务'
+    },
+    ...(!isPublicMode
       ? [
           {
             key: '/requirements/new',
@@ -66,7 +71,9 @@ export function AppLayout() {
       : location.pathname.startsWith('/requirements/new')
         ? '/requirements/new'
         : location.pathname.startsWith('/requirements')
-          ? '/requirements'
+          ? searchParamsHasMy()
+            ? '/requirements?my=1'
+            : '/requirements'
           : location.pathname.startsWith('/kanban')
             ? '/kanban'
             : location.pathname.startsWith('/tasks/kanban')
@@ -75,9 +82,16 @@ export function AppLayout() {
                 ? '/tasks'
                 : '/';
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login', { replace: true });
+  function searchParamsHasMy() {
+    try {
+      return new URLSearchParams(location.search).get('my') === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  const handleMenuClick = ({ key }: { key: string }) => {
+    navigate(key);
   };
 
   return (
@@ -93,7 +107,7 @@ export function AppLayout() {
           mode="inline"
           selectedKeys={[selectedKey]}
           items={menuItems}
-          onClick={({ key }) => navigate(key)}
+          onClick={handleMenuClick}
         />
       </Sider>
       <Layout>
@@ -108,7 +122,14 @@ export function AppLayout() {
               </>
             )}
             {user && (
-              <Button icon={<LogoutOutlined />} onClick={handleLogout}>
+              <Button
+                icon={<LogoutOutlined />}
+                onClick={() => {
+                  localStorage.removeItem('agent-dev-center-token');
+                  localStorage.removeItem('agent-dev-center-user');
+                  navigate('/login', { replace: true });
+                }}
+              >
                 退出
               </Button>
             )}
