@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { Router } from 'express';
+import { z } from 'zod';
 import { authRequired, requireRoles } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
 import {
@@ -468,5 +469,92 @@ requirementsRouter.put(
     });
 
     res.json(serializeRequirement(updated));
+  })
+);
+
+// ===== P1 批量审批 =====
+const batchStatusSchema = z.object({
+  body: z.object({
+    ids: z.array(z.string().uuid()).min(1).max(50),
+    status: z.enum(['pending', 'approved', 'rejected', 'in-progress', 'testing', 'review', 'done']),
+    rejectReason: z.string().trim().optional()
+  })
+});
+
+requirementsRouter.post(
+  '/batch-status',
+  requireRoles('admin'),
+  asyncHandler(async (req, res) => {
+    const { body } = batchStatusSchema.parse({ body: req.body });
+
+    const requirements = await prisma.requirement.findMany({
+      where: { id: { in: body.ids } },
+      select: { id: true, title: true, status: true, assignee: true, tasks: true }
+    });
+
+    if (requirements.length !== body.ids.length) {
+      throw new HttpError(400, '部分需求不存在');
+    }
+
+    if (body.status === 'rejected' && !body.rejectReason) {
+      throw new HttpError(400, '批量拒绝时必须填写拒绝原因');
+    }
+
+    if (['review', 'done'].includes(body.status)) {
+      for (const item of requirements) {
+        const { ok, missing } = await checkAcceptanceReports(item.id, body.status as RequirementStatusApi);
+        if (!ok) {
+          throw new HttpError(400, `「${item.title}」缺少验收报告，无法批量流转到「${body.status}」`);
+        }
+      }
+    }
+
+    const now = new Date();
+    const operatorId = req.user!.id;
+    const updated = await prisma.$transaction(async (tx) => {
+      for (const item of requirements) {
+        await tx.requirement.update({
+          where: { id: item.id },
+          data: {
+            status: body.status as any,
+            rejectReason: body.status === 'rejected' ? body.rejectReason : null,
+            updatedAt: now
+          }
+        });
+
+        await tx.requirementRevision.create({
+          data: {
+            requirementId: item.id,
+            title: item.title,
+            description: '',
+            priority: 'P2',
+            status: item.status,
+            requester: '',
+            department: '',
+            assignee: item.assignee,
+            revisionNote: `批量状态变更: ${body.status}`,
+            operatorId,
+          }
+        });
+      }
+      return tx.requirement.findMany({
+        where: { id: { in: body.ids } },
+        include: { tasks: true }
+      });
+    });
+
+    res.json({ success: true, count: updated.length });
+  })
+);
+
+// ===== P2 用户列表 =====
+requirementsRouter.get(
+  '/users/list',
+  asyncHandler(async (_req, res) => {
+    const users = await prisma.user.findMany({
+      select: { id: true, name: true, email: true, role: true },
+      orderBy: { createdAt: 'asc' }
+    });
+    res.json({ data: users });
   })
 );
