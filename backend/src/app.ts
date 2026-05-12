@@ -8,6 +8,7 @@ import { requirementsRouter } from './routes/requirements.js';
 import { tasksRouter } from './routes/tasks.js';
 import { reportsRouter } from './routes/reports.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { servicesRouter } from './routes/services.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { HttpError } from './utils/http-error.js';
 
@@ -42,10 +43,10 @@ app.use((err: Error & { type?: string }, _req: express.Request, _res: express.Re
   next(err);
 });
 
-// 登录/注册速率限制：15分钟内最多10次请求
+// 登录/注册速率限制：15分钟内最多50次请求
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: '请求过于频繁，请稍后再试'
@@ -64,6 +65,7 @@ app.use('/api/requirements', requirementsRouter);
 app.use('/api/requirements/:id/reports', reportsRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/services', servicesRouter);
 
 app.use((_req, _res, next) => {
   next(new HttpError(404, '接口不存在'));

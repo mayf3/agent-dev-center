@@ -12,6 +12,7 @@ import { RequirementListPage } from './pages/RequirementListPage';
 import { SubmitRequirementPage } from './pages/SubmitRequirementPage';
 import { TaskListPage } from './pages/TaskListPage';
 import { TaskKanbanPage } from './pages/TaskKanbanPage';
+import { ServicesPage } from './pages/ServicesPage';
 
 const isPublicMode = import.meta.env.VITE_IS_PUBLIC_MODE === 'true';
 
@@ -25,6 +26,7 @@ const router = createBrowserRouter([
     ? [{ path: '/register', element: <LoginPage /> }]
     : [{ path: '/register', element: <LoginPage /> }]),
   // 公开只读路由（未登录也能访问需求列表/看板）
+  // 注意：必须放在 ProtectedRoute 之后，否则已登录用户会被 PublicLayout 抢先匹配
   ...(isPublicMode
     ? [
         {
@@ -35,6 +37,7 @@ const router = createBrowserRouter([
             { path: 'requirements', element: <RequirementListPage /> },
             { path: 'requirements/:id', element: <RequirementDetailPage /> },
             { path: 'kanban', element: <KanbanBoardPage /> },
+            { path: 'services', element: <ServicesPage /> },
             { path: 'tasks', element: <TaskListPage /> },
             { path: 'tasks/kanban', element: <TaskKanbanPage /> }
           ]
@@ -68,6 +71,10 @@ const router = createBrowserRouter([
           {
             path: 'kanban',
             element: <KanbanBoardPage />
+          },
+          {
+            path: 'services',
+            element: <ServicesPage />
           },
           {
             path: 'tasks',
