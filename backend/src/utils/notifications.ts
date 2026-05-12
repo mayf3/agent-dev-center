@@ -5,7 +5,8 @@ type NotificationEvent =
   | 'requirement.updated'
   | 'requirement.status_changed'
   | 'task.created'
-  | 'task.status_changed';
+  | 'task.status_changed'
+  | 'task.deleted';
 
 interface NotificationPayload {
   id: string;

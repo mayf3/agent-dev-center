@@ -76,6 +76,55 @@ function buildStatusData(status?: RequirementStatusApi) {
   return status ? prismaRequirementStatus[status] : undefined;
 }
 
+/**
+ * 硬性验收约束：状态流转必须满足报告要求
+ *
+ * 状态流转规则：
+ *   → review : 必须有 approved 的 DEV_SELF_CHECK + TEST_REPORT
+ *   → done   : 必须有 approved 的 DEV_SELF_CHECK + SECURITY_REVIEW + TEST_REPORT + CTO_REVIEW
+ *
+ * 返回缺少的报告类型列表（空数组 = 通过）
+ */
+const REQUIRED_REPORTS_FOR_REVIEW: Array<import('@prisma/client').ReportType> = [
+  'DEV_SELF_CHECK',
+  'TEST_REPORT',
+];
+
+const REQUIRED_REPORTS_FOR_DONE: Array<import('@prisma/client').ReportType> = [
+  'DEV_SELF_CHECK',
+  'SECURITY_REVIEW',
+  'TEST_REPORT',
+  'CTO_REVIEW',
+];
+
+async function checkAcceptanceReports(
+  requirementId: string,
+  targetStatus: RequirementStatusApi,
+): Promise<{ ok: boolean; missing: string[] }> {
+  const required =
+    targetStatus === 'review'
+      ? REQUIRED_REPORTS_FOR_REVIEW
+      : targetStatus === 'done'
+        ? REQUIRED_REPORTS_FOR_DONE
+        : [];
+
+  if (required.length === 0) return { ok: true, missing: [] };
+
+  const approvedReports = await prisma.requirementReport.findMany({
+    where: {
+      requirementId,
+      reportType: { in: required },
+      status: 'approved',
+    },
+    select: { reportType: true },
+  });
+
+  const approvedTypes = new Set(approvedReports.map((r) => r.reportType));
+  const missing = required.filter((t) => !approvedTypes.has(t));
+
+  return { ok: missing.length === 0, missing };
+}
+
 requirementsRouter.post(
   '/',
   asyncHandler(async (req, res) => {
@@ -243,6 +292,25 @@ requirementsRouter.patch(
 
     if (body.status === 'rejected' && !body.rejectReason) {
       throw new HttpError(400, '拒绝需求时必须填写拒绝原因');
+    }
+
+    // 硬性验收约束：流转到 review/done 必须有对应的 approved 报告
+    if (body.status && ['review', 'done'].includes(body.status)) {
+      const { ok, missing } = await checkAcceptanceReports(params.id, body.status as RequirementStatusApi);
+      if (!ok) {
+        const reportTypeLabels: Record<string, string> = {
+          DEV_SELF_CHECK: '开发自检报告',
+          SECURITY_REVIEW: '安全检查报告',
+          TEST_REPORT: '测试报告',
+          CTO_REVIEW: 'CTO验收报告',
+          DEPLOY_CONFIRM: '发布确认报告',
+        };
+        const missingLabels = missing.map((t) => reportTypeLabels[t] ?? t).join('、');
+        throw new HttpError(
+          400,
+          `验收约束：流转到「${body.status === 'review' ? '待验收' : '已完成'}」前，必须有以下已通过的报告：${missingLabels}`,
+        );
+      }
     }
 
     const targetAssignee = body.assignee ?? existing.assignee;

@@ -34,3 +34,9 @@ export const patchTaskSchema = z.object({
     status: z.enum(taskStatusValues)
   })
 });
+
+export const deleteTaskSchema = z.object({
+  params: z.object({
+    id: z.string().uuid()
+  })
+});

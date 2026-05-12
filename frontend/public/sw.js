@@ -1,19 +1,11 @@
-const CACHE_NAME = 'agent-dev-center-v1';
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-];
+const CACHE_NAME = 'agent-dev-center-v2';
 
-// 安装：预缓存静态资源
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
+// 安装：跳过等待，立即激活
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
-// 激活：清理旧缓存
+// 激活：清理所有旧缓存（包括v1）
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -23,36 +15,27 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// 请求策略：API 走网络优先，其他走缓存优先
+// 请求策略：全部走网络优先，保证拿到最新版本
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // API 请求：网络优先，失败用缓存
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          return response;
-        })
-        .catch(() => caches.match(request))
-    );
-    return;
-  }
+  // 只缓存同源请求
+  if (url.origin !== self.location.origin) return;
 
-  // 静态资源：缓存优先，回退网络
+  // 非GET请求不缓存
+  if (request.method !== 'GET') return;
+
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (response.ok && request.method === 'GET') {
+    fetch(request)
+      .then((response) => {
+        // 只缓存成功的响应
+        if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         }
         return response;
-      });
-    })
+      })
+      .catch(() => caches.match(request))
   );
 });

@@ -15,6 +15,9 @@ export const app = express();
 // Nginx 反向代理，需要信任 proxy header
 app.set('trust proxy', 1);
 
+// 隐藏 X-Powered-By 头
+app.disable('x-powered-by');
+
 app.use((req, res, next) => {
   const requestId = randomUUID();
   req.requestId = requestId;
@@ -29,6 +32,14 @@ app.use(
   })
 );
 app.use(express.json({ limit: '10mb' }));
+
+// JSON 解析错误处理（BUG-001 修复）
+app.use((err: Error & { type?: string }, _req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  if (err.type === 'entity.parse.failed') {
+    return next(new HttpError(400, '请求体 JSON 格式不正确'));
+  }
+  next(err);
+});
 
 // 登录/注册速率限制：15分钟内最多10次请求
 const authLimiter = rateLimit({
