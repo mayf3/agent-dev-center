@@ -160,3 +160,20 @@ model RequirementReport {
   @@index([status])
   @@map("requirement_reports")
 }
+
+model Notification {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String?  @db.Uuid
+  type           String
+  title          String
+  content        Json
+  relatedReqId   String?  @db.Uuid
+  isRead         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([type])
+  @@index([createdAt])
+  @@map("notifications")
+}

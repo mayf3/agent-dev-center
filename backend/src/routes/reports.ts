@@ -4,6 +4,7 @@ import { authRequired, requireRoles } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
+import { notifyEvent } from '../utils/notifications.js';
 import {
   submitReportSchema,
   listReportsSchema,
@@ -42,6 +43,13 @@ reportsRouter.post(
         submittedBy: body.submittedBy ?? req.user!.name,
         submittedById: req.user!.id,
       },
+    });
+
+    void notifyEvent('report.submitted', {
+      id: params.id,
+      title: requirement.title,
+      reportType: body.reportType,
+      actor: req.user!.name,
     });
 
     res.status(201).json({ success: true, data: report });
@@ -111,6 +119,19 @@ reportsRouter.patch(
         reviewComment: body.reviewComment,
         reviewedAt: new Date(),
       },
+    });
+
+    // 通知相关方
+    const reqInfo = await prisma.requirement.findUnique({
+      where: { id: params.id },
+      select: { title: true, requesterId: true, assigneeId: true },
+    });
+    const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
+    void notifyEvent(reportEvent as any, {
+      id: params.id,
+      title: reqInfo?.title ?? '',
+      reportType: report.reportType,
+      actor: req.user!.name,
     });
 
     res.json({ success: true, data: updated });

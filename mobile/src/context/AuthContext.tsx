@@ -68,6 +68,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (email: string, password: string) => {
     const auth = await authApi.login({ email, password });
     await persistAuth(auth);
+    // 刷新 LLM Todo API 客户端（读取新版 Token）
+    try {
+      const { refreshToken: refreshLLM } = await import('../api/llmtodo');
+      await refreshLLM();
+    } catch {}
   };
 
   const register = async (name: string, email: string, password: string) => {

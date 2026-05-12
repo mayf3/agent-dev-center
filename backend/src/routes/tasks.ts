@@ -77,7 +77,9 @@ tasksRouter.post(
       id: task.id,
       title: task.title,
       actor: req.user!.name,
-      agentType: task.agentType
+      agentType: task.agentType,
+      requesterId: req.user!.id,
+      assigneeId: assigneeUser?.id ?? null
     });
 
     res.status(201).json(serializeTask(task));

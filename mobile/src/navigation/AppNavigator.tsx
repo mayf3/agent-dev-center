@@ -13,8 +13,10 @@ import DemandDetailScreen from '../screens/DemandDetailScreen';
 import CreateDemandScreen from '../screens/CreateDemandScreen';
 import KanbanScreen from '../screens/KanbanScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import TodoListScreen from '../screens/TodoListScreen';
+import TodoChatScreen from '../screens/TodoChatScreen';
 
-// 类型导出供页面使用
+// 类型导出
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
@@ -23,17 +25,24 @@ export type RootStackParamList = {
 };
 export type AuthStackParamList = { Login: undefined; Register: undefined };
 export type MainTabParamList = {
-  Dashboard: undefined; Demands: undefined; Kanban: undefined; Profile: undefined;
+  Dashboard: undefined;
+  Demands: undefined;
+  Kanban: undefined;
+  Todo: undefined;
+  Chat: undefined;
+  Profile: undefined;
 };
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthNav = createNativeStackNavigator<AuthStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-const tabIcons: Record<keyof MainTabParamList, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
+const tabIcons: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
   Dashboard: { active: 'grid', inactive: 'grid-outline' },
   Demands: { active: 'document-text', inactive: 'document-text-outline' },
   Kanban: { active: 'albums', inactive: 'albums-outline' },
+  Todo: { active: 'checkmark-done', inactive: 'checkmark-done-outline' },
+  Chat: { active: 'chatbubbles', inactive: 'chatbubbles-outline' },
   Profile: { active: 'person', inactive: 'person-outline' },
 };
 
@@ -43,16 +52,18 @@ const MainTabs = () => (
     headerTintColor: '#fff',
     headerTitleStyle: { fontWeight: '600' },
     tabBarIcon: ({ focused, color, size }) => {
-      const icons = tabIcons[route.name as keyof MainTabParamList];
+      const icons = tabIcons[route.name] || tabIcons.Profile;
       return <Ionicons name={focused ? icons.active : icons.inactive} size={size} color={color} />;
     },
     tabBarActiveTintColor: COLORS.primary,
     tabBarInactiveTintColor: COLORS.textSecondary,
-    tabBarStyle: { paddingBottom: 5, paddingTop: 5, height: 60 },
+    tabBarStyle: { paddingBottom: 5, paddingTop: 3, height: 58 },
   })}>
     <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: '首页', headerTitle: 'Agent开发中心' }} />
     <Tab.Screen name="Demands" component={DemandListScreen} options={{ title: '需求', headerTitle: '需求列表' }} />
     <Tab.Screen name="Kanban" component={KanbanScreen} options={{ title: '看板', headerTitle: '开发看板' }} />
+    <Tab.Screen name="Todo" component={TodoListScreen} options={{ title: 'Todo', headerTitle: 'LLM Todo' }} />
+    <Tab.Screen name="Chat" component={TodoChatScreen} options={{ title: '聊天', headerTitle: 'LLM 规划助手' }} />
     <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: '我的', headerTitle: '个人中心' }} />
   </Tab.Navigator>
 );

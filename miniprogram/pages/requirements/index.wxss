@@ -1,0 +1,144 @@
+/* pages/requirements/index.wxss */
+.page {
+  padding-bottom: 160rpx;
+}
+
+/* 用户信息栏 */
+.user-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 28rpx;
+  background: #fff;
+  margin-bottom: 16rpx;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.user-avatar {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: #e6f7ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+}
+
+.user-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.user-role {
+  font-size: 22rpx;
+  color: #999;
+}
+
+.user-actions {
+  display: flex;
+  gap: 20rpx;
+}
+
+.action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.action-icon {
+  font-size: 36rpx;
+}
+
+.action-text {
+  font-size: 20rpx;
+  color: #666;
+}
+
+/* 筛选 */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 28rpx;
+}
+
+.filter-pill {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 24rpx;
+  padding: 10rpx 24rpx;
+  border-radius: 24rpx;
+  background: #fff;
+  color: #666;
+  box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.04);
+}
+
+.filter-pill.active {
+  background: #e6f7ff;
+  color: #1677ff;
+}
+
+.arrow-down {
+  font-size: 20rpx;
+}
+
+/* 筛选下拉 */
+.filter-dropdown {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 240rpx;
+  left: 28rpx;
+  right: 28rpx;
+  background: #fff;
+  border-radius: 16rpx;
+  box-shadow: 0 8rpx 32rpx rgba(0,0,0,0.12);
+  overflow: hidden;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.dropdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24rpx 28rpx;
+  font-size: 28rpx;
+  border-bottom: 1rpx solid #f5f5f5;
+}
+
+.dropdown-item:active {
+  background: #fafafa;
+}
+
+.dropdown-item .selected {
+  color: #1677ff;
+  font-weight: 500;
+}
+
+.checkmark {
+  color: #1677ff;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+/* 列表 */
+.list-container {
+  padding: 0 24rpx;
+}

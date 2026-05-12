@@ -1,0 +1,125 @@
+<!-- pages/requirement-detail/index.wxml -->
+<view class="page">
+  <view class="loading-wrap" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+
+  <block wx:else>
+    <view wx:if="{{!requirement}}" class="empty-state">
+      <view class="empty-icon">🔍</view>
+      <view class="empty-text">需求不存在</view>
+    </view>
+
+    <view wx:else>
+      <!-- 头部信息 -->
+      <view class="card detail-header">
+        <view class="header-tags">
+          <view class="tag {{requirement.priorityColor}}">{{requirement.priorityLabel}}</view>
+          <view class="tag {{requirement.statusColor}}">{{requirement.statusLabel}}</view>
+        </view>
+        <view class="detail-title">{{requirement.title}}</view>
+        <view class="header-meta">{{requirement.department}} · {{requirement.requester}} · 更新 {{requirement.updatedAt}}</view>
+      </view>
+
+      <!-- 操作按钮 - CTO -->
+      <view class="action-bar" wx:if="{{userRole === 'admin' && (requirement.status === 'pending' || requirement.status === 'rejected' || requirement.status === 'approved')}}">
+        <button class="btn-primary" bindtap="handleApprove" wx:if="{{requirement.status !== 'approved'}}" loading="{{actionLoading}}">通过</button>
+        <button class="btn-primary" bindtap="openAssign">分配</button>
+        <button class="btn-danger" bindtap="openReject">拒绝</button>
+      </view>
+
+      <!-- 需求信息 -->
+      <view class="card">
+        <view class="section-title">需求信息</view>
+        <view class="info-row">
+          <text class="info-label">提交者</text>
+          <text class="info-value">{{requirement.requester}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-label">业务部门</text>
+          <text class="info-value">{{requirement.department}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-label">负责人</text>
+          <text class="info-value">{{requirement.assignee || '未分配'}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-label">截止时间</text>
+          <text class="info-value">{{requirement.dueDateVal}}</text>
+        </view>
+        <view class="info-row" wx:if="{{requirement.rejectReason}}">
+          <text class="info-label">拒绝原因</text>
+          <text class="info-value info-value-danger">{{requirement.rejectReason}}</text>
+        </view>
+      </view>
+
+      <!-- 需求描述 -->
+      <view class="card">
+        <view class="section-title">需求描述</view>
+        <view class="markdown-content">
+          <text>{{requirement.description}}</text>
+        </view>
+      </view>
+
+      <!-- 相关任务 -->
+      <view class="card">
+        <view class="section-title">相关任务 ({{tasks.length}})</view>
+        <view wx:if="{{tasks.length === 0}}" style="text-align:center;padding:30rpx 0;color:#999;">
+          暂无任务
+        </view>
+        <view class="task-item" wx:for="{{tasks}}" wx:key="id"
+          wx:if="{{userRole === 'developer' || userRole === 'admin'}}"
+          bindtap="updateTaskStatus" data-id="{{item.id}}" data-status="{{item.status}}">
+          <view class="task-header">
+            <text class="task-title">{{item.title}}</text>
+            <view class="tag {{item.statusColor}}">{{item.statusLabel}}</view>
+          </view>
+          <view class="task-meta">{{item.agentType}} · {{item.updatedAt}}</view>
+          <text class="task-tip" wx:if="{{userRole === 'developer'}}">点击更新状态</text>
+        </view>
+        <view class="task-item" wx:for="{{tasks}}" wx:key="id" wx:else>
+          <view class="task-header">
+            <text class="task-title">{{item.title}}</text>
+            <view class="tag {{item.statusColor}}">{{item.statusLabel}}</view>
+          </view>
+          <view class="task-meta">{{item.agentType}} · {{item.updatedAt}}</view>
+        </view>
+      </view>
+
+      <!-- 报告列表 -->
+      <view class="card" wx:if="{{reports.length > 0}}">
+        <view class="section-title">验收报告</view>
+        <view class="report-item" wx:for="{{reports}}" wx:key="id" data-id="{{item.id}}">
+          <view class="report-title">{{item.title || '报告'}}</view>
+          <view class="report-meta">{{item.createdAt}}</view>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 拒绝弹窗 -->
+  <view class="modal-overlay" wx:if="{{showRejectModal}}" bindtap="closeModal">
+    <view class="modal-content" catchtap="preventDefault">
+      <view class="modal-title">拒绝需求</view>
+      <textarea class="form-textarea" placeholder="请输入拒绝原因" value="{{rejectReason}}" bindinput="onRejectInput"></textarea>
+      <view class="modal-actions">
+        <button class="btn-cancel" bindtap="closeModal">取消</button>
+        <button class="btn-danger" bindtap="handleReject" loading="{{actionLoading}}">确认拒绝</button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 分配弹窗 -->
+  <view class="modal-overlay" wx:if="{{showAssignModal}}" bindtap="closeModal">
+    <view class="modal-content" catchtap="preventDefault">
+      <view class="modal-title">分配开发 Agent</view>
+      <picker mode="selector" range="{{agents}}" bindchange="onAgentSelect">
+        <view class="form-input">{{assignAgent || '请选择开发Agent'}}</view>
+      </picker>
+      <view class="modal-actions">
+        <button class="btn-cancel" bindtap="closeModal">取消</button>
+        <button class="btn-primary" bindtap="handleAssign" loading="{{actionLoading}}">确认分配</button>
+      </view>
+    </view>
+  </view>
+</view>

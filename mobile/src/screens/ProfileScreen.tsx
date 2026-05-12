@@ -1,11 +1,41 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, TextInput, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
 import { useAuth } from '../context/AuthContext';
 import { COLORS, ROLE_LABELS } from '../constants';
 
+const TODO_TOKEN_KEY = 'llm-todo-token';
+
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
+  const [showTokenEdit, setShowTokenEdit] = useState(false);
+  const [tokenInput, setTokenInput] = useState('');
+  const [savedToken, setSavedToken] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const t = await SecureStore.getItemAsync(TODO_TOKEN_KEY);
+        if (t) setSavedToken(t);
+      } catch {}
+    })();
+  }, []);
+
+  const saveToken = async () => {
+    if (!tokenInput.trim()) { Alert.alert('提示', '请输入 Token'); return; }
+    try {
+      await SecureStore.setItemAsync(TODO_TOKEN_KEY, tokenInput.trim());
+      setSavedToken(tokenInput.trim());
+      setShowTokenEdit(false);
+      setTokenInput('');
+      const { refreshToken } = await import('../api/llmtodo');
+      await refreshToken();
+      Alert.alert('成功', 'LLM Todo Token 已更新');
+    } catch (e: any) {
+      Alert.alert('失败', e.message || '保存失败');
+    }
+  };
 
   const handleLogout = () => Alert.alert('退出登录', '确定要退出吗？', [
     { text: '取消', style: 'cancel' },
@@ -15,8 +45,11 @@ export default function ProfileScreen() {
   const items = [
     { icon: 'person-outline', label: '个人信息', sub: user?.email },
     { icon: 'shield-outline', label: '角色权限', sub: ROLE_LABELS[user?.role || ''] || user?.role },
+    { icon: 'key-outline', label: 'LLM Todo Token',
+      sub: savedToken ? `${savedToken.substring(0, 8)}...` : '未配置（使用默认）',
+      onPress: () => setShowTokenEdit(true) },
     { icon: 'notifications-outline', label: '消息通知', sub: '暂无未读' },
-    { icon: 'information-circle-outline', label: '关于', sub: 'v1.0.0' },
+    { icon: 'information-circle-outline', label: '关于', sub: 'v1.1.0' },
   ];
 
   return (
@@ -32,7 +65,8 @@ export default function ProfileScreen() {
       </View>
       <View style={st.menu}>
         {items.map((item, i) => (
-          <TouchableOpacity key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, borderBottomWidth: i < items.length - 1 ? 1 : 0, borderBottomColor: '#F3F4F6' }}>
+          <TouchableOpacity key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, borderBottomWidth: i < items.length - 1 ? 1 : 0, borderBottomColor: '#F3F4F6' }}
+            onPress={item.onPress} disabled={!item.onPress}>
             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
               <Ionicons name={item.icon as any} size={22} color={COLORS.textSecondary} />
               <View style={{ marginLeft: 14, flex: 1 }}>
@@ -48,6 +82,28 @@ export default function ProfileScreen() {
         <Ionicons name="log-out-outline" size={22} color={COLORS.error} />
         <Text style={{ fontSize: 16, color: COLORS.error, fontWeight: '600' }}>退出登录</Text>
       </TouchableOpacity>
+
+      {/* Token 编辑弹窗 */}
+      <Modal visible={showTokenEdit} transparent animationType="slide">
+        <View style={{ flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 24 }}>
+          <View style={{ backgroundColor: COLORS.surface, borderRadius: 16, padding: 24 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: 4 }}>LLM Todo Token</Text>
+            <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 16 }}>输入 Token 后 APP 将使用它访问 LLM Todo 平台</Text>
+            <TextInput style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 14, fontSize: 15, color: COLORS.text, backgroundColor: COLORS.background, marginBottom: 16 }}
+              placeholder="粘贴 Token..." placeholderTextColor={COLORS.textTertiary} value={tokenInput} onChangeText={setTokenInput} autoCapitalize="none" />
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity style={{ flex: 1, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background, borderWidth: 1, borderColor: COLORS.border }}
+                onPress={() => { setShowTokenEdit(false); setTokenInput(''); }}>
+                <Text style={{ fontSize: 15, color: COLORS.textSecondary, fontWeight: '500' }}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.primary }}
+                onPress={saveToken}>
+                <Text style={{ fontSize: 15, color: '#fff', fontWeight: '600' }}>保存</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
