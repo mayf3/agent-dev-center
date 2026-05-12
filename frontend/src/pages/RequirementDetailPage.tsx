@@ -364,30 +364,31 @@ export function RequirementDetailPage() {
             {formatDateTime(requirement.updatedAt)}
           </Typography.Text>
         </div>
-        <Space wrap>
+        <div className="mobile-detail-actions">
           {isAdmin && isAuthenticated ? (
             <>
               <Button
                 type="primary"
+                size="small"
                 icon={<CheckCircleOutlined />}
                 onClick={() => openAssignment('approve')}
               >
-                通过并分配
+                通过
               </Button>
-              <Button icon={<UserAddOutlined />} onClick={() => openAssignment('assign')}>
-                分配开发 Agent
+              <Button size="small" icon={<UserAddOutlined />} onClick={() => openAssignment('assign')}>
+                分配
               </Button>
-              <Button danger icon={<CloseCircleOutlined />} onClick={() => setRejectOpen(true)}>
+              <Button size="small" danger icon={<CloseCircleOutlined />} onClick={() => setRejectOpen(true)}>
                 拒绝
               </Button>
             </>
           ) : null}
           {canRequesterEdit && isAuthenticated ? (
-            <Button icon={<EditOutlined />} onClick={openEdit}>
-              编辑需求
+            <Button size="small" icon={<EditOutlined />} onClick={openEdit}>
+              编辑
             </Button>
           ) : null}
-        </Space>
+        </div>
       </div>
 
       <div className="detail-grid">
