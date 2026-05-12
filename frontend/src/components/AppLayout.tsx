@@ -9,7 +9,8 @@ import {
   UserOutlined,
   MenuOutlined,
   MobileOutlined,
-  DownloadOutlined
+  DownloadOutlined,
+  CloudServerOutlined
 } from '@ant-design/icons';
 import { Button, Drawer, Layout, Menu, Space, Tag, Typography, Popover } from 'antd';
 import type { MenuProps } from 'antd';
@@ -58,11 +59,13 @@ export function AppLayout() {
             : '/requirements'
           : location.pathname.startsWith('/kanban')
             ? '/kanban'
-            : location.pathname.startsWith('/tasks/kanban')
-              ? '/tasks/kanban'
-              : location.pathname.startsWith('/tasks')
-                ? '/tasks'
-                : '/';
+            : location.pathname.startsWith('/services')
+              ? '/services'
+              : location.pathname.startsWith('/tasks/kanban')
+                ? '/tasks/kanban'
+                : location.pathname.startsWith('/tasks')
+                  ? '/tasks'
+                  : '/';
 
   const handleMenuClick = ({ key }: { key: string }) => {
     navigate(key);
@@ -83,12 +86,14 @@ export function AppLayout() {
     { key: '/requirements', icon: <UnorderedListOutlined />, label: '需求管理' },
     ...(!isPublicMode ? [{ key: '/requirements/new', icon: <PlusCircleOutlined />, label: '提交需求' }] : []),
     { key: '/kanban', icon: <ProjectOutlined />, label: '开发看板' },
+    { key: '/services', icon: <CloudServerOutlined />, label: '服务监控' },
   ];
 
   // Bottom tab bar items for mobile (4 key items)
   const bottomNavItems: { key: string; icon: React.ReactNode; label: string }[] = [
     { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
     { key: '/requirements', icon: <UnorderedListOutlined />, label: '需求' },
+    { key: '/services', icon: <CloudServerOutlined />, label: '监控' },
     { key: '/kanban', icon: <ProjectOutlined />, label: '看板' },
   ];
 
