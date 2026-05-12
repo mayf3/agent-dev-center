@@ -99,6 +99,7 @@ services:
       target: production
       args:
         VITE_API_BASE_URL: /api
+        VITE_IS_PUBLIC_MODE: "true"
     image: agent-dev-center-frontend:prod
     restart: unless-stopped
     ports:

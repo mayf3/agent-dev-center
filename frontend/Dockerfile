@@ -8,7 +8,9 @@ RUN npm ci
 FROM deps AS build
 WORKDIR /app
 ARG VITE_API_BASE_URL=/api
+ARG VITE_IS_PUBLIC_MODE=true
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_IS_PUBLIC_MODE=${VITE_IS_PUBLIC_MODE}
 COPY frontend ./frontend
 RUN npm --workspace @agent-dev-center/frontend run build
 

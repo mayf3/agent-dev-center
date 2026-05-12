@@ -16,8 +16,8 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ReloadOutlined, UserOutlined } from '@ant-design/icons';
-import { App as AntApp, Badge, Button, Card, Empty, Space, Spin, Tag, Typography } from 'antd';
+import { FilterOutlined, ReloadOutlined, UserOutlined } from '@ant-design/icons';
+import { App as AntApp, Badge, Button, Card, Empty, Select, Space, Spin, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
@@ -134,6 +134,7 @@ export function TaskKanbanPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [agentFilter, setAgentFilter] = useState<string>('');
   const dragDisabled = !isAuthenticated || user?.role === 'requester';
 
   const sensors = useSensors(
@@ -161,15 +162,25 @@ export function TaskKanbanPage() {
     void loadTasks();
   }, []);
 
+  const agentTypes = useMemo(() => {
+    const set = new Set(tasks.map((t) => t.agentType));
+    return Array.from(set).sort();
+  }, [tasks]);
+
+  const filteredTasks = useMemo(() => {
+    if (!agentFilter) return tasks;
+    return tasks.filter((t) => t.agentType === agentFilter);
+  }, [tasks, agentFilter]);
+
   const groupedTasks = useMemo(() => {
     return columns.reduce<Record<TaskStatus, Task[]>>(
       (acc, col) => {
-        acc[col.id] = tasks.filter((t) => t.status === col.id);
+        acc[col.id] = filteredTasks.filter((t) => t.status === col.id);
         return acc;
       },
       { todo: [], 'in-progress': [], testing: [], done: [] }
     );
-  }, [tasks]);
+  }, [filteredTasks]);
 
   const getOverColumnId = (overId: UniqueIdentifier): TaskStatus | null => {
     const id = String(overId);
@@ -223,9 +234,20 @@ export function TaskKanbanPage() {
             拖动任务卡片在待处理、进行中、测试中和已完成之间流转
           </Typography.Text>
         </div>
-        <Button icon={<ReloadOutlined />} onClick={() => void loadTasks()}>
-          刷新
-        </Button>
+        <Space>
+          <Select
+            allowClear
+            placeholder="按负责人筛选"
+            style={{ width: 180 }}
+            value={agentFilter || undefined}
+            onChange={(v) => setAgentFilter(v ?? '')}
+            suffixIcon={<FilterOutlined />}
+            options={agentTypes.map((a) => ({ label: a, value: a }))}
+          />
+          <Button icon={<ReloadOutlined />} onClick={() => void loadTasks()}>
+            刷新
+          </Button>
+        </Space>
       </div>
 
       <DndContext

@@ -47,9 +47,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => readStoredUser());
 
   const persistAuth = (response: AuthResponse) => {
-    localStorage.setItem(tokenKey, response.token);
+    const actualToken = response.token || response.accessToken || '';
+    localStorage.setItem(tokenKey, actualToken);
     localStorage.setItem(userKey, JSON.stringify(response.user));
-    setToken(response.token);
+    setToken(actualToken);
     setUser(response.user);
   };
 

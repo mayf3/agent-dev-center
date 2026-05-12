@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { authRequired, requireRoles } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
-import { createTaskSchema, listTasksSchema, patchTaskSchema } from '../schemas/tasks.js';
+import { createTaskSchema, deleteTaskSchema, listTasksSchema, patchTaskSchema } from '../schemas/tasks.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { prismaTaskStatus, serializeTask } from '../utils/status.js';
@@ -192,5 +192,33 @@ tasksRouter.patch(
     });
 
     res.json(serializeTask(task));
+  })
+);
+
+tasksRouter.delete(
+  '/:id',
+  requireRoles('admin'),
+  asyncHandler(async (req, res) => {
+    const { params } = deleteTaskSchema.parse({ params: req.params });
+
+    const existing = await prisma.task.findUnique({
+      where: { id: params.id }
+    });
+
+    if (!existing) {
+      throw new HttpError(404, '任务不存在');
+    }
+
+    await prisma.task.delete({
+      where: { id: params.id }
+    });
+
+    void notifyEvent('task.deleted', {
+      id: existing.id,
+      title: existing.title,
+      actor: req.user!.name
+    });
+
+    res.json({ success: true, id: existing.id });
   })
 );

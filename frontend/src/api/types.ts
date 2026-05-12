@@ -19,6 +19,7 @@ export interface User {
 
 export interface AuthResponse {
   token: string;
+  accessToken?: string; // 后端实际返回的字段名
   user: User;
 }
 

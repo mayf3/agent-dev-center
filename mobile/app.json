@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Agent开发中心",
+    "slug": "agent-dev-center",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1677ff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1677ff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.agentdevcenter.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "apiBaseUrl": "http://8.163.44.127/api",
+      "appVersion": "1.0.0"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}
