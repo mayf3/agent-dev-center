@@ -7,12 +7,26 @@ import {
   ClockCircleOutlined,
   LinkOutlined,
   LoginOutlined,
-  ThunderboltOutlined
+  ThunderboltOutlined,
+  AppstoreOutlined,
+  RightOutlined,
+  CodeOutlined,
+  UserOutlined,
+  GlobalOutlined,
+  HomeOutlined,
+  DatabaseOutlined,
+  TagOutlined,
+  CalendarOutlined,
+  ToolOutlined
 } from '@ant-design/icons';
-import { Alert, App as AntApp, Button, Card, Col, Row, Space, Spin, Statistic, Tag, Typography } from 'antd';
+import { Alert, App as AntApp, Button, Card, Col, Row, Space, Spin, Statistic, Tag, Typography, Tooltip, Empty, Divider } from 'antd';
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import type { RegisteredService } from '../api/types';
+
+// ─── Legacy health-check types ─────────────────────────────────────────
 
 interface ServiceItem {
   name: string;
@@ -38,13 +52,18 @@ interface ServicesResponse {
   checkedAt: string;
 }
 
+// ─── Main page ──────────────────────────────────────────────────────────
+
 export function ServicesPage() {
   const { message } = AntApp.useApp();
   const { user, token } = useAuth();
-  const [data, setData] = useState<ServicesResponse | null>(null);
+  const navigate = useNavigate();
+  const [healthData, setHealthData] = useState<ServicesResponse | null>(null);
+  const [registeredServices, setRegisteredServices] = useState<RegisteredService[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [activeTab, setActiveTab] = useState<'registry' | 'health'>('registry');
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -53,35 +72,50 @@ export function ServicesPage() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  const fetchStatus = useCallback(async (forceRefresh = false) => {
+  const fetchHealth = useCallback(async (forceRefresh = false) => {
     try {
       const endpoint = forceRefresh ? '/services/refresh' : '/services/status';
       const method = forceRefresh ? 'post' : 'get';
       const { data: res } = await api[method]<ServicesResponse>(endpoint);
-      setData(res);
+      setHealthData(res);
     } catch {
-      message.error('服务状态加载失败');
+      // health check failure is non-critical
+    }
+  }, []);
+
+  const fetchRegistered = useCallback(async () => {
+    try {
+      const { data: res } = await api.get<{ data: RegisteredService[]; pagination: { total: number } }>('/services', {
+        params: { limit: 50 },
+      });
+      setRegisteredServices(res.data ?? []);
+    } catch {
+      message.error('服务注册列表加载失败');
+    }
+  }, [message]);
+
+  const fetchAll = useCallback(async (forceRefresh = false) => {
+    try {
+      await Promise.all([fetchHealth(forceRefresh), fetchRegistered()]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [message]);
+  }, [fetchHealth, fetchRegistered]);
 
   useEffect(() => {
-    void fetchStatus();
-    // Auto-refresh every 60 seconds
-    const timer = setInterval(() => void fetchStatus(), 60_000);
+    void fetchAll();
+    const timer = setInterval(() => void fetchAll(), 60_000);
     return () => clearInterval(timer);
-  }, [fetchStatus]);
+  }, [fetchAll]);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    void fetchStatus(true);
+    void fetchAll(true);
   };
 
   const buildSsoUrl = useCallback((link: string) => {
     if (!token) return link;
-
     try {
       const url = new URL(link, window.location.origin);
       url.searchParams.set('token', token);
@@ -97,23 +131,83 @@ export function ServicesPage() {
       message.warning('当前登录 Token 缺失，无法进行 SSO 跳转');
       return;
     }
-
     window.open(buildSsoUrl(item.link), '_blank', 'noopener,noreferrer');
   }, [buildSsoUrl, message, token]);
 
   if (loading) return <Spin className="page-spin" />;
 
-  const summary = data?.summary ?? { total: 0, online: 0, offline: 0 };
-  const local = data?.data.local ?? [];
-  const remote = data?.data.remote ?? [];
+  const summary = healthData?.summary ?? { total: 0, online: 0, offline: 0 };
 
-  const ServiceCard = ({ item, ssoLink = false }: { item: ServiceItem; ssoLink?: boolean }) => {
+  // ─── Status helper ──────────────────────────────────────────────
+  const statusDot = (status: string) => {
+    switch (status) {
+      case 'online': return <Tag color="success" style={{ fontSize: 11 }}>🟢 在线</Tag>;
+      case 'offline': return <Tag color="error" style={{ fontSize: 11 }}>🔴 离线</Tag>;
+      case 'maintenance': return <Tag color="warning" style={{ fontSize: 11 }}>🟡 维护</Tag>;
+      default: return <Tag style={{ fontSize: 11 }}>⚪ 未知</Tag>;
+    }
+  };
+
+  // ─── Registered Service Card (new) ──────────────────────────────
+  const RegisteredServiceCard = ({ svc }: { svc: RegisteredService }) => (
+    <Card
+      hoverable
+      size="small"
+      style={{
+        borderLeft: `3px solid ${svc.status === 'online' ? '#52c41a' : svc.status === 'offline' ? '#ff4d4f' : '#faad14'}`,
+        height: '100%',
+      }}
+      onClick={() => navigate(`/services/${svc.id}`)}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+        <Space size={6} wrap>
+          <Typography.Text strong style={{ fontSize: 14 }}>{svc.displayName}</Typography.Text>
+          {statusDot(svc.status)}
+        </Space>
+        <RightOutlined style={{ color: '#999', fontSize: 12 }} />
+      </div>
+      <Typography.Paragraph
+        type="secondary"
+        style={{ fontSize: 12, marginBottom: 8, lineHeight: 1.4 }}
+        ellipsis={{ rows: 2 }}
+      >
+        {svc.description}
+      </Typography.Paragraph>
+      <Space size={[4, 4]} wrap style={{ marginBottom: 8 }}>
+        {svc.techStack.slice(0, 4).map(t => (
+          <Tag key={t} style={{ fontSize: 10, margin: 0 }}>{t}</Tag>
+        ))}
+        {svc.techStack.length > 4 && (
+          <Tag style={{ fontSize: 10, margin: 0 }}>+{svc.techStack.length - 4}</Tag>
+        )}
+      </Space>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: '#8c8c8c' }}>
+        <Space size={12}>
+          {svc.owner && (
+            <span><UserOutlined /> {svc.owner}</span>
+          )}
+          {svc.port && (
+            <span><GlobalOutlined /> :{svc.port}</span>
+          )}
+          {svc.version && (
+            <span>v{svc.version}</span>
+          )}
+        </Space>
+        {svc.lastDeployedAt && (
+          <Tooltip title="最后部署时间">
+            <span><CalendarOutlined /> {new Date(svc.lastDeployedAt).toLocaleDateString('zh-CN')}</span>
+          </Tooltip>
+        )}
+      </div>
+    </Card>
+  );
+
+  // ─── Legacy Health Card ─────────────────────────────────────────
+  const HealthCard = ({ item, ssoLink = false }: { item: ServiceItem; ssoLink?: boolean }) => {
     const serviceLink = ssoLink ? buildSsoUrl(item.link) : item.link;
-
     return (
       <Card
         size="small"
-        className="service-card"
         style={{
           borderLeft: `3px solid ${item.status === 'online' ? '#52c41a' : '#ff4d4f'}`,
           marginBottom: isMobile ? 8 : 0,
@@ -147,7 +241,7 @@ export function ServicesPage() {
               disabled={!token}
               onClick={() => handleSsoJump(item)}
             >
-              SSO 跳转
+              SSO
             </Button>
           </Space>
         </div>
@@ -155,25 +249,48 @@ export function ServicesPage() {
     );
   };
 
+  const local = healthData?.data.local ?? [];
+  const remote = healthData?.data.remote ?? [];
+
   return (
     <Space direction="vertical" size="large" className="page-stack">
+      {/* Header */}
       <div className="page-heading">
         <div>
-          <Typography.Title level={isMobile ? 4 : 3} style={{ margin: 0 }}>服务监控</Typography.Title>
+          <Typography.Title level={isMobile ? 4 : 3} style={{ margin: 0 }}>服务注册中心</Typography.Title>
           <Typography.Text type="secondary" style={{ marginTop: 4, display: 'block' }}>
-            所有本地和远程服务运行状态 · 每 60 秒自动刷新
+            服务管理 + 健康监控 · 每 60 秒自动刷新
           </Typography.Text>
         </div>
-        <Button
-          type="primary"
-          icon={<ReloadOutlined spin={refreshing} />}
-          loading={refreshing}
-          onClick={handleRefresh}
-        >
-          {isMobile ? '刷新' : '立即刷新'}
-        </Button>
+        <Space>
+          <Button
+            size={isMobile ? 'small' : 'middle'}
+            icon={<AppstoreOutlined />}
+            type={activeTab === 'registry' ? 'primary' : 'default'}
+            onClick={() => setActiveTab('registry')}
+          >
+            注册中心
+          </Button>
+          <Button
+            size={isMobile ? 'small' : 'middle'}
+            icon={<CloudServerOutlined />}
+            type={activeTab === 'health' ? 'primary' : 'default'}
+            onClick={() => setActiveTab('health')}
+          >
+            健康监控
+          </Button>
+          <Button
+            type="primary"
+            icon={<ReloadOutlined spin={refreshing} />}
+            loading={refreshing}
+            onClick={handleRefresh}
+          >
+            {isMobile ? '刷新' : '立即刷新'}
+          </Button>
+        </Space>
       </div>
 
+      {/* SSO alert */}
       <Alert
         showIcon
         type={token ? 'success' : 'warning'}
@@ -193,7 +310,7 @@ export function ServicesPage() {
       <Row gutter={[16, 16]}>
         <Col xs={8} sm={8} md={6}>
           <Card size="small">
-            <Statistic title="总服务" value={summary.total} valueStyle={{ fontSize: 28 }} />
+            <Statistic title="已注册服务" value={registeredServices.length} valueStyle={{ fontSize: 28 }} />
           </Card>
         </Col>
         <Col xs={8} sm={8} md={6}>
@@ -221,7 +338,7 @@ export function ServicesPage() {
             <Card size="small">
               <Statistic
                 title="上次检查"
-                value={data?.checkedAt ? new Date(data.checkedAt).toLocaleTimeString('zh-CN') : '-'}
+                value={healthData?.checkedAt ? new Date(healthData.checkedAt).toLocaleTimeString('zh-CN') : '-'}
                 prefix={<ClockCircleOutlined />}
                 valueStyle={{ fontSize: 16, color: '#8c8c8c' }}
               />
@@ -230,88 +347,64 @@ export function ServicesPage() {
         )}
       </Row>
 
-      {/* Local Services */}
-      <Card
-        title={<Space><DesktopOutlined /> 本地服务 (Mac)</Space>}
-        extra={<Tag>{local.length} 个服务</Tag>}
-      >
-        <Row gutter={[12, 12]}>
-          {local.map(svc => (
-            <Col xs={24} md={12} xl={8} key={svc.name}>
-              <ServiceCard item={svc} />
-            </Col>
-          ))}
-        </Row>
-        {local.length === 0 && (
-          <Typography.Text type="secondary">暂无本地服务数据</Typography.Text>
-        )}
-      </Card>
+      {/* Tab: Registry */}
+      {activeTab === 'registry' && (
+        <>
+          <Card
+            title={<Space><AppstoreOutlined /> 已注册服务</Space>}
+            extra={<Tag color="blue">{registeredServices.length} 个服务</Tag>}
+          >
+            {registeredServices.length === 0 ? (
+              <Empty description="暂无已注册服务" />
+            ) : (
+              <Row gutter={[16, 16]}>
+                {registeredServices.map(svc => (
+                  <Col xs={24} sm={12} md={8} xl={6} key={svc.id}>
+                    <RegisteredServiceCard svc={svc} />
+                  </Col>
+                ))}
+              </Row>
+            )}
+          </Card>
+        </>
+      )}
 
-      {/* Remote Services — SSO enabled */}
-      <Card
-        title={<Space><CloudServerOutlined /> 远程服务 (阿里云) · SSO 可跳转</Space>}
-        extra={<Tag color="blue">{remote.length} 个服务</Tag>}
-      >
-        <Row gutter={[12, 12]}>
-          {remote.map(svc => (
-            <Col xs={24} md={12} xl={8} key={svc.name}>
-              <ServiceCard item={svc} ssoLink />
-            </Col>
-          ))}
-        </Row>
-        {remote.length === 0 && (
-          <Typography.Text type="secondary">暂无远程服务数据</Typography.Text>
-        )}
-      </Card>
+      {/* Tab: Health Monitor */}
+      {activeTab === 'health' && (
+        <>
+          <Card
+            title={<Space><DesktopOutlined /> 本地服务 (Mac)</Space>}
+            extra={<Tag>{local.length} 个服务</Tag>}
+          >
+            <Row gutter={[12, 12]}>
+              {local.map(svc => (
+                <Col xs={24} md={12} xl={8} key={svc.name}>
+                  <HealthCard item={svc} />
+                </Col>
+              ))}
+            </Row>
+            {local.length === 0 && (
+              <Typography.Text type="secondary">暂无本地服务数据</Typography.Text>
+            )}
+          </Card>
 
-      {/* Quick Access Portal — all services as large cards */}
-      <Card
-        title={<Space><CloudServerOutlined /> 统一服务门户 · 一键跳转</Space>}
-        extra={<Typography.Text type="secondary">登录一次，跳转所有服务</Typography.Text>}
-      >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          点击卡片可直接跳转到对应服务。远程服务已启用 SSO 单点登录，自动携带身份凭证。
-        </Typography.Paragraph>
-        <Row gutter={[16, 16]}>
-          {[...remote.filter(s => s.status === 'online'), ...local.filter(s => s.status === 'online')].map(svc => {
-            const jumpUrl = svc.group === 'remote' && token ? buildSsoUrl(svc.link) : svc.link;
-            return (
-              <Col xs={12} sm={8} md={6} xl={4} key={svc.name}>
-                <Card
-                  hoverable
-                  size="small"
-                  style={{ textAlign: 'center', minHeight: 100, cursor: 'pointer' }}
-                  onClick={() => window.open(jumpUrl, '_blank', 'noopener,noreferrer')}
-                >
-                  <div style={{ fontSize: 28, marginBottom: 8 }}>
-                    {svc.name.charAt(0) === '🛒' ? '🛒' :
-                     svc.name.charAt(0) === '📈' ? '📊' :
-                     svc.name.charAt(0) === '📋' ? '📝' :
-                     svc.name.charAt(0) === '🔬' ? '🔬' :
-                     svc.name.charAt(0) === '✍' ? '✏️' :
-                     svc.name.charAt(0) === '🎙' ? '🎙️' :
-                     svc.name.charAt(0) === '🌐' ? '🌐' :
-                     svc.name.charAt(0) === '🔍' ? '🔍' :
-                     svc.name.charAt(0) === '🏠' ? '🏠' :
-                     svc.name.charAt(0) === '🔀' ? '🔀' :
-                     svc.name.charAt(0) === '📊' ? '📊' :
-                     svc.name.charAt(0) === '📱' ? '📱' : '🌐'}
-                  </div>
-                  <Typography.Text strong style={{ fontSize: 13, display: 'block', marginBottom: 4 }}>
-                    {svc.name.replace(/^[^\w\s]+\s*/, '')}
-                  </Typography.Text>
-                  <Space size={4}>
-                    <Tag style={{ fontSize: 10 }}>{svc.type}</Tag>
-                    {svc.group === 'remote' && token && (
-                      <Tag color="blue" style={{ fontSize: 10 }}>SSO</Tag>
-                    )}
-                  </Space>
-                </Card>
-              </Col>
-            );
-          })}
-        </Row>
-      </Card>
+          <Card
+            title={<Space><CloudServerOutlined /> 远程服务 (阿里云) · SSO 可跳转</Space>}
+            extra={<Tag color="blue">{remote.length} 个服务</Tag>}
+          >
+            <Row gutter={[12, 12]}>
+              {remote.map(svc => (
+                <Col xs={24} md={12} xl={8} key={svc.name}>
+                  <HealthCard item={svc} ssoLink />
+                </Col>
+              ))}
+            </Row>
+            {remote.length === 0 && (
+              <Typography.Text type="secondary">暂无远程服务数据</Typography.Text>
+            )}
+          </Card>
+        </>
+      )}
     </Space>
   );
 }

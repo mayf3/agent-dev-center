@@ -13,6 +13,7 @@ import { SubmitRequirementPage } from './pages/SubmitRequirementPage';
 import { TaskListPage } from './pages/TaskListPage';
 import { TaskKanbanPage } from './pages/TaskKanbanPage';
 import { ServicesPage } from './pages/ServicesPage';
+import { ServiceDetailPage } from './pages/ServiceDetailPage';
 import { MarketplacePage } from './pages/MarketplacePage';
 
 const isPublicMode = import.meta.env.VITE_IS_PUBLIC_MODE === 'true';
@@ -39,6 +40,7 @@ const router = createBrowserRouter([
             { path: 'requirements/:id', element: <RequirementDetailPage /> },
             { path: 'kanban', element: <KanbanBoardPage /> },
             { path: 'services', element: <ServicesPage /> },
+            { path: 'services/:id', element: <ServiceDetailPage /> },
             { path: 'tasks', element: <TaskListPage /> },
             { path: 'tasks/kanban', element: <TaskKanbanPage /> },
             { path: 'marketplace', element: <MarketplacePage /> }
@@ -77,6 +79,10 @@ const router = createBrowserRouter([
           {
             path: 'services',
             element: <ServicesPage />
+          },
+          {
+            path: 'services/:id',
+            element: <ServiceDetailPage />
           },
           {
             path: 'tasks',
