@@ -12,6 +12,7 @@ export const requirementStatusValues = [
   'in-progress',
   'testing',
   'review',
+  'deploying',
   'done'
 ] as const;
 
@@ -27,6 +28,7 @@ export const prismaRequirementStatus = {
   'in-progress': 'in_progress',
   testing: 'testing',
   review: 'review',
+  deploying: 'deploying',
   done: 'done'
 } satisfies Record<RequirementStatusApi, RequirementStatus>;
 
@@ -37,6 +39,7 @@ export const apiRequirementStatus = {
   in_progress: 'in-progress',
   testing: 'testing',
   review: 'review',
+  deploying: 'deploying',
   done: 'done'
 } satisfies Record<RequirementStatus, RequirementStatusApi>;
 

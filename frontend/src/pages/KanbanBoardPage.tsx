@@ -26,7 +26,7 @@ import { PriorityTag } from '../components/PriorityTag';
 import { StatusTag } from '../components/StatusTag';
 import { useAuth } from '../contexts/AuthContext';
 
-type BoardColumnId = 'pending' | 'in-progress' | 'testing' | 'done';
+type BoardColumnId = 'pending' | 'in-progress' | 'testing' | 'review' | 'deploying' | 'done';
 
 interface BoardColumnConfig {
   id: BoardColumnId;
@@ -48,7 +48,17 @@ const boardColumns: BoardColumnConfig[] = [
   {
     id: 'testing',
     title: '测试中',
-    statuses: ['testing', 'review']
+    statuses: ['testing']
+  },
+  {
+    id: 'review',
+    title: '待验收',
+    statuses: ['review']
+  },
+  {
+    id: 'deploying',
+    title: '部署中',
+    statuses: ['deploying']
   },
   {
     id: 'done',
@@ -211,6 +221,8 @@ export function KanbanBoardPage() {
         pending: [],
         'in-progress': [],
         testing: [],
+        review: [],
+        deploying: [],
         done: []
       }
     );

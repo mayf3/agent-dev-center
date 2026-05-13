@@ -7,6 +7,7 @@ export type RequirementStatus =
   | 'in-progress'
   | 'testing'
   | 'review'
+  | 'deploying'
   | 'done';
 export type TaskStatus = 'todo' | 'in-progress' | 'testing' | 'done';
 
@@ -46,6 +47,8 @@ export interface Requirement {
   dueDate?: string | null;
   attachment?: string | null;
   rejectReason?: string | null;
+  gitHash?: string | null;
+  deployVersion?: string | null;
   createdAt: string;
   updatedAt: string;
   tasks?: Task[];

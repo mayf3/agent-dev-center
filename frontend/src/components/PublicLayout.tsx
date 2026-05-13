@@ -9,6 +9,7 @@ import { Alert, Button, Layout, Menu, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { AppLayout } from './AppLayout';
 
 const { Header, Content, Sider } = Layout;
 
@@ -17,9 +18,9 @@ export function PublicLayout() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
 
-  // 已登录用户走 ProtectedRoute，这里不渲染
+  // 已登录用户直接渲染 AppLayout（带完整导航和功能）
   if (isAuthenticated) {
-    return null;
+    return <AppLayout />;
   }
 
   const menuItems: MenuProps['items'] = [

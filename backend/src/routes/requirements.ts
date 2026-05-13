@@ -13,6 +13,7 @@ import {
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import {
+  apiRequirementStatus,
   prismaRequirementStatus,
   serializeRequirement,
   type RequirementStatusApi
@@ -78,17 +79,47 @@ function buildStatusData(status?: RequirementStatusApi) {
 }
 
 /**
- * 硬性验收约束：状态流转必须满足报告要求
+ * 硬性验收约束 + 强制逐步流转
  *
- * 状态流转规则：
- *   → review : 必须有 approved 的 DEV_SELF_CHECK + TEST_REPORT
- *   → done   : 必须有 approved 的 DEV_SELF_CHECK + SECURITY_REVIEW + TEST_REPORT + CTO_REVIEW
+ * 状态流转规则（必须逐步流转，不可跳步）：
+ *   pending → approved → in-progress → testing → review → deploying → done
+ *                                      ↓           ↓          ↓         ↓
+ *                                 DEV_SELF   TEST_RPT    CTO_REVIEW  DEPLOY_CONFIRM
+ *                                            SECURITY
  *
- * 返回缺少的报告类型列表（空数组 = 通过）
+ * 每步必需的 approved 报告：
+ *   → testing  : DEV_SELF_CHECK
+ *   → review   : DEV_SELF_CHECK + TEST_REPORT
+ *   → deploying: DEV_SELF_CHECK + SECURITY_REVIEW + TEST_REPORT + CTO_REVIEW
+ *   → done     : DEV_SELF_CHECK + SECURITY_REVIEW + TEST_REPORT + CTO_REVIEW + DEPLOY_CONFIRM
  */
+
+/** 合法的前置状态（强制逐步流转） */
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  'pending':     ['approved', 'rejected'],
+  'approved':    ['in-progress', 'rejected'],
+  'in-progress': ['testing', 'rejected'],
+  'testing':     ['review', 'in-progress', 'rejected'],
+  'review':      ['deploying', 'testing', 'in-progress', 'rejected'],
+  'deploying':   ['done', 'review', 'rejected'],
+  'done':        [],
+  'rejected':    ['pending'],
+};
+
+const REQUIRED_REPORTS_FOR_TESTING: Array<import('@prisma/client').ReportType> = [
+  'DEV_SELF_CHECK',
+];
+
 const REQUIRED_REPORTS_FOR_REVIEW: Array<import('@prisma/client').ReportType> = [
   'DEV_SELF_CHECK',
   'TEST_REPORT',
+];
+
+const REQUIRED_REPORTS_FOR_DEPLOYING: Array<import('@prisma/client').ReportType> = [
+  'DEV_SELF_CHECK',
+  'SECURITY_REVIEW',
+  'TEST_REPORT',
+  'CTO_REVIEW',
 ];
 
 const REQUIRED_REPORTS_FOR_DONE: Array<import('@prisma/client').ReportType> = [
@@ -96,18 +127,31 @@ const REQUIRED_REPORTS_FOR_DONE: Array<import('@prisma/client').ReportType> = [
   'SECURITY_REVIEW',
   'TEST_REPORT',
   'CTO_REVIEW',
+  'DEPLOY_CONFIRM',
 ];
+
+/** 检查状态流转是否合法（逐步流转） */
+function isValidTransition(from: string, to: string): boolean {
+  const allowed = VALID_TRANSITIONS[from];
+  return allowed ? allowed.includes(to) : false;
+}
+
+/** 获取目标状态需要的报告列表 */
+function getRequiredReports(targetStatus: RequirementStatusApi): Array<import('@prisma/client').ReportType> {
+  switch (targetStatus) {
+    case 'testing':    return REQUIRED_REPORTS_FOR_TESTING;
+    case 'review':     return REQUIRED_REPORTS_FOR_REVIEW;
+    case 'deploying':  return REQUIRED_REPORTS_FOR_DEPLOYING;
+    case 'done':       return REQUIRED_REPORTS_FOR_DONE;
+    default:           return [];
+  }
+}
 
 async function checkAcceptanceReports(
   requirementId: string,
   targetStatus: RequirementStatusApi,
 ): Promise<{ ok: boolean; missing: string[] }> {
-  const required =
-    targetStatus === 'review'
-      ? REQUIRED_REPORTS_FOR_REVIEW
-      : targetStatus === 'done'
-        ? REQUIRED_REPORTS_FOR_DONE
-        : [];
+  const required = getRequiredReports(targetStatus);
 
   if (required.length === 0) return { ok: true, missing: [] };
 
@@ -295,8 +339,20 @@ requirementsRouter.patch(
       throw new HttpError(400, '拒绝需求时必须填写拒绝原因');
     }
 
-    // 硬性验收约束：流转到 review/done 必须有对应的 approved 报告
-    if (body.status && ['review', 'done'].includes(body.status)) {
+    // 强制逐步流转校验
+    if (body.status) {
+      const currentStatus = apiRequirementStatus[existing.status as keyof typeof apiRequirementStatus] as string;
+      if (!isValidTransition(currentStatus, body.status)) {
+        const allowed = VALID_TRANSITIONS[currentStatus] || [];
+        throw new HttpError(
+          400,
+          `状态流转不合法：当前「${currentStatus}」不可直接流转到「${body.status}」，合法目标：[${allowed.join(', ')}]`,
+        );
+      }
+    }
+
+    // 硬性验收约束：流转到 testing/review/deploying/done 必须有对应的 approved 报告
+    if (body.status && ['testing', 'review', 'deploying', 'done'].includes(body.status)) {
       const { ok, missing } = await checkAcceptanceReports(params.id, body.status as RequirementStatusApi);
       if (!ok) {
         const reportTypeLabels: Record<string, string> = {
@@ -309,7 +365,7 @@ requirementsRouter.patch(
         const missingLabels = missing.map((t) => reportTypeLabels[t] ?? t).join('、');
         throw new HttpError(
           400,
-          `验收约束：流转到「${body.status === 'review' ? '待验收' : '已完成'}」前，必须有以下已通过的报告：${missingLabels}`,
+          `验收约束：流转到「${body.status}」前，必须有以下已通过的报告：${missingLabels}`,
         );
       }
     }
@@ -339,7 +395,9 @@ requirementsRouter.patch(
           status: buildStatusData(body.status),
           assignee: body.assignee,
           assigneeId,
-          rejectReason: body.status === 'rejected' ? body.rejectReason : body.status ? null : body.rejectReason
+          rejectReason: body.status === 'rejected' ? body.rejectReason : body.status ? null : body.rejectReason,
+          ...(body.gitHash !== undefined ? { gitHash: body.gitHash } : {}),
+          ...(body.deployVersion !== undefined ? { deployVersion: body.deployVersion } : {})
         }
       });
 
@@ -478,7 +536,7 @@ requirementsRouter.put(
 const batchStatusSchema = z.object({
   body: z.object({
     ids: z.array(z.string().uuid()).min(1).max(50),
-    status: z.enum(['pending', 'approved', 'rejected', 'in-progress', 'testing', 'review', 'done']),
+    status: z.enum(['pending', 'approved', 'rejected', 'in-progress', 'testing', 'review', 'deploying', 'done']),
     rejectReason: z.string().trim().optional()
   })
 });
@@ -502,7 +560,7 @@ requirementsRouter.post(
       throw new HttpError(400, '批量拒绝时必须填写拒绝原因');
     }
 
-    if (['review', 'done'].includes(body.status)) {
+    if (['testing', 'review', 'deploying', 'done'].includes(body.status)) {
       for (const item of requirements) {
         const { ok, missing } = await checkAcceptanceReports(item.id, body.status as RequirementStatusApi);
         if (!ok) {
@@ -518,7 +576,7 @@ requirementsRouter.post(
         await tx.requirement.update({
           where: { id: item.id },
           data: {
-            status: body.status as any,
+            status: buildStatusData(body.status),
             rejectReason: body.status === 'rejected' ? body.rejectReason : null,
             updatedAt: now
           }

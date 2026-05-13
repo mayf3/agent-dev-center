@@ -27,6 +27,7 @@ export const statusLabels: Record<RequirementStatus, string> = {
   'in-progress': '开发中',
   testing: '测试中',
   review: '待验收',
+  deploying: '部署中',
   done: '已完成'
 };
 
@@ -37,6 +38,7 @@ export const statusColors: Record<RequirementStatus, string> = {
   'in-progress': 'blue',
   testing: 'purple',
   review: 'cyan',
+  deploying: 'orange',
   done: 'success'
 };
 

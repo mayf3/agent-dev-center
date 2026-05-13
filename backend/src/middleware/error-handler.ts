@@ -4,11 +4,28 @@ import { ZodError } from 'zod';
 import { env } from '../config/env.js';
 import { HttpError } from '../utils/http-error.js';
 
+/**
+ * Flatten nested Zod field errors into dot-notation keys.
+ * e.g. { body: { title: ["Required"] } } → { "body.title": ["Required"] }
+ */
+function flattenZodErrors(error: ZodError): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const issue of error.issues) {
+    const key = issue.path.join('.');
+    if (!result[key]) {
+      result[key] = [];
+    }
+    result[key].push(issue.message);
+  }
+  return result;
+}
+
 export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   if (error instanceof ZodError) {
     return res.status(400).json({
       message: '请求参数校验失败',
       errors: error.flatten(),
+      fieldErrors: flattenZodErrors(error),
       requestId: req.requestId
     });
   }

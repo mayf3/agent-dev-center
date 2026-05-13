@@ -27,6 +27,7 @@ enum RequirementStatus {
   in_progress @map("in-progress")
   testing
   review
+  deploying
   done
 }
 
@@ -81,6 +82,8 @@ model Requirement {
   dueDate       DateTime?
   attachment    String?
   rejectReason  String?             @db.Text
+  gitHash       String?
+  deployVersion String?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   tasks         Task[]
