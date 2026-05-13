@@ -9,6 +9,9 @@ import { tasksRouter } from './routes/tasks.js';
 import { reportsRouter } from './routes/reports.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { servicesRouter } from './routes/services.js';
+import { marketplaceAgentsRouter } from './routes/marketplace-agents.js';
+import { marketplaceTasksRouter } from './routes/marketplace-tasks.js';
+import { marketplaceDeliverablesRouter } from './routes/marketplace-deliverables.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { HttpError } from './utils/http-error.js';
 
@@ -66,6 +69,9 @@ app.use('/api/requirements/:id/reports', reportsRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/services', servicesRouter);
+app.use('/api/marketplace/agents', marketplaceAgentsRouter);
+app.use('/api/marketplace/tasks', marketplaceTasksRouter);
+app.use('/api/marketplace/deliverables', marketplaceDeliverablesRouter);
 
 app.use((_req, _res, next) => {
   next(new HttpError(404, '接口不存在'));
