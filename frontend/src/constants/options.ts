@@ -1,3 +1,8 @@
+import type {
+  MarketplaceAgentStatus,
+  MarketplacePriority,
+  MarketplaceTaskStatus
+} from '../api/marketplace-types';
 import type { ReportStatus, ReportType, RequirementPriority, RequirementStatus, TaskStatus, UserRole } from '../api/types';
 
 export const roleLabels: Record<UserRole, string> = {
@@ -54,6 +59,48 @@ export const taskStatusColors: Record<TaskStatus, string> = {
   'in-progress': 'processing',
   testing: 'purple',
   done: 'success',
+};
+
+export const marketplaceAgentStatusLabels: Record<MarketplaceAgentStatus, string> = {
+  active: '在线',
+  inactive: '停用',
+  maintenance: '维护中'
+};
+
+export const marketplaceAgentStatusColors: Record<MarketplaceAgentStatus, string> = {
+  active: 'success',
+  inactive: 'default',
+  maintenance: 'warning'
+};
+
+export const marketplaceTaskStatusLabels: Record<MarketplaceTaskStatus, string> = {
+  pending: '待领取',
+  processing: '处理中',
+  completed: '已完成',
+  failed: '失败',
+  cancelled: '已取消'
+};
+
+export const marketplaceTaskStatusColors: Record<MarketplaceTaskStatus, string> = {
+  pending: 'default',
+  processing: 'processing',
+  completed: 'success',
+  failed: 'error',
+  cancelled: 'warning'
+};
+
+export const marketplacePriorityLabels: Record<MarketplacePriority, string> = {
+  low: '低',
+  normal: '普通',
+  high: '高',
+  urgent: '紧急'
+};
+
+export const marketplacePriorityColors: Record<MarketplacePriority, string> = {
+  low: 'green',
+  normal: 'blue',
+  high: 'gold',
+  urgent: 'red'
 };
 
 export const agentOptions = [
