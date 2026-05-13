@@ -1,3 +1,4 @@
+import { statSync } from 'node:fs';
 import { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { authRequired } from '../middleware/auth.js';
@@ -9,6 +10,11 @@ import {
 } from '../schemas/marketplace.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
+import {
+  getMarketplaceUploadFilenameFromReference,
+  getMarketplaceUploadMimeType,
+  getMarketplaceUploadPath
+} from '../lib/multer.js';
 
 export const marketplaceDeliverablesRouter = Router();
 
@@ -56,13 +62,44 @@ marketplaceDeliverablesRouter.post(
       throw new HttpError(400, '已完成任务不能新增交付物');
     }
 
+    // For image/document/file types, validate file reference and add metadata
+    let finalMetadata = body.metadata as Prisma.InputJsonValue | undefined;
+    const { type, content } = body;
+
+    if ((type === 'image' || type === 'document' || type === 'file') && content) {
+      const filename = getMarketplaceUploadFilenameFromReference(content);
+      if (!filename) {
+        throw new HttpError(400, '无效的文件引用，请先上传文件');
+      }
+
+      const filePath = getMarketplaceUploadPath(filename);
+      try {
+        const stats = statSync(filePath);
+        const mimeType = getMarketplaceUploadMimeType(filename);
+
+        finalMetadata = {
+          ...(typeof finalMetadata === 'object' && finalMetadata !== null ? finalMetadata : {}),
+          file: {
+            filename,
+            size: stats.size,
+            mimeType: mimeType || 'application/octet-stream'
+          }
+        };
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          throw new HttpError(404, '文件不存在，请重新上传');
+        }
+        throw err;
+      }
+    }
+
     const deliverable = await prisma.marketplaceDeliverable.create({
       data: {
         taskId: params.taskId,
         type: body.type,
         title: body.title,
         content: body.content,
-        metadata: body.metadata as Prisma.InputJsonValue | undefined
+        metadata: finalMetadata
       }
     });
 
