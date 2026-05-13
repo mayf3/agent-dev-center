@@ -235,6 +235,8 @@ marketplaceTasksRouter.post(
   authRequired,
   asyncHandler(async (req, res) => {
     const { body } = claimMarketplaceTaskSchema.parse({ body: req.body });
+    // URL 中的 :id 也可以指定 taskId，优先使用 body.taskId，其次用 URL params
+    const specifiedTaskId = body.taskId || (req.params.id !== 'claim' ? String(req.params.id) : undefined);
 
     const agent = await prisma.marketplaceAgent.findUnique({
       where: { name: body.agentName }
@@ -245,16 +247,38 @@ marketplaceTasksRouter.post(
     }
 
     const task = await prisma.$transaction(async (tx) => {
-      const pendingTask = await tx.marketplaceTask.findFirst({
-        where: {
-          agentId: agent.id,
-          status: 'pending'
-        },
-        orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }]
-      });
+      let pendingTask;
 
-      if (!pendingTask) {
-        throw new HttpError(404, '暂无待领取任务');
+      if (specifiedTaskId) {
+        // 指定领取某个任务
+        pendingTask = await tx.marketplaceTask.findUnique({
+          where: { id: specifiedTaskId }
+        });
+
+        if (!pendingTask) {
+          throw new HttpError(404, '指定任务不存在');
+        }
+
+        if (pendingTask.agentId !== agent.id) {
+          throw new HttpError(403, '该任务不属于此 Agent');
+        }
+
+        if (pendingTask.status !== 'pending') {
+          throw new HttpError(409, `任务状态为 ${pendingTask.status}，无法领取`);
+        }
+      } else {
+        // 默认行为：取下一个 pending 任务（优先级降序 → 创建时间升序）
+        pendingTask = await tx.marketplaceTask.findFirst({
+          where: {
+            agentId: agent.id,
+            status: 'pending'
+          },
+          orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }]
+        });
+
+        if (!pendingTask) {
+          throw new HttpError(404, '暂无待领取任务');
+        }
       }
 
       const result = await tx.marketplaceTask.updateMany({

@@ -123,6 +123,7 @@ export const listMarketplaceTasksSchema = z.object({
 
 export const claimMarketplaceTaskSchema = z.object({
   body: z.object({
-    agentName
+    agentName,
+    taskId: z.string().uuid().optional()
   })
 });
