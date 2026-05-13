@@ -60,38 +60,40 @@ model User {
   role      UserRole @default(requester)
   createdAt DateTime @default(now())
 
-  requestedRequirements Requirement[] @relation("RequesterRequirements")
-  assignedRequirements  Requirement[] @relation("AssigneeRequirements")
+  requestedRequirements Requirement[]         @relation("RequesterRequirements")
+  assignedRequirements  Requirement[]         @relation("AssigneeRequirements")
   requirementRevisions  RequirementRevision[] @relation("RequirementRevisionOperator")
-  submittedReports      RequirementReport[] @relation("ReportSubmitter")
+  submittedReports      RequirementReport[]   @relation("ReportSubmitter")
+  marketplaceAgents     MarketplaceAgent[]    @relation("MarketplaceAgentOwner")
+  marketplaceTasks      MarketplaceTask[]     @relation("MarketplaceRequester")
 
   @@map("users")
 }
 
 model Requirement {
-  id            String              @id @default(uuid()) @db.Uuid
+  id            String                @id @default(uuid()) @db.Uuid
   title         String
-  description   String              @db.Text
-  priority      RequirementPriority @default(P2)
-  status        RequirementStatus   @default(pending)
+  description   String                @db.Text
+  priority      RequirementPriority   @default(P2)
+  status        RequirementStatus     @default(pending)
   requester     String
-  requesterId   String?             @db.Uuid
+  requesterId   String?               @db.Uuid
   department    String
   assignee      String?
-  assigneeId    String?             @db.Uuid
+  assigneeId    String?               @db.Uuid
   dueDate       DateTime?
   attachment    String?
-  rejectReason  String?             @db.Text
+  rejectReason  String?               @db.Text
   gitHash       String?
   deployVersion String?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
   tasks         Task[]
   revisions     RequirementRevision[]
   reports       RequirementReport[]
 
-  requesterUser User?               @relation("RequesterRequirements", fields: [requesterId], references: [id])
-  assigneeUser  User?               @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
+  requesterUser User? @relation("RequesterRequirements", fields: [requesterId], references: [id])
+  assigneeUser  User? @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
 
   @@index([status])
   @@index([priority])
@@ -120,11 +122,11 @@ model Task {
 }
 
 model RequirementRevision {
-  id            String            @id @default(uuid()) @db.Uuid
-  requirementId String            @db.Uuid
-  requirement   Requirement       @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  id            String              @id @default(uuid()) @db.Uuid
+  requirementId String              @db.Uuid
+  requirement   Requirement         @relation(fields: [requirementId], references: [id], onDelete: Cascade)
   title         String
-  description   String            @db.Text
+  description   String              @db.Text
   priority      RequirementPriority
   status        RequirementStatus
   requester     String
@@ -132,10 +134,10 @@ model RequirementRevision {
   assignee      String?
   dueDate       DateTime?
   attachment    String?
-  revisionNote  String?           @db.Text
-  operatorId    String?           @db.Uuid
-  operator      User?             @relation("RequirementRevisionOperator", fields: [operatorId], references: [id])
-  createdAt     DateTime          @default(now())
+  revisionNote  String?             @db.Text
+  operatorId    String?             @db.Uuid
+  operator      User?               @relation("RequirementRevisionOperator", fields: [operatorId], references: [id])
+  createdAt     DateTime            @default(now())
 
   @@index([requirementId])
   @@index([createdAt])
@@ -165,18 +167,108 @@ model RequirementReport {
 }
 
 model Notification {
-  id             String   @id @default(uuid()) @db.Uuid
-  userId         String?  @db.Uuid
-  type           String
-  title          String
-  content        Json
-  relatedReqId   String?  @db.Uuid
-  isRead         Boolean  @default(false)
-  createdAt      DateTime @default(now())
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String?  @db.Uuid
+  type         String
+  title        String
+  content      Json
+  relatedReqId String?  @db.Uuid
+  isRead       Boolean  @default(false)
+  createdAt    DateTime @default(now())
 
   @@index([userId])
   @@index([isRead])
   @@index([type])
   @@index([createdAt])
   @@map("notifications")
+}
+
+enum MarketplaceAgentStatus {
+  active
+  inactive
+  maintenance
+}
+
+enum MarketplaceTaskStatus {
+  pending
+  processing
+  completed
+  failed
+  cancelled
+}
+
+enum MarketplacePriority {
+  low
+  normal
+  high
+  urgent
+}
+
+enum DeliverableType {
+  text
+  image
+  document
+  url
+  file
+}
+
+model MarketplaceAgent {
+  id           String                 @id @default(uuid()) @db.Uuid
+  name         String                 @unique
+  displayName  String
+  description  String                 @db.Text
+  avatar       String?
+  capabilities Json                   @default("[]")
+  apiEndpoint  String?
+  status       MarketplaceAgentStatus @default(active)
+  ownerId      String?                @db.Uuid
+  owner        User?                  @relation("MarketplaceAgentOwner", fields: [ownerId], references: [id])
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  tasks MarketplaceTask[]
+
+  @@index([status])
+  @@map("marketplace_agents")
+}
+
+model MarketplaceTask {
+  id            String                @id @default(uuid()) @db.Uuid
+  agentId       String                @db.Uuid
+  agent         MarketplaceAgent      @relation(fields: [agentId], references: [id])
+  requesterId   String?               @db.Uuid
+  requester     User?                 @relation("MarketplaceRequester", fields: [requesterId], references: [id])
+  requesterName String
+  title         String
+  description   String                @db.Text
+  input         Json?
+  priority      MarketplacePriority   @default(normal)
+  status        MarketplaceTaskStatus @default(pending)
+  deadline      DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  errorMsg      String?               @db.Text
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  deliverables MarketplaceDeliverable[]
+
+  @@index([agentId])
+  @@index([status])
+  @@index([requesterId])
+  @@map("marketplace_tasks")
+}
+
+model MarketplaceDeliverable {
+  id        String          @id @default(uuid()) @db.Uuid
+  taskId    String          @db.Uuid
+  task      MarketplaceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  type      DeliverableType
+  title     String?
+  content   String          @db.Text
+  metadata  Json?
+  createdAt DateTime        @default(now())
+
+  @@index([taskId])
+  @@map("marketplace_deliverables")
 }

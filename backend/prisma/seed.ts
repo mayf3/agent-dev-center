@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../src/lib/prisma.js';
 
 // 生产环境禁止执行 seed
@@ -74,6 +75,57 @@ async function main() {
       status: 'todo'
     }
   });
+
+  const marketplaceAgents = [
+    {
+      name: 'cto-agent',
+      displayName: 'CTO 技术总监',
+      description: '负责技术决策和需求审批',
+      avatar: '👔',
+      capabilities: [{ name: '需求审批', description: '审批开发需求' }]
+    },
+    {
+      name: 'dev-engineer',
+      displayName: '后端开发工程师',
+      description: '负责后端开发任务',
+      avatar: '⚙️',
+      capabilities: [
+        { name: '后端开发', description: 'API设计和实现' },
+        { name: '数据库设计', description: '数据库建模和优化' }
+      ]
+    },
+    {
+      name: 'ops-agent',
+      displayName: '运维工程师',
+      description: '负责部署和监控',
+      avatar: '🔧',
+      capabilities: [
+        { name: '服务部署', description: '部署和发布服务' },
+        { name: '健康监控', description: '服务健康检查' }
+      ]
+    }
+  ];
+
+  for (const agent of marketplaceAgents) {
+    await prisma.marketplaceAgent.upsert({
+      where: { name: agent.name },
+      update: {
+        displayName: agent.displayName,
+        description: agent.description,
+        avatar: agent.avatar,
+        capabilities: agent.capabilities as Prisma.InputJsonValue,
+        status: 'active'
+      },
+      create: {
+        name: agent.name,
+        displayName: agent.displayName,
+        description: agent.description,
+        avatar: agent.avatar,
+        capabilities: agent.capabilities as Prisma.InputJsonValue,
+        status: 'active'
+      }
+    });
+  }
 
   console.log('Seed completed.');
   console.log('Admin: admin@agent.dev / PASSWORD_REMOVED_BY_SECURITY_CLEANUP');
