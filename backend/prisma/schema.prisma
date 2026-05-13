@@ -91,6 +91,7 @@ model Requirement {
   tasks         Task[]
   revisions     RequirementRevision[]
   reports       RequirementReport[]
+  serviceLinks  ServiceRequirement[]
 
   requesterUser User? @relation("RequesterRequirements", fields: [requesterId], references: [id])
   assigneeUser  User? @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
@@ -271,4 +272,55 @@ model MarketplaceDeliverable {
 
   @@index([taskId])
   @@map("marketplace_deliverables")
+}
+
+// ─── Service Registry ───────────────────────────────────────────
+
+enum ServiceStatus {
+  online
+  offline
+  maintenance
+  unknown
+}
+
+model Service {
+  id            String        @id @default(uuid()) @db.Uuid
+  name          String        @unique                       // 机器标识 e.g. "agent-dev-center-backend"
+  displayName   String                                      // 显示名 e.g. "Agent Dev Center 后端"
+  description   String        @db.Text
+  port          Int?                                         // 本地端口
+  localUrl      String?                                      // 本地地址
+  remoteUrl     String?                                      // 远程地址
+  techStack     String[]      @default([])                  // ["Node.js", "Express", "PostgreSQL"]
+  owner         String?                                      // 负责 Agent
+  gitRepo       String?                                      // Git 仓库路径
+  database      String?                                      // 使用的数据库
+  status        ServiceStatus @default(unknown)
+  version       String?                                      // 最新部署版本
+  lastDeployedAt DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // 关联需求
+  requirements ServiceRequirement[]
+
+  @@index([status])
+  @@index([owner])
+  @@map("services")
+}
+
+model ServiceRequirement {
+  id             String   @id @default(uuid()) @db.Uuid
+  serviceId      String   @db.Uuid
+  requirementId  String   @db.Uuid
+  relationType   String   @default("related")          // related | primary | secondary
+  createdAt      DateTime @default(now())
+
+  service      Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  requirement  Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, requirementId])
+  @@index([serviceId])
+  @@index([requirementId])
+  @@map("service_requirements")
 }
