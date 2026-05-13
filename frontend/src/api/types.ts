@@ -54,6 +54,50 @@ export interface Requirement {
   tasks?: Task[];
 }
 
+// ─── Service Registry ─────────────────────────────────────────────
+
+export type ServiceStatus = 'online' | 'offline' | 'maintenance' | 'unknown';
+
+export interface RegisteredService {
+  id: string;
+  name: string;
+  displayName: string;
+  description: string;
+  port: number | null;
+  localUrl: string | null;
+  remoteUrl: string | null;
+  techStack: string[];
+  owner: string | null;
+  gitRepo: string | null;
+  database: string | null;
+  status: ServiceStatus;
+  version: string | null;
+  lastDeployedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  requirements?: ServiceRequirementRelation[];
+}
+
+export interface ServiceRequirementRelation {
+  id: string;
+  serviceId: string;
+  requirementId: string;
+  relationType: string;
+  createdAt: string;
+  requirement: Requirement;
+}
+
+export interface GitCommit {
+  hash: string;
+  shortHash: string;
+  author: string;
+  email: string;
+  date: string;
+  message: string;
+}
+
+// ─── Reports ──────────────────────────────────────────────────────
+
 export type ReportType = 'DEV_SELF_CHECK' | 'SECURITY_REVIEW' | 'TEST_REPORT' | 'CTO_REVIEW' | 'DEPLOY_CONFIRM';
 export type ReportStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested';
 
