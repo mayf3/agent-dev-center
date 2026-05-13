@@ -23,7 +23,8 @@ const { Header, Content, Sider } = Layout;
 
 const isPublicMode = import.meta.env.VITE_IS_PUBLIC_MODE === 'true';
 const MOBILE_BREAKPOINT = 768;
-const APK_URL = '/downloads/AgentDevCenter-v1.1.0.apk';
+const AGENT_DEV_CENTER_APK = '/downloads/AgentDevCenter-v1.1.0.apk';
+const LLM_TODO_APK = '/downloads/LLMTodo-v1.0.0.apk';
 
 export function AppLayout() {
   const location = useLocation();
@@ -164,15 +165,36 @@ export function AppLayout() {
             style={{ border: 'none' }}
           />
           <div style={{ padding: '16px 0 0', borderTop: '1px solid #f0f0f0', marginTop: 8 }}>
-            <Button
-              type="primary"
-              icon={<MobileOutlined />}
-              block
-              href={APK_URL}
-              download
-            >
-              下载 APP (v1.1.0)
-            </Button>
+            <div style={{ marginBottom: 8 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                Agent Dev Center
+              </Typography.Text>
+              <Button
+                type="primary"
+                icon={<MobileOutlined />}
+                block
+                href={AGENT_DEV_CENTER_APK}
+                download
+                style={{ marginTop: 4 }}
+              >
+                下载 APP (v1.1.0)
+              </Button>
+            </div>
+            <div>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                LLM Todo
+              </Typography.Text>
+              <Button
+                type="default"
+                icon={<MobileOutlined />}
+                block
+                href={LLM_TODO_APK}
+                download
+                style={{ marginTop: 4 }}
+              >
+                下载 APP (v1.0.0)
+              </Button>
+            </div>
           </div>
         </Drawer>
       </Layout>
@@ -198,49 +220,28 @@ export function AppLayout() {
         />
         {/* Sidebar download entry */}
         <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-          <Popover
-            title="扫码下载 APP"
-            trigger="click"
-            placement="rightTop"
-            content={
-              <div style={{ textAlign: 'center', padding: 8 }}>
-                <div style={{
-                  width: 140, height: 140, background: '#f5f5f5',
-                  border: '1px dashed #d9d9d9', borderRadius: 8,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  margin: '0 auto'
-                }}>
-                  <Space direction="vertical" size={2}>
-                    <MobileOutlined style={{ fontSize: 28, color: '#1677ff' }} />
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                      扫码下载
-                    </Typography.Text>
-                  </Space>
-                </div>
-                <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-                  v1.1.0 · Android
-                </Typography.Text>
-              </div>
-            }
-          >
-            <Button
-              type="primary"
-              ghost
-              icon={<DownloadOutlined />}
-              block
-              style={{ color: 'rgba(255,255,255,0.85)', borderColor: 'rgba(255,255,255,0.3)', marginBottom: 8 }}
-            >
-              扫码下载 APP
-            </Button>
-          </Popover>
+          <Typography.Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, display: 'block', marginBottom: 8 }}>
+            移动端 APP 下载
+          </Typography.Text>
           <Button
             type="primary"
             icon={<MobileOutlined />}
             block
-            href={APK_URL}
+            href={AGENT_DEV_CENTER_APK}
             download
+            style={{ marginBottom: 6 }}
           >
-            直接下载 APK
+            Agent Dev Center (v1.1.0)
+          </Button>
+          <Button
+            type="default"
+            icon={<MobileOutlined />}
+            block
+            href={LLM_TODO_APK}
+            download
+            style={{ color: 'rgba(255,255,255,0.85)', borderColor: 'rgba(255,255,255,0.3)' }}
+          >
+            LLM Todo (v1.0.0)
           </Button>
         </div>
       </Sider>
