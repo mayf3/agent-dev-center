@@ -107,8 +107,12 @@ export const agentOptions = [
   'game-dev-agent',
   'mobile-app-engineer',
   'miniapp-game-engineer',
-  'backend-engineer',
-  'frontend-engineer'
+  'agent-dev-engineer',
+  'devtools-agent',
+  'frontend-react-engineer',
+  'itops-agent',
+  'test-engineer',
+  'security-agent'
 ];
 
 export const departmentOptions = ['平台产品', '游戏业务', '移动应用', '小程序', '增长运营', '内部效率'];

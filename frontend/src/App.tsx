@@ -85,6 +85,10 @@ const router = createBrowserRouter([
           {
             path: 'tasks/kanban',
             element: <TaskKanbanPage />
+          },
+          {
+            path: 'marketplace',
+            element: <MarketplacePage />
           }
         ]
       }

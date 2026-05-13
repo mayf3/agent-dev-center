@@ -1,5 +1,5 @@
-import { CheckCircleOutlined, ClockCircleOutlined, CodeOutlined, DownloadOutlined, InboxOutlined, MobileOutlined, HistoryOutlined } from '@ant-design/icons';
-import { App as AntApp, Badge, Button, Card, Col, Row, Space, Spin, Statistic, Table, Typography, Tag, Popover } from 'antd';
+import { CheckCircleOutlined, ClockCircleOutlined, CodeOutlined, InboxOutlined, HistoryOutlined } from '@ant-design/icons';
+import { App as AntApp, Badge, Button, Card, Col, Row, Space, Spin, Statistic, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
@@ -8,10 +8,6 @@ import { api } from '../api/client';
 import type { PaginatedResponse, Requirement } from '../api/types';
 import { PriorityTag } from '../components/PriorityTag';
 import { StatusTag } from '../components/StatusTag';
-
-const APP_VERSION = 'v1.1.0';
-const APK_URL = '/downloads/AgentDevCenter-v1.1.0.apk';
-const ALT_APK_URL = '/apk/AgentDevCenter-v1.1.0.apk';
 
 const VERSION_HISTORY = [
   { version: 'v1.1.0', date: '2026-05-10', changes: ['需求详情页', '验收报告模块', '开发看板拖拽', 'APP图标更新'] },
@@ -53,7 +49,8 @@ export function DashboardPage() {
       total: requirements.length,
       pending: count((i) => i.status === 'pending'),
       active: count((i) => ['approved', 'in-progress'].includes(i.status)),
-      testing: count((i) => ['testing', 'review'].includes(i.status)),
+      testing: count((i) => i.status === 'testing'),
+      review: count((i) => ['review', 'deploying'].includes(i.status)),
       done: count((i) => i.status === 'done')
     };
   }, [requirements]);
@@ -68,84 +65,14 @@ export function DashboardPage() {
 
   if (loading) return <Spin className="page-spin" />;
 
-  // Download Banner Component
-  const DownloadBanner = () => (
-    <Card
-      className="download-banner"
-      style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        border: 'none',
-        borderRadius: 12,
-        marginBottom: 16,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-        <div style={{ color: '#fff' }}>
-          <Space align="center" size={12}>
-            <MobileOutlined style={{ fontSize: 28 }} />
-            <div>
-              <Typography.Text strong style={{ color: '#fff', fontSize: 18, display: 'block' }}>
-                下载 Agent Dev Center APP
-              </Typography.Text>
-              <Typography.Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13 }}>
-                当前版本 {APP_VERSION} · Android APK
-              </Typography.Text>
-            </div>
-          </Space>
-        </div>
-        <Space>
-          <Popover
-            title="扫码下载"
-            trigger="click"
-            content={
-              <div style={{ textAlign: 'center', padding: 8 }}>
-                <div style={{
-                  width: 160, height: 160, background: '#f5f5f5',
-                  border: '1px dashed #d9d9d9', borderRadius: 8,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  margin: '0 auto'
-                }}>
-                  <Space direction="vertical" size={2} style={{ textAlign: 'center' }}>
-                    <MobileOutlined style={{ fontSize: 32, color: '#1677ff' }} />
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                      浏览器扫码<br />打开下载页
-                    </Typography.Text>
-                  </Space>
-                </div>
-                <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-                  或直接下载：
-                </Typography.Text>
-                <Typography.Link href={APK_URL} style={{ fontSize: 12, wordBreak: 'break-all' }}>
-                  {APK_URL}
-                </Typography.Link>
-              </div>
-            }
-          >
-            <Button ghost style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.6)' }}>
-              扫码下载
-            </Button>
-          </Popover>
-          <Button
-            type="primary"
-            icon={<DownloadOutlined />}
-            href={APK_URL}
-            download
-            style={{ background: '#fff', color: '#764ba2', borderColor: '#fff', fontWeight: 600 }}
-          >
-            直接下载 APK
-          </Button>
-        </Space>
-      </div>
-    </Card>
-  );
-
   // Version History Card
   const VersionCard = () => (
     <Card title={<Space><HistoryOutlined /> 版本历史</Space>} size="small" style={{ marginTop: 16 }}>
       {VERSION_HISTORY.map((v, idx) => (
         <div key={v.version} style={{ marginBottom: idx < VERSION_HISTORY.length - 1 ? 12 : 0 }}>
           <Space>
-            <Tag color={idx === 0 ? 'blue' : 'default'}>{v.version}</Tag>
+            <Badge status={idx === 0 ? 'processing' : 'default'} />
+            <Typography.Text strong={idx === 0}>{v.version}</Typography.Text>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>{v.date}</Typography.Text>
           </Space>
           <ul style={{ margin: '4px 0 0', paddingLeft: 20, fontSize: 13, color: '#666' }}>
@@ -165,8 +92,6 @@ export function DashboardPage() {
           <Typography.Text type="secondary">实时概览</Typography.Text>
         </div>
 
-        <DownloadBanner />
-
         <div className="mobile-stats-grid">
           <div className="mobile-stat-card">
             <div className="stat-value" style={{ color: '#1677ff' }}>{stats.total}</div>
@@ -179,6 +104,14 @@ export function DashboardPage() {
           <div className="mobile-stat-card">
             <div className="stat-value" style={{ color: '#1677ff' }}>{stats.active}</div>
             <div className="stat-label">开发中</div>
+          </div>
+          <div className="mobile-stat-card">
+            <div className="stat-value" style={{ color: '#722ed1' }}>{stats.testing}</div>
+            <div className="stat-label">测试中</div>
+          </div>
+          <div className="mobile-stat-card">
+            <div className="stat-value" style={{ color: '#13c2c2' }}>{stats.review}</div>
+            <div className="stat-label">验收/部署</div>
           </div>
           <div className="mobile-stat-card">
             <div className="stat-value" style={{ color: '#52c41a' }}>{stats.done}</div>
@@ -217,19 +150,23 @@ export function DashboardPage() {
         <Typography.Text type="secondary">从需求提交、审核、开发到交付的实时概览</Typography.Text>
       </div>
 
-      <DownloadBanner />
-
       <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} xl={6}>
+        <Col xs={12} sm={8} xl={4}>
           <Card><Statistic title="总需求" value={stats.total} prefix={<InboxOutlined />} /></Card>
         </Col>
-        <Col xs={24} sm={12} xl={6}>
+        <Col xs={12} sm={8} xl={4}>
           <Card><Statistic title="待审核" value={stats.pending} prefix={<ClockCircleOutlined />} /></Card>
         </Col>
-        <Col xs={24} sm={12} xl={6}>
+        <Col xs={12} sm={8} xl={4}>
           <Card><Statistic title="开发中" value={stats.active} prefix={<CodeOutlined />} /></Card>
         </Col>
-        <Col xs={24} sm={12} xl={6}>
+        <Col xs={12} sm={8} xl={4}>
+          <Card><Statistic title="测试中" value={stats.testing} valueStyle={{ color: '#722ed1' }} /></Card>
+        </Col>
+        <Col xs={12} sm={8} xl={4}>
+          <Card><Statistic title="验收/部署" value={stats.review} valueStyle={{ color: '#13c2c2' }} /></Card>
+        </Col>
+        <Col xs={12} sm={8} xl={4}>
           <Card><Statistic title="已完成" value={stats.done} prefix={<CheckCircleOutlined />} /></Card>
         </Col>
       </Row>
