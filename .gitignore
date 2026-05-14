@@ -10,3 +10,4 @@ coverage
 .DS_Store
 backend/prisma/migrations/dev.db
 backend/prisma/dev.db
+*.bak
