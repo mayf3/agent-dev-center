@@ -15,6 +15,7 @@ import { marketplaceDeliverablesRouter } from './routes/marketplace-deliverables
 import { marketplaceUploadsRouter } from './routes/marketplace-uploads.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { HttpError } from './utils/http-error.js';
+import { ssoRouter } from './routes/sso.js';
 
 export const app = express();
 
@@ -65,6 +66,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/auth', authLimiter, authRouter);
+app.use('/api/auth/sso', authLimiter, ssoRouter);
 app.use('/api/requirements', requirementsRouter);
 app.use('/api/requirements/:id/reports', reportsRouter);
 app.use('/api/tasks', tasksRouter);
