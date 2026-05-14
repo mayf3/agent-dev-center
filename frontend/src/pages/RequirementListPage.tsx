@@ -59,7 +59,12 @@ export function RequirementListPage() {
     showSizeChanger: true
   });
 
-  const tabValue = useMemo(() => searchParams.get('my') === '1' ? 'my' : 'all', [searchParams]);
+  const tabValue = useMemo(() => {
+    const t = searchParams.get('tab');
+    if (t === 'mine') return 'mine';
+    if (t === 'my') return 'my';
+    return 'all';
+  }, [searchParams]);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -97,8 +102,14 @@ export function RequirementListPage() {
       if (tabValue === 'my' && user) {
         params.assignee = user.name;
       }
+      // "我提交的" — requester role already filtered by backend roleAwareRequirementWhere
+      // For admin/dev users, we filter by requester name on frontend
       const { data } = await api.get<PaginatedResponse<Requirement>>('/requirements', { params });
-      setRequirements(data.data);
+      let filtered = data.data;
+      if (tabValue === 'mine' && user) {
+        filtered = filtered.filter((r: Requirement) => r.requester === user.name);
+      }
+      setRequirements(filtered);
       setPagination((current) => ({
         ...current,
         current: data.meta.page,
@@ -211,10 +222,10 @@ export function RequirementListPage() {
       <div className="page-heading">
         <div>
           <Typography.Title level={3} style={{ margin: 0 }}>
-            {tabValue === 'my' ? '我的任务' : '需求列表'}
+            {tabValue === 'mine' ? '我提交的需求' : tabValue === 'my' ? '我的任务' : '需求列表'}
           </Typography.Title>
           <Typography.Text type="secondary" style={{ marginTop: 4, display: 'block' }}>
-            {tabValue === 'my' ? '仅显示分配给我的需求和任务' : '按状态、优先级、负责人和关键词筛选需求'}
+            {tabValue === 'mine' ? '查看我提交的所有需求及状态' : tabValue === 'my' ? '仅显示分配给我的需求和任务' : '按状态、优先级、负责人和关键词筛选需求'}
           </Typography.Text>
         </div>
         {isAuthenticated && (
@@ -228,11 +239,13 @@ export function RequirementListPage() {
         <Tabs
           activeKey={tabValue}
           onChange={(key) => {
-            navigate(key === 'my' ? '?my=1' : window.location.pathname, { replace: true });
+            const tabParam = key === 'all' ? '' : key;
+            navigate(tabParam ? `?tab=${tabParam}` : window.location.pathname, { replace: true });
             setSelectedRowKeys([]);
           }}
           items={[
             { key: 'all', label: '📋 所有需求' },
+            { key: 'mine', label: <><UserOutlined /> 我提交的</> },
             { key: 'my', label: <><UserOutlined /> 我的任务</> },
           ]}
           size={isMobile ? 'small' : 'middle'}
