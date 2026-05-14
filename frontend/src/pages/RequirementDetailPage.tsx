@@ -1,7 +1,9 @@
 import {
   CheckCircleOutlined,
+  ClockCircleOutlined,
   CloseCircleOutlined,
   EditOutlined,
+  HistoryOutlined,
   LeftOutlined,
   PlusOutlined,
   UserAddOutlined
@@ -22,6 +24,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Timeline,
   Typography
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -113,6 +116,36 @@ export function RequirementDetailPage() {
   const [createTaskLoading, setCreateTaskLoading] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'description';
+
+  // Revision history state
+  const [revisions, setRevisions] = useState<Array<{
+    id: string;
+    field: string;
+    oldValue: string | null;
+    newValue: string | null;
+    revisionNote: string | null;
+    operator: { id: string; name: string } | null;
+    createdAt: string;
+  }>>([]);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
+
+  const loadRevisions = useCallback(async () => {
+    if (!id) return;
+    setRevisionsLoading(true);
+    try {
+      const { data } = await api.get(`/requirements/${id}/revisions`, { params: { page: 1, pageSize: 50 } });
+      setRevisions(data.data ?? []);
+    } catch {
+      // silently ignore
+    } finally {
+      setRevisionsLoading(false);
+    }
+  }, [id]);
+
+  // Load revisions when tab is active
+  useEffect(() => {
+    if (activeTab === 'history') void loadRevisions();
+  }, [activeTab, loadRevisions]);
 
   const loadRequirement = useCallback(async () => {
     if (!id) {
@@ -472,7 +505,50 @@ export function RequirementDetailPage() {
               children: (
                 <ReportsTimeline requirementId={requirement.id} isAdmin={isAdmin} />
               )
-            }
+            },
+            {
+              key: 'history',
+              label: <><HistoryOutlined /> 修订历史</>,
+              children: (() => {
+                if (revisionsLoading) return <Spin />;
+                if (revisions.length === 0) return <Typography.Text type="secondary">暂无修订记录</Typography.Text>;
+                return (
+                  <Card title="状态流转历史">
+                    <Timeline
+                      items={revisions.map(function (rev) {
+                        const isStatus = rev.field === 'status';
+                        return {
+                          color: isStatus ? 'blue' : 'gray',
+                          children: (
+                            <div key={rev.id}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Space>
+                                  <Tag color={isStatus ? 'blue' : 'default'}>
+                                    {isStatus ? '状态变更' : rev.field}
+                                  </Tag>
+                                  {rev.revisionNote && <Typography.Text strong>{rev.revisionNote}</Typography.Text>}
+                                </Space>
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                  {dayjs(rev.createdAt).format('YYYY-MM-DD HH:mm:ss')}
+                                </Typography.Text>
+                              </div>
+                              {(rev.oldValue || rev.newValue) && (
+                                <div style={{ marginTop: 4 }}>
+                                  {rev.oldValue && <Typography.Text delete type="danger" style={{ fontSize: 13 }}>{rev.oldValue}</Typography.Text>}
+                                  {rev.oldValue && rev.newValue && <span style={{ margin: '0 8px' }}>→</span>}
+                                  {rev.newValue && <Typography.Text type="success" style={{ fontSize: 13 }}>{rev.newValue}</Typography.Text>}
+                                </div>
+                              )}
+                              {rev.operator && <Typography.Text type="secondary" style={{ fontSize: 12 }}>操作者: {rev.operator.name}</Typography.Text>}
+                            </div>
+                          )
+                        };
+                      })}
+                    />
+                  </Card>
+                );
+              })()
+            },
           ]}
         />
 
