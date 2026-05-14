@@ -10,6 +10,8 @@
     "start": "node dist/src/server.js",
     "start:migrate": "prisma migrate deploy && node dist/src/server.js",
     "seed:services": "tsx prisma/seed-services.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -36,7 +38,8 @@
     "@types/multer": "^2.1.0",
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.6"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
