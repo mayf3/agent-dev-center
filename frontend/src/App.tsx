@@ -14,6 +14,7 @@ import { TaskListPage } from './pages/TaskListPage';
 import { TaskKanbanPage } from './pages/TaskKanbanPage';
 import { ServicesPage } from './pages/ServicesPage';
 import { ServiceDetailPage } from './pages/ServiceDetailPage';
+import { SsoPortalPage } from './pages/SsoPortalPage';
 import { lazy, Suspense } from 'react';
 import { Spin } from 'antd';
 
@@ -44,6 +45,7 @@ const router = createBrowserRouter([
             { path: 'kanban', element: <KanbanBoardPage /> },
             { path: 'services', element: <ServicesPage /> },
             { path: 'services/:id', element: <ServiceDetailPage /> },
+            { path: 'portal', element: <SsoPortalPage /> },
             { path: 'tasks', element: <TaskListPage /> },
             { path: 'tasks/kanban', element: <TaskKanbanPage /> },
             { path: 'marketplace', element: <Suspense fallback={<Spin className="page-spin" />}><MarketplacePage /></Suspense> }
@@ -86,6 +88,10 @@ const router = createBrowserRouter([
           {
             path: 'services/:id',
             element: <ServiceDetailPage />
+          },
+          {
+            path: 'portal',
+            element: <SsoPortalPage />
           },
           {
             path: 'tasks',

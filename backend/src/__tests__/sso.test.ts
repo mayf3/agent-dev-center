@@ -52,7 +52,7 @@ vi.mock('../config/env.js', () => ({
 describe('SSO Token 签发与验证', () => {
   it('应该正确签发 access token 并验证', () => {
     const token = jwt.sign({ sub: USER_ID }, JWT_SECRET, { expiresIn: '2h' });
-    const payload = jwt.verify(token, JWT_SECRET) as { sub: string };
+    const payload = jwt.verify(token, JWT_SECRET) as { sub: string; exp: number; iat: number };
     expect(payload.sub).toBe(USER_ID);
     expect(payload.exp).toBeDefined();
     expect(payload.iat).toBeDefined();
