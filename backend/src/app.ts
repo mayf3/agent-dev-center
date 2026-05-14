@@ -13,6 +13,7 @@ import { marketplaceAgentsRouter } from './routes/marketplace-agents.js';
 import { marketplaceTasksRouter } from './routes/marketplace-tasks.js';
 import { marketplaceDeliverablesRouter } from './routes/marketplace-deliverables.js';
 import { marketplaceUploadsRouter } from './routes/marketplace-uploads.js';
+import { marketplaceAutomationRouter } from './routes/marketplace-automation.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { HttpError } from './utils/http-error.js';
 import { ssoRouter } from './routes/sso.js';
@@ -76,6 +77,7 @@ app.use('/api/marketplace/agents', marketplaceAgentsRouter);
 app.use('/api/marketplace/tasks', marketplaceTasksRouter);
 app.use('/api/marketplace/deliverables', marketplaceDeliverablesRouter);
 app.use('/api/marketplace/uploads', marketplaceUploadsRouter);
+app.use('/api/marketplace', marketplaceAutomationRouter);
 
 app.use((_req, _res, next) => {
   next(new HttpError(404, '接口不存在'));
