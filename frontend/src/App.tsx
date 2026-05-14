@@ -14,7 +14,10 @@ import { TaskListPage } from './pages/TaskListPage';
 import { TaskKanbanPage } from './pages/TaskKanbanPage';
 import { ServicesPage } from './pages/ServicesPage';
 import { ServiceDetailPage } from './pages/ServiceDetailPage';
-import { MarketplacePage } from './pages/MarketplacePage';
+import { lazy, Suspense } from 'react';
+import { Spin } from 'antd';
+
+const MarketplacePage = lazy(() => import('./pages/marketplace/MarketplacePage').then(m => ({ default: m.MarketplacePage })));
 
 const isPublicMode = import.meta.env.VITE_IS_PUBLIC_MODE === 'true';
 
@@ -43,7 +46,7 @@ const router = createBrowserRouter([
             { path: 'services/:id', element: <ServiceDetailPage /> },
             { path: 'tasks', element: <TaskListPage /> },
             { path: 'tasks/kanban', element: <TaskKanbanPage /> },
-            { path: 'marketplace', element: <MarketplacePage /> }
+            { path: 'marketplace', element: <Suspense fallback={<Spin className="page-spin" />}><MarketplacePage /></Suspense> }
           ]
         }
       ]
@@ -94,7 +97,7 @@ const router = createBrowserRouter([
           },
           {
             path: 'marketplace',
-            element: <MarketplacePage />
+            element: <Suspense fallback={<Spin className="page-spin" />}><MarketplacePage /></Suspense>
           }
         ]
       }
