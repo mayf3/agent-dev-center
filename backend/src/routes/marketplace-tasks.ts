@@ -11,6 +11,7 @@ import {
 } from '../schemas/marketplace.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
+import { notifyAgentNewTask } from '../utils/marketplace-notify.js';
 
 export const marketplaceTasksRouter = Router();
 
@@ -179,6 +180,9 @@ marketplaceTasksRouter.post(
     });
 
     res.status(201).json({ data: task });
+
+    // 非阻塞通知 Agent
+    void notifyAgentNewTask(task.id, agent.id);
   })
 );
 

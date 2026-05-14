@@ -222,12 +222,19 @@ model MarketplaceAgent {
   capabilities Json                   @default("[]")
   apiEndpoint  String?
   status       MarketplaceAgentStatus @default(active)
+  // Automation fields
+  notificationType  String            @default("polling")
+  feishuWebhookUrl  String?
+  tags              String[]          @default([])
+  lastHeartbeatAt   DateTime?
+  agentToken        String?           @unique
   ownerId      String?                @db.Uuid
   owner        User?                  @relation("MarketplaceAgentOwner", fields: [ownerId], references: [id])
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
 
   tasks MarketplaceTask[]
+  accessTokens AgentAccessToken[]
 
   @@index([status])
   @@map("marketplace_agents")
@@ -249,6 +256,10 @@ model MarketplaceTask {
   startedAt     DateTime?
   completedAt   DateTime?
   errorMsg      String?               @db.Text
+  // Automation fields
+  notifiedAt    DateTime?
+  executionTimeMs Int?
+  tokensUsed    Int?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
 
@@ -272,6 +283,23 @@ model MarketplaceDeliverable {
 
   @@index([taskId])
   @@map("marketplace_deliverables")
+}
+
+// ─── Agent Access Token ─────────────────────────────────────────
+
+model AgentAccessToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  agentId   String   @db.Uuid
+  agent     MarketplaceAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  name      String   @default("default")
+  lastUsedAt DateTime?
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  @@index([agentId])
+  @@index([token])
+  @@map("agent_access_tokens")
 }
 
 // ─── Service Registry ───────────────────────────────────────────
