@@ -17,6 +17,7 @@ import { marketplaceAutomationRouter } from './routes/marketplace-automation.js'
 import { errorHandler } from './middleware/error-handler.js';
 import { HttpError } from './utils/http-error.js';
 import { ssoRouter } from './routes/sso.js';
+import { agentSsoRouter } from './routes/agent-sso.js';
 
 export const app = express();
 
@@ -68,6 +69,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/auth/sso', authLimiter, ssoRouter);
+app.use('/api/auth/agent', agentSsoRouter);
 app.use('/api/requirements', requirementsRouter);
 app.use('/api/requirements/:id/reports', reportsRouter);
 app.use('/api/tasks', tasksRouter);

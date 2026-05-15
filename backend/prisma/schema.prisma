@@ -11,6 +11,7 @@ enum UserRole {
   admin
   requester
   developer
+  agent
 }
 
 enum RequirementPriority {
@@ -58,6 +59,9 @@ model User {
   email     String   @unique
   password  String
   role      UserRole @default(requester)
+  // SSO Agent fields
+  agentId     String?  @unique
+  permissions Json     @default("[]")
   createdAt DateTime @default(now())
 
   requestedRequirements Requirement[]         @relation("RequesterRequirements")
