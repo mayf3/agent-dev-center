@@ -14,7 +14,7 @@ function toSafeUser(user: {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'requester' | 'developer';
+  role: 'admin' | 'requester' | 'developer' | 'agent';
 }) {
   return user;
 }
