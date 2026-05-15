@@ -35,23 +35,43 @@ export const authRequired = asyncHandler(async (req: Request, _res: Response, ne
     throw new HttpError(401, '请先登录');
   }
 
+  // 尝试用户 JWT（JWT_SECRET）
   let payload: TokenPayload;
+  let isAgentToken = false;
   try {
     payload = jwt.verify(token, env.JWT_SECRET) as TokenPayload;
   } catch {
-    throw new HttpError(401, '登录状态已失效');
+    // 尝试 Agent SSO JWT（JWT_SECRET_SSO）
+    try {
+      payload = jwt.verify(token, env.JWT_SECRET_SSO) as TokenPayload & { type?: string };
+      isAgentToken = true;
+    } catch {
+      throw new HttpError(401, '登录状态已失效');
+    }
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: payload.sub },
-    select: { id: true, name: true, email: true, role: true }
-  });
-
-  if (!user) {
-    throw new HttpError(401, '用户不存在或已被禁用');
+  if (isAgentToken) {
+    // Agent JWT: sub 是 agentId，查 User 表 by agentId
+    const user = await prisma.user.findFirst({
+      where: { agentId: payload.sub },
+      select: { id: true, name: true, email: true, role: true }
+    });
+    if (!user) {
+      throw new HttpError(401, 'Agent 不存在或已被禁用');
+    }
+    req.user = user;
+  } else {
+    // 用户 JWT: sub 是 UUID
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, name: true, email: true, role: true }
+    });
+    if (!user) {
+      throw new HttpError(401, '用户不存在或已被禁用');
+    }
+    req.user = user;
   }
 
-  req.user = user;
   next();
 });
 
