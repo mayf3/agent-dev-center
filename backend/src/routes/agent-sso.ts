@@ -16,6 +16,7 @@ import {
   ROLE_PERMISSIONS,
 } from '../schemas/agent-sso.js';
 import type { Permission } from '../schemas/agent-sso.js';
+import { syncAgentToLlmTodo } from '../utils/agent-sync.js';
 
 export const agentSsoRouter = Router();
 
@@ -201,6 +202,14 @@ agentSsoRouter.post(
       agentToken: rawToken,
       jwt: jwtToken,
     });
+
+    // 非阻塞同步到 LLM Todo
+    void syncAgentToLlmTodo({
+      agentId: body.agentId,
+      name: body.name,
+      role: body.role,
+      permissions,
+    });
   })
 );
 
@@ -270,6 +279,14 @@ agentSsoRouter.put(
 
     res.json({
       data: { ...updated, permissions: updated.permissions as string[] },
+    });
+
+    // 同步更新到 LLM Todo
+    void syncAgentToLlmTodo({
+      agentId: params.agentId,
+      name: (updated.name as string),
+      role: body.role ?? 'dev-agent',
+      permissions: (updated.permissions as string[]),
     });
   })
 );
