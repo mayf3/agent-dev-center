@@ -15,6 +15,7 @@ import { TaskKanbanPage } from './pages/TaskKanbanPage';
 import { ServicesPage } from './pages/ServicesPage';
 import { ServiceDetailPage } from './pages/ServiceDetailPage';
 import { SsoPortalPage } from './pages/SsoPortalPage';
+import AgentSsoPage from './pages/AgentSsoPage';
 import { lazy, Suspense } from 'react';
 import { Spin } from 'antd';
 
@@ -104,6 +105,10 @@ const router = createBrowserRouter([
           {
             path: 'marketplace',
             element: <Suspense fallback={<Spin className="page-spin" />}><MarketplacePage /></Suspense>
+          },
+          {
+            path: 'agent-sso',
+            element: <AgentSsoPage />
           }
         ]
       }
