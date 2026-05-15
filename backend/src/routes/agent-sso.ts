@@ -30,7 +30,7 @@ interface AgentTokenPayload {
 }
 
 function signAgentToken(payload: AgentTokenPayload): string {
-  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign(payload, env.JWT_SECRET_SSO, { expiresIn: '7d' });
 }
 
 // ─── 1. Agent 统一登录 ─────────────────────────────────────
@@ -123,7 +123,13 @@ agentSsoRouter.post(
 
 agentSsoRouter.post(
   '/register',
+  authRequired,
   asyncHandler(async (req, res) => {
+    // 仅 admin 可注册 Agent
+    if (req.user!.role !== 'admin') {
+      throw new HttpError(403, '仅管理员可注册 Agent');
+    }
+
     const { body } = agentRegisterSchema.parse({ body: req.body });
 
     // 检查是否已注册
@@ -300,7 +306,7 @@ agentSsoRouter.get(
     if (!token) throw new HttpError(401, '请提供 Token');
 
     try {
-      const payload = jwt.verify(token, env.JWT_SECRET) as AgentTokenPayload;
+      const payload = jwt.verify(token, env.JWT_SECRET_SSO) as AgentTokenPayload;
       res.json({
         valid: true,
         agent: {
