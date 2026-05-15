@@ -8,6 +8,7 @@ const prisma = new PrismaClient();
 
 // ─── 测试常量 ────────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-e2e-at-least-16-chars';
+const JWT_SECRET_SSO = process.env.JWT_SECRET_SSO || 'test-sso-secret-for-e2e-at-least-16-chars';
 const TEST_AGENT_ID = 'test-e2e-agent';
 const TEST_AGENT_NAME = 'E2E测试Agent';
 
@@ -306,7 +307,7 @@ describe('Unified Agent SSO — E2E Tests', () => {
 
   describe('JWT Token Structure', () => {
     it('should contain correct payload fields', () => {
-      const decoded = jwt.verify(agentJwt, JWT_SECRET) as any;
+      const decoded = jwt.verify(agentJwt, JWT_SECRET_SSO) as any;
       expect(decoded.sub).toBe(TEST_AGENT_ID);
       expect(decoded.name).toBe(TEST_AGENT_NAME);
       expect(decoded.role).toBe('agent');
@@ -316,7 +317,7 @@ describe('Unified Agent SSO — E2E Tests', () => {
     });
 
     it('should have 7-day expiry', () => {
-      const decoded = jwt.verify(agentJwt, JWT_SECRET) as any;
+      const decoded = jwt.verify(agentJwt, JWT_SECRET_SSO) as any;
       const expiresInDays = (decoded.exp - decoded.iat) / 86400;
       expect(expiresInDays).toBe(7);
     });

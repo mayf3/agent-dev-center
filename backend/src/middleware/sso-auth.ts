@@ -7,18 +7,14 @@ import { HttpError } from '../utils/http-error.js';
 /**
  * SSO 认证中间件
  *
- * 兼容原有 authRequired，额外支持：
- * 1. Query param: ?token=<jwt>
- * 2. Cookie: sso_token=<jwt>
- *
- * 用于 SSO 跳转场景（URL 携带 token 访问）
+ * 支持 Authorization header 和 cookie 传 token。
+ * Query param (?token=xxx) 仅在开发环境启用（生产环境禁止，避免 token 暴露在日志/浏览器历史中）。
  */
 export async function ssoAuth(req: Request, _res: Response, next: NextFunction) {
-  // 按优先级获取 token
   const token =
     req.header('authorization')?.replace(/^Bearer\s+/i, '') ??
-    (req.query.token as string | undefined) ??
-    req.cookies?.sso_token;
+    req.cookies?.sso_token ??
+    (env.NODE_ENV === 'development' ? (req.query.token as string | undefined) : undefined);
 
   if (!token) {
     throw new HttpError(401, '请先登录');
@@ -52,12 +48,13 @@ export async function ssoAuth(req: Request, _res: Response, next: NextFunction) 
  *
  * 尝试从请求中提取 SSO token，如果有效则注入 req.user。
  * 如果无效或缺失，不报错，继续执行（用于公开页面也能识别已登录用户）。
+ * Query param 仅开发环境启用。
  */
 export async function ssoOptional(req: Request, _res: Response, next: NextFunction) {
   const token =
     req.header('authorization')?.replace(/^Bearer\s+/i, '') ??
-    (req.query.token as string | undefined) ??
-    req.cookies?.sso_token;
+    req.cookies?.sso_token ??
+    (env.NODE_ENV === 'development' ? (req.query.token as string | undefined) : undefined);
 
   if (!token) {
     return next();
