@@ -52,12 +52,16 @@
 
 ## 5. 安全检查 ✅
 
+- [x] Agent SSO JWT 使用独立密钥 `JWT_SECRET_SSO`（与用户 JWT_SECRET 隔离）
+- [x] Agent 注册需要 admin 权限（`authRequired` + role check）
+- [x] Token 仅通过 Authorization header / cookie 传递（query param 仅开发环境）
 - [x] Agent token 以 `agent_` 前缀区分，不会与用户 JWT 混淆
-- [x] JWT 使用与用户认证相同的 `JWT_SECRET`
+- [x] JWT 使用独立 `JWT_SECRET_SSO` 签发
 - [x] Agent 登录需提供 agentId + token（双重验证）
 - [x] 审批/管理操作需 admin 权限
 - [x] Agent 注册时生成随机密码（Agent 不用密码登录）
 - [x] 同步调用 5s 超时 + 静默失败
+- [x] 生产环境强制检查 JWT_SECRET_SSO 强度
 
 ## 6. 权限矩阵 ✅
 
