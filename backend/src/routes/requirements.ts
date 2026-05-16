@@ -20,6 +20,7 @@ import {
 } from '../utils/status.js';
 import { notifyEvent } from '../utils/notifications.js';
 import { listRevisionsSchema } from '../schemas/revision.js';
+import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../utils/similarity.js';
 
 export const requirementsRouter = Router();
 
@@ -176,6 +177,22 @@ requirementsRouter.post(
     const { body } = createRequirementSchema.parse({ body: req.body });
     const actor = req.user!;
 
+    // 重复检测：查找相似标题的需求
+    const allRequirements = await prisma.requirement.findMany({
+      select: { id: true, title: true, status: true },
+    });
+    const normalizedNew = normalizeTitle(body.title);
+    const similarItems = allRequirements
+      .map(r => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        score: similarity(normalizedNew, normalizeTitle(r.title)),
+      }))
+      .filter(r => r.score >= DEFAULT_SIMILARITY_THRESHOLD && r.title !== body.title)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+
     const requirement = await prisma.requirement.create({
       data: {
         title: body.title,
@@ -198,7 +215,48 @@ requirementsRouter.post(
       assignee: requirement.assignee
     });
 
-    res.status(201).json(serializeRequirement(requirement));
+    const response: Record<string, unknown> = serializeRequirement(requirement);
+    if (similarItems.length > 0) {
+      response.warning = {
+        type: 'possible_duplicate',
+        message: `检测到 ${similarItems.length} 个相似需求（相似度 ≥ 80%）`,
+        similar: similarItems,
+      };
+    }
+
+    res.status(201).json(response);
+  })
+);
+
+/**
+ * GET /api/requirements/similar?title=xxx&threshold=0.8
+ * 需求重复检测
+ */
+requirementsRouter.get(
+  '/similar',
+  asyncHandler(async (req, res) => {
+    const title = z.string().min(1).parse(req.query.title);
+    const threshold = z.coerce.number().min(0).max(1).default(DEFAULT_SIMILARITY_THRESHOLD).parse(req.query.threshold);
+    const normalizedInput = normalizeTitle(title);
+
+    const allRequirements = await prisma.requirement.findMany({
+      select: { id: true, title: true, status: true, priority: true, createdAt: true },
+    });
+
+    const similar = allRequirements
+      .map(r => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        priority: r.priority,
+        createdAt: r.createdAt,
+        score: similarity(normalizedInput, normalizeTitle(r.title)),
+      }))
+      .filter(r => r.score >= threshold)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    res.json({ success: true, data: similar, query: { title, threshold } });
   })
 );
 
