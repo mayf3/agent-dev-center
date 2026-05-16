@@ -21,6 +21,7 @@ import {
 import { notifyEvent } from '../utils/notifications.js';
 import { listRevisionsSchema } from '../schemas/revision.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../utils/similarity.js';
+import { runOverdueCheck, findOverdueRequirements } from '../utils/overdue-check.js';
 
 export const requirementsRouter = Router();
 
@@ -257,6 +258,32 @@ requirementsRouter.get(
       .slice(0, 10);
 
     res.json({ success: true, data: similar, query: { title, threshold } });
+  })
+);
+
+/**
+ * GET /api/requirements/overdue
+ * 查看超时需求列表（admin only）
+ */
+requirementsRouter.get(
+  '/overdue',
+  requireRoles('admin'),
+  asyncHandler(async (_req, res) => {
+    const result = await findOverdueRequirements();
+    res.json({ success: true, data: result });
+  })
+);
+
+/**
+ * POST /api/requirements/overdue/notify
+ * 手动触发催办通知（admin only）
+ */
+requirementsRouter.post(
+  '/overdue/notify',
+  requireRoles('admin'),
+  asyncHandler(async (_req, res) => {
+    const result = await runOverdueCheck();
+    res.json({ success: true, data: result });
   })
 );
 
