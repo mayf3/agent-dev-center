@@ -18,6 +18,55 @@ export const reportsRouter = Router({ mergeParams: true });
 reportsRouter.use(authRequired);
 
 /**
+ * 报告类型 → 允许提交的角色/身份映射
+ *
+ * 规则：
+ * - DEV_SELF_CHECK → 需求 assignee 可提
+ * - TEST_REPORT → test-engineer 角色
+ * - SECURITY_REVIEW → security-agent 角色
+ * - CTO_REVIEW → admin 角色（CTO）
+ * - DEPLOY_CONFIRM → itops-agent 角色
+ */
+const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role'; roles?: string[]; allowAdmin?: boolean }> = {
+  DEV_SELF_CHECK: { mode: 'assignee', allowAdmin: true },
+  TEST_REPORT: { mode: 'role', roles: ['test-engineer', 'admin'], allowAdmin: true },
+  SECURITY_REVIEW: { mode: 'role', roles: ['security-agent', 'admin'], allowAdmin: true },
+  CTO_REVIEW: { mode: 'role', roles: ['admin'] },
+  DEPLOY_CONFIRM: { mode: 'role', roles: ['itops-agent', 'admin'], allowAdmin: true },
+};
+
+/**
+ * 校验提交者是否有权提交该类型的报告
+ */
+async function validateReportRole(
+  userId: string,
+  userRole: string,
+  reportType: string,
+  requirementId: string,
+): Promise<void> {
+  const rule = REPORT_ROLE_MAP[reportType];
+  if (!rule) return; // 未知类型暂不限制
+
+  // admin 总是有权
+  if (rule.allowAdmin !== false && userRole === 'admin') return;
+  if (rule.roles?.includes(userRole)) return;
+
+  // assignee 模式：检查是否是需求的 assignee
+  if (rule.mode === 'assignee') {
+    const requirement = await prisma.requirement.findUnique({
+      where: { id: requirementId },
+      select: { assigneeId: true },
+    });
+    if (requirement?.assigneeId === userId) return;
+  }
+
+  const allowed = rule.mode === 'assignee'
+    ? `需求 assignee${rule.allowAdmin ? ' 或 admin' : ''}`
+    : (rule.roles || []).join(' / ');
+  throw new HttpError(403, `${reportType} 报告仅 ${allowed} 可提交`);
+}
+
+/**
  * POST /api/requirements/:id/reports
  * 提交验收报告（需认证）
  */
@@ -34,6 +83,9 @@ reportsRouter.post(
       where: { id: params.id },
     });
     if (!requirement) throw new HttpError(404, '需求不存在');
+
+    // 校验提交者角色
+    await validateReportRole(req.user!.id, req.user!.role, body.reportType, params.id);
 
     const report = await prisma.requirementReport.create({
       data: {
