@@ -5,6 +5,7 @@ import {
   EditOutlined,
   HistoryOutlined,
   LeftOutlined,
+  PaperClipOutlined,
   PlusOutlined,
   UserAddOutlined
 } from '@ant-design/icons';
@@ -37,6 +38,7 @@ import { api } from '../api/client';
 import type { Requirement, RequirementPriority, Task, TaskStatus } from '../api/types';
 import { PriorityTag } from '../components/PriorityTag';
 import { ReportsTimeline } from '../components/ReportsTimeline';
+import { RequirementAttachments } from '../components/RequirementAttachments';
 import { StatusTag, TaskStatusTag } from '../components/StatusTag';
 import {
   agentOptions,
@@ -548,6 +550,13 @@ export function RequirementDetailPage() {
                   </Card>
                 );
               })()
+            },
+            {
+              key: 'attachments',
+              label: <><PaperClipOutlined /> 附件</>,
+              children: (
+                <RequirementAttachments requirementId={requirement.id} isAdmin={isAdmin} />
+              )
             },
           ]}
         />

@@ -35,6 +35,15 @@ export interface Task {
   updatedAt: string;
 }
 
+export interface Attachment {
+  filename: string;
+  originalName: string;
+  url: string;
+  size: number;
+  mimeType: string;
+  uploadedAt?: string;
+}
+
 export interface Requirement {
   id: string;
   title: string;
