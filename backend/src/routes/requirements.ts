@@ -1,8 +1,17 @@
+import { createReadStream, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
+import path from 'node:path';
 import { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import { authRequired, requireRoles } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
+import {
+  getRequirementUploadMimeType,
+  getRequirementUploadPath,
+  getRequirementUploadUrl,
+  isAllowedRequirementUploadFilename,
+  requirementUpload
+} from '../lib/multer.js';
 import {
   createRequirementSchema,
   listRequirementsSchema,
@@ -170,6 +179,60 @@ async function checkAcceptanceReports(
   const missing = required.filter((t) => !approvedTypes.has(t));
 
   return { ok: missing.length === 0, missing };
+}
+
+async function ensureReadableRequirement(requirementId: string, user: Express.AuthUser) {
+  const requirement = await prisma.requirement.findUnique({
+    where: { id: requirementId },
+    select: {
+      id: true,
+      requesterId: true,
+      requester: true,
+      assigneeId: true,
+      assignee: true
+    }
+  });
+
+  if (!requirement) {
+    throw new HttpError(404, '需求不存在');
+  }
+
+  if (!canReadRequirement(user, requirement)) {
+    throw new HttpError(403, '无权查看该需求');
+  }
+
+  return requirement;
+}
+
+function getRequirementAttachmentPath(requirementId: string, filename: string): string {
+  return getRequirementUploadPath(path.join(requirementId, filename));
+}
+
+function serializeRequirementAttachment(requirementId: string, filename: string) {
+  const filePath = getRequirementAttachmentPath(requirementId, filename);
+  const stat = statSync(filePath);
+
+  if (!stat.isFile()) {
+    return null;
+  }
+
+  return {
+    filename,
+    originalName: filename,
+    url: getRequirementUploadUrl(path.join(requirementId, filename)),
+    size: stat.size,
+    mimeType: getRequirementUploadMimeType(filename) || 'application/octet-stream'
+  };
+}
+
+function removeTemporaryRequirementUploads(files: Express.Multer.File[]) {
+  for (const file of files) {
+    try {
+      unlinkSync(file.path);
+    } catch {
+      // Ignore cleanup errors; the main request error is more relevant.
+    }
+  }
 }
 
 requirementsRouter.post(
@@ -701,5 +764,165 @@ requirementsRouter.get(
       orderBy: { createdAt: 'asc' }
     });
     res.json({ data: users });
+  })
+);
+
+// POST /api/requirements/:id/attachments - Upload requirement attachments
+requirementsRouter.post(
+  '/:id/attachments',
+  authRequired,
+  requirementUpload.array('files', 10),
+  asyncHandler(async (req, res) => {
+    const { params } = requirementIdSchema.parse({ params: req.params });
+    const files = Array.isArray(req.files) ? req.files : [];
+    const movedFilePaths: string[] = [];
+
+    try {
+      await ensureReadableRequirement(params.id, req.user!);
+
+      if (files.length === 0) {
+        throw new HttpError(400, '请选择要上传的文件');
+      }
+
+      const requirementUploadPath = getRequirementUploadPath(params.id);
+      mkdirSync(requirementUploadPath, { recursive: true });
+
+      const attachments = files.map((file) => {
+        const filename = file.filename as string;
+        if (!isAllowedRequirementUploadFilename(filename)) {
+          throw new HttpError(400, '无效的文件名');
+        }
+
+        const targetPath = getRequirementAttachmentPath(params.id, filename);
+        renameSync(file.path, targetPath);
+        movedFilePaths.push(targetPath);
+
+        return {
+          filename,
+          originalName: file.originalname,
+          url: getRequirementUploadUrl(path.join(params.id, filename)),
+          size: Number(file.size),
+          mimeType: getRequirementUploadMimeType(filename) || file.mimetype
+        };
+      });
+
+      res.status(201).json({ data: attachments });
+    } catch (err) {
+      removeTemporaryRequirementUploads(files);
+      for (const movedFilePath of movedFilePaths) {
+        try {
+          unlinkSync(movedFilePath);
+        } catch {
+          // Ignore cleanup errors; the main request error is more relevant.
+        }
+      }
+      throw err;
+    }
+  })
+);
+
+// GET /api/requirements/:id/attachments - List requirement attachments
+requirementsRouter.get(
+  '/:id/attachments',
+  asyncHandler(async (req, res) => {
+    const { params } = requirementIdSchema.parse({ params: req.params });
+    await ensureReadableRequirement(params.id, req.user!);
+
+    const requirementUploadPath = getRequirementUploadPath(params.id);
+    let filenames: string[];
+
+    try {
+      filenames = readdirSync(requirementUploadPath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        res.json({ data: [] });
+        return;
+      }
+      throw err;
+    }
+
+    const attachments: Array<NonNullable<ReturnType<typeof serializeRequirementAttachment>>> = [];
+    for (const filename of filenames) {
+      if (!isAllowedRequirementUploadFilename(filename)) {
+        continue;
+      }
+
+      try {
+        const attachment = serializeRequirementAttachment(params.id, filename);
+        if (attachment) {
+          attachments.push(attachment);
+        }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    res.json({ data: attachments });
+  })
+);
+
+// GET /api/requirements/:id/attachments/:filename - Download a requirement attachment
+requirementsRouter.get(
+  '/:id/attachments/:filename',
+  asyncHandler(async (req, res) => {
+    const { params } = requirementIdSchema.parse({ params: req.params });
+    await ensureReadableRequirement(params.id, req.user!);
+
+    const filenameStr = req.params.filename as string;
+    if (!isAllowedRequirementUploadFilename(filenameStr)) {
+      throw new HttpError(400, '无效的文件名');
+    }
+
+    const filePath = getRequirementAttachmentPath(params.id, filenameStr);
+    const mimeType = getRequirementUploadMimeType(filenameStr);
+
+    try {
+      const stat = statSync(filePath);
+      if (!stat.isFile()) {
+        throw new HttpError(404, '文件不存在');
+      }
+
+      res.setHeader('Content-Type', mimeType || 'application/octet-stream');
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filenameStr)}"`);
+
+      const fileStream = createReadStream(filePath);
+      fileStream.pipe(res);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new HttpError(404, '文件不存在');
+      }
+      throw err;
+    }
+  })
+);
+
+// DELETE /api/requirements/:id/attachments/:filename - Delete a requirement attachment
+requirementsRouter.delete(
+  '/:id/attachments/:filename',
+  authRequired,
+  asyncHandler(async (req, res) => {
+    const { params } = requirementIdSchema.parse({ params: req.params });
+    await ensureReadableRequirement(params.id, req.user!);
+
+    const filenameStr = req.params.filename as string;
+    if (!isAllowedRequirementUploadFilename(filenameStr)) {
+      throw new HttpError(400, '无效的文件名');
+    }
+
+    const filePath = getRequirementAttachmentPath(params.id, filenameStr);
+
+    try {
+      unlinkSync(filePath);
+      res.json({ success: true, filename: filenameStr });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new HttpError(404, '文件不存在');
+      }
+      throw err;
+    }
   })
 );
