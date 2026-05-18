@@ -265,7 +265,8 @@ requirementsRouter.post(
         requester: body.requester ?? actor.name,
         requesterId: actor.id,
         department: body.department,
-        assignee: body.assignee,
+        // 权限控制：仅 admin/developer 可在提交时指定负责人
+        assignee: (actor.role === 'admin' || actor.role === 'developer') ? body.assignee : null,
         dueDate: body.dueDate,
         attachment: body.attachment
       },
