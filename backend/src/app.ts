@@ -15,6 +15,7 @@ import { marketplaceDeliverablesRouter } from './routes/marketplace-deliverables
 import { marketplaceUploadsRouter } from './routes/marketplace-uploads.js';
 import { marketplaceAutomationRouter } from './routes/marketplace-automation.js';
 import { errorHandler } from './middleware/error-handler.js';
+import { gatewayGuard } from './middleware/ip-whitelist.js';
 import { HttpError } from './utils/http-error.js';
 import { ssoRouter } from './routes/sso.js';
 import { agentSsoRouter } from './routes/agent-sso.js';
@@ -40,6 +41,9 @@ app.use(
     credentials: true
   })
 );
+if (env.NODE_ENV === 'production') {
+  app.use(gatewayGuard);
+}
 app.use(express.json({ limit: '10mb' }));
 
 // JSON 解析错误处理（BUG-001 修复）

@@ -15,7 +15,8 @@ const envSchema = z.object({
   FRONTEND_ORIGIN: z.string().default('http://localhost:5173'),
   REGISTER_INVITE_CODE: z.string().optional(),
   FEISHU_WEBHOOK_URL: z.string().optional(),
-  AGENT_CALLBACK_URL: z.string().optional()
+  AGENT_CALLBACK_URL: z.string().optional(),
+  GATEWAY_ALLOWED_IPS: z.string().optional()
 });
 
 const parsed = envSchema.safeParse(process.env);

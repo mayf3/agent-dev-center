@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { authRequired } from '../middleware/auth.js';
 import { agentTokenRequired } from '../middleware/marketplace-auth.js';
+import { internalOnly } from '../middleware/ip-whitelist.js';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
@@ -123,6 +124,7 @@ agentSsoRouter.post(
 
 agentSsoRouter.post(
   '/register',
+  internalOnly,
   authRequired,
   asyncHandler(async (req, res) => {
     // 仅 admin 可注册 Agent
