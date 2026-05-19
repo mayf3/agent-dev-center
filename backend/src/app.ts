@@ -14,6 +14,7 @@ import { marketplaceTasksRouter } from './routes/marketplace-tasks.js';
 import { marketplaceDeliverablesRouter } from './routes/marketplace-deliverables.js';
 import { marketplaceUploadsRouter } from './routes/marketplace-uploads.js';
 import { marketplaceAutomationRouter } from './routes/marketplace-automation.js';
+import { goalsRouter } from './routes/goals.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { gatewayGuard } from './middleware/ip-whitelist.js';
 import { HttpError } from './utils/http-error.js';
@@ -42,7 +43,7 @@ app.use(
   })
 );
 if (env.NODE_ENV === 'production') {
-  app.use(gatewayGuard);
+  app.use(gatewayGuard());
 }
 app.use(express.json({ limit: '10mb' }));
 
@@ -84,6 +85,7 @@ app.use('/api/marketplace/tasks', marketplaceTasksRouter);
 app.use('/api/marketplace/deliverables', marketplaceDeliverablesRouter);
 app.use('/api/marketplace/uploads', marketplaceUploadsRouter);
 app.use('/api/marketplace', marketplaceAutomationRouter);
+app.use('/api/goals', goalsRouter);
 
 app.use((_req, _res, next) => {
   next(new HttpError(404, '接口不存在'));

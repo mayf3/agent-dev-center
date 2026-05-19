@@ -1,11 +1,11 @@
 import axios from 'axios';
 
-export const api = axios.create({
+export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api',
   timeout: 15000
 });
 
-api.interceptors.request.use((config) => {
+apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('agent-dev-center-token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -14,7 +14,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-api.interceptors.response.use(
+apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
@@ -28,3 +28,6 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Legacy alias
+export const api = apiClient;

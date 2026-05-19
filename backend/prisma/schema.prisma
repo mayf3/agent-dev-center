@@ -44,6 +44,7 @@ enum ReportType {
   TEST_REPORT
   CTO_REVIEW
   DEPLOY_CONFIRM
+  POSTMORTEM
 }
 
 enum ReportStatus {
@@ -239,6 +240,7 @@ model MarketplaceAgent {
 
   tasks MarketplaceTask[]
   accessTokens AgentAccessToken[]
+  goalCard     AgentGoalCard?
 
   @@index([status])
   @@map("marketplace_agents")
@@ -355,4 +357,84 @@ model ServiceRequirement {
   @@index([serviceId])
   @@index([requirementId])
   @@map("service_requirements")
+}
+
+// ─── Agent Goal Card ─────────────────────────────────────────
+
+enum GoalStatus {
+  active
+  paused
+  archived
+}
+
+enum PipelineName {
+  content
+  parenting
+  investment
+  health
+  planning
+  lifestyle
+  devops
+  education
+}
+
+enum MonthlyGoalStatus {
+  not_started
+  in_progress
+  done
+}
+
+model AgentGoalCard {
+  id              String       @id @default(uuid()) @db.Uuid
+  agentId         String       @unique @db.Uuid
+  agent           MarketplaceAgent @relation(fields: [agentId], references: [id])
+
+  // Pipeline
+  pipeline        PipelineName
+  upstreamAgentIds String[]    @default([])
+  downstreamAgentIds String[]  @default([])
+
+  // Goals
+  longTermDirection String     @db.Text
+  monthlyGoals    Json         @default("[]")       // [{month:"2026-05", goals:[{text:string, status:MonthlyGoalStatus}]}]
+  selfCheckCriteria String     @db.Text
+
+  // Push tracking
+  pushedMonths    String[]     @default([])          // 已推送的月份，用于去重
+
+  // Status
+  status          GoalStatus   @default(active)
+
+  // Review
+  lastReviewedAt  DateTime?
+  lastReviewedBy  String?
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  revisions       GoalRevision[]
+
+  @@index([pipeline])
+  @@index([status])
+  @@map("agent_goal_cards")
+}
+
+model GoalRevision {
+  id              String       @id @default(uuid()) @db.Uuid
+  goalCardId      String       @db.Uuid
+  goalCard        AgentGoalCard @relation(fields: [goalCardId], references: [id], onDelete: Cascade)
+
+  longTermDirection String     @db.Text
+  monthlyGoals    Json
+  selfCheckCriteria String     @db.Text
+  pipeline        PipelineName
+
+  changeNote      String       @db.Text
+  changedBy       String
+  changedById     String?      @db.Uuid
+  createdAt       DateTime     @default(now())
+
+  @@index([goalCardId])
+  @@index([createdAt])
+  @@map("goal_revisions")
 }

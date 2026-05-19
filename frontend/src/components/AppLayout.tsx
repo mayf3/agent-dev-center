@@ -10,7 +10,8 @@ import {
   MenuOutlined,
   MobileOutlined,
   DownloadOutlined,
-  CloudServerOutlined
+  CloudServerOutlined,
+  AimOutlined
 } from '@ant-design/icons';
 import { Button, Drawer, Layout, Menu, Space, Tag, Typography, Popover } from 'antd';
 import type { MenuProps } from 'antd';
@@ -89,6 +90,7 @@ export function AppLayout() {
     { key: '/requirements', icon: <UnorderedListOutlined />, label: '需求管理' },
     ...(!isPublicMode ? [{ key: '/requirements/new', icon: <PlusCircleOutlined />, label: '提交需求' }] : []),
     { key: '/kanban', icon: <ProjectOutlined />, label: '开发看板' },
+    { key: '/goals', icon: <AimOutlined />, label: '目标卡' },
     { key: '/marketplace', icon: <AppstoreOutlined />, label: '能力集市' },
     { key: '/services', icon: <CloudServerOutlined />, label: '服务监控' },
   ];
