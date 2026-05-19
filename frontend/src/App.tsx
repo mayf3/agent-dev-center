@@ -14,6 +14,8 @@ import { TaskListPage } from './pages/TaskListPage';
 import { TaskKanbanPage } from './pages/TaskKanbanPage';
 import { GoalDashboardPage } from './pages/GoalDashboardPage';
 import { GoalDetailPage } from './pages/GoalDetailPage';
+import { PostmortemListPage } from './pages/PostmortemListPage';
+import { PostmortemDetailPage } from './pages/PostmortemDetailPage';
 import { ServicesPage } from './pages/ServicesPage';
 import { ServiceDetailPage } from './pages/ServiceDetailPage';
 import { SsoPortalPage } from './pages/SsoPortalPage';
@@ -53,6 +55,8 @@ const router = createBrowserRouter([
             { path: 'tasks/kanban', element: <TaskKanbanPage /> },
             { path: 'goals', element: <GoalDashboardPage /> },
             { path: 'goals/:agentId', element: <GoalDetailPage /> },
+            { path: 'postmortems', element: <PostmortemListPage /> },
+            { path: 'postmortems/:id', element: <PostmortemDetailPage /> },
             { path: 'marketplace', element: <Suspense fallback={<Spin className="page-spin" />}><MarketplacePage /></Suspense> }
           ]
         }
@@ -113,6 +117,14 @@ const router = createBrowserRouter([
           {
             path: 'goals/:agentId',
             element: <GoalDetailPage />
+          },
+          {
+            path: 'postmortems',
+            element: <PostmortemListPage />
+          },
+          {
+            path: 'postmortems/:id',
+            element: <PostmortemDetailPage />
           },
           {
             path: 'marketplace',
