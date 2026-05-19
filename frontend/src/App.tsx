@@ -12,6 +12,8 @@ import { RequirementListPage } from './pages/RequirementListPage';
 import { SubmitRequirementPage } from './pages/SubmitRequirementPage';
 import { TaskListPage } from './pages/TaskListPage';
 import { TaskKanbanPage } from './pages/TaskKanbanPage';
+import { GoalDashboardPage } from './pages/GoalDashboardPage';
+import { GoalDetailPage } from './pages/GoalDetailPage';
 import { ServicesPage } from './pages/ServicesPage';
 import { ServiceDetailPage } from './pages/ServiceDetailPage';
 import { SsoPortalPage } from './pages/SsoPortalPage';
@@ -49,6 +51,8 @@ const router = createBrowserRouter([
             { path: 'portal', element: <SsoPortalPage /> },
             { path: 'tasks', element: <TaskListPage /> },
             { path: 'tasks/kanban', element: <TaskKanbanPage /> },
+            { path: 'goals', element: <GoalDashboardPage /> },
+            { path: 'goals/:agentId', element: <GoalDetailPage /> },
             { path: 'marketplace', element: <Suspense fallback={<Spin className="page-spin" />}><MarketplacePage /></Suspense> }
           ]
         }
@@ -101,6 +105,14 @@ const router = createBrowserRouter([
           {
             path: 'tasks/kanban',
             element: <TaskKanbanPage />
+          },
+          {
+            path: 'goals',
+            element: <GoalDashboardPage />
+          },
+          {
+            path: 'goals/:agentId',
+            element: <GoalDetailPage />
           },
           {
             path: 'marketplace',
