@@ -19,6 +19,7 @@ import { postmortemsRouter } from './routes/postmortems.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { gatewayGuard } from './middleware/ip-whitelist.js';
 import { HttpError } from './utils/http-error.js';
+import { agentsRouter } from './routes/agents.js';
 import { ssoRouter } from './routes/sso.js';
 import { agentSsoRouter } from './routes/agent-sso.js';
 
@@ -78,6 +79,7 @@ app.use('/api/auth/agent', agentSsoRouter);
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/requirements', requirementsRouter);
 app.use('/api/requirements/:id/reports', reportsRouter);
+app.use('/api/reports', reportsRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/services', servicesRouter);
@@ -87,6 +89,7 @@ app.use('/api/marketplace/deliverables', marketplaceDeliverablesRouter);
 app.use('/api/marketplace/uploads', marketplaceUploadsRouter);
 app.use('/api/marketplace', marketplaceAutomationRouter);
 app.use('/api/goals', goalsRouter);
+app.use('/api/agents', agentsRouter);
 app.use('/api/postmortems', postmortemsRouter);
 
 app.use((_req, _res, next) => {

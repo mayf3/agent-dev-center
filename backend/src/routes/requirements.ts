@@ -107,7 +107,8 @@ function buildStatusData(status?: RequirementStatusApi) {
 
 /** 合法的前置状态（强制逐步流转） */
 const VALID_TRANSITIONS: Record<string, string[]> = {
-  'pending':     ['approved', 'rejected'],
+  'pending':     ['clarifying', 'approved', 'rejected'],
+  'clarifying':  ['approved', 'pending', 'rejected'],
   'approved':    ['in-progress', 'rejected'],
   'in-progress': ['testing', 'rejected'],
   'testing':     ['review', 'in-progress', 'rejected'],
@@ -161,22 +162,26 @@ function getRequiredReports(targetStatus: RequirementStatusApi): Array<import('@
 async function checkAcceptanceReports(
   requirementId: string,
   targetStatus: RequirementStatusApi,
+  allowPending: boolean = false,
 ): Promise<{ ok: boolean; missing: string[] }> {
   const required = getRequiredReports(targetStatus);
 
   if (required.length === 0) return { ok: true, missing: [] };
 
-  const approvedReports = await prisma.requirementReport.findMany({
+  // 对于 testing 阶段，允许 pending 状态的报告（开发者提交报告后即可流转）
+  // 对于 review/deploying/done 阶段，必须 approved
+  const validStatuses = allowPending ? ['approved', 'pending'] : ['approved'];
+  const submittedReports = await prisma.requirementReport.findMany({
     where: {
       requirementId,
       reportType: { in: required },
-      status: 'approved',
-    },
-    select: { reportType: true },
+      status: { in: validStatuses },
+    } as any,
+    select: { reportType: true, status: true },
   });
 
-  const approvedTypes = new Set(approvedReports.map((r) => r.reportType));
-  const missing = required.filter((t) => !approvedTypes.has(t));
+  const reportedTypes = new Set(submittedReports.map((r) => r.reportType));
+  const missing = required.filter((t) => !reportedTypes.has(t));
 
   return { ok: missing.length === 0, missing };
 }
@@ -265,8 +270,8 @@ requirementsRouter.post(
         requester: body.requester ?? actor.name,
         requesterId: actor.id,
         department: body.department,
-        // 权限控制：仅 admin/developer 可在提交时指定负责人
-        assignee: (actor.role === 'admin' || actor.role === 'developer') ? body.assignee : null,
+        // 权限控制：仅 admin（CTO）可在提交时指定负责人
+        assignee: (actor.role === 'admin') ? body.assignee : null,
         dueDate: body.dueDate,
         attachment: body.attachment
       },
@@ -348,6 +353,52 @@ requirementsRouter.post(
   asyncHandler(async (_req, res) => {
     const result = await runOverdueCheck();
     res.json({ success: true, data: result });
+  })
+);
+
+/**
+ * GET /api/requirements/kanban
+ * 看板数据：按状态分组返回需求列表（admin 可见所有，其他人仅可见自己提交或分配的需求）
+ */
+requirementsRouter.get(
+  '/kanban',
+  asyncHandler(async (req, res) => {
+    const actor = req.user!;
+    const where: Prisma.RequirementWhereInput = roleAwareRequirementWhere(actor);
+
+    const requirements = await prisma.requirement.findMany({
+      where,
+      include: { tasks: true },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const grouped: Record<string, typeof requirements> = {
+      pending: [],
+      clarifying: [],
+      'in-progress': [],
+      testing: [],
+      review: [],
+      deploying: [],
+      done: [],
+      rejected: [],
+    };
+
+    for (const r of requirements) {
+      const status = apiRequirementStatus[r.status as keyof typeof apiRequirementStatus] || r.status;
+      if (!grouped[status]) grouped[status] = [];
+      grouped[status].push(r);
+    }
+
+    // 转换为序列化格式
+    const serialized: Record<string, unknown[]> = {};
+    for (const [status, items] of Object.entries(grouped)) {
+      serialized[status] = items.map(serializeRequirement);
+    }
+
+    res.json({
+      data: serialized,
+      meta: { total: requirements.length },
+    });
   })
 );
 
@@ -464,7 +515,7 @@ requirementsRouter.get(
 
 requirementsRouter.patch(
   '/:id',
-  requireRoles('admin', 'developer'),
+  authRequired,
   asyncHandler(async (req, res) => {
     const { params, body } = patchRequirementSchema.parse({
       params: req.params,
@@ -480,8 +531,24 @@ requirementsRouter.patch(
       throw new HttpError(404, '需求不存在');
     }
 
-    if (req.user!.role === 'developer' && !canReadRequirement(req.user!, existing)) {
-      throw new HttpError(403, '无权更新该需求');
+    // 权限检查：
+    // - admin 可以做任何操作（审批、分配、改状态等）
+    // - developer 只能更新分配给自己的需求，且只能改状态为 in-progress / testing
+    if (req.user!.role !== 'admin') {
+      // 非管理员：必须是 assignee 才能操作
+      const isAssignee = existing.assigneeId === req.user!.id || existing.assignee === req.user!.name;
+      if (!isAssignee) {
+        throw new HttpError(403, '当前角色无权执行此操作');
+      }
+      // 非管理员只能改状态为 in-progress 或 testing
+      const allowedStatuses = ['in-progress', 'testing'];
+      if (body.status && !allowedStatuses.includes(body.status)) {
+        throw new HttpError(403, '开发者只能将状态改为 in-progress 或 testing');
+      }
+      // 非管理员不能修改 assignee、rejectReason 等字段
+      if (body.assignee !== undefined || body.rejectReason !== undefined) {
+        throw new HttpError(403, '开发者不能修改分配人或拒绝原因');
+      }
     }
 
     if (body.status === 'rejected' && !body.rejectReason) {
@@ -500,9 +567,12 @@ requirementsRouter.patch(
       }
     }
 
-    // 硬性验收约束：流转到 testing/review/deploying/done 必须有对应的 approved 报告
+    // 硬性验收约束：流转到 testing/review/deploying/done 必须有对应的报告
+    // - testing: 允许 pending 报告（开发者提交报告后即可流转）
+    // - review/deploying/done: 必须 approved 报告
     if (body.status && ['testing', 'review', 'deploying', 'done'].includes(body.status)) {
-      const { ok, missing } = await checkAcceptanceReports(params.id, body.status as RequirementStatusApi);
+      const allowPending = body.status === 'testing';
+      const { ok, missing } = await checkAcceptanceReports(params.id, body.status as RequirementStatusApi, allowPending);
       if (!ok) {
         const reportTypeLabels: Record<string, string> = {
           DEV_SELF_CHECK: '开发自检报告',
@@ -512,10 +582,10 @@ requirementsRouter.patch(
           DEPLOY_CONFIRM: '发布确认报告',
         };
         const missingLabels = missing.map((t) => reportTypeLabels[t] ?? t).join('、');
-        throw new HttpError(
-          400,
-          `验收约束：流转到「${body.status}」前，必须有以下已通过的报告：${missingLabels}`,
-        );
+        const msg = body.status === 'testing'
+          ? `验收约束：流转到「${body.status}」前，必须先提交以下报告：${missingLabels}`
+          : `验收约束：流转到「${body.status}」前，必须有以下已通过的报告：${missingLabels}`;
+        throw new HttpError(400, msg);
       }
     }
 
@@ -685,7 +755,7 @@ requirementsRouter.put(
 const batchStatusSchema = z.object({
   body: z.object({
     ids: z.array(z.string().uuid()).min(1).max(50),
-    status: z.enum(['pending', 'approved', 'rejected', 'in-progress', 'testing', 'review', 'deploying', 'done']),
+    status: z.enum(['pending', 'clarifying', 'approved', 'rejected', 'in-progress', 'testing', 'review', 'deploying', 'done']),
     rejectReason: z.string().trim().optional()
   })
 });
@@ -711,7 +781,8 @@ requirementsRouter.post(
 
     if (['testing', 'review', 'deploying', 'done'].includes(body.status)) {
       for (const item of requirements) {
-        const { ok, missing } = await checkAcceptanceReports(item.id, body.status as RequirementStatusApi);
+        const allowPending = body.status === 'testing';
+        const { ok, missing } = await checkAcceptanceReports(item.id, body.status as RequirementStatusApi, allowPending);
         if (!ok) {
           throw new HttpError(400, `「${item.title}」缺少验收报告，无法批量流转到「${body.status}」`);
         }
