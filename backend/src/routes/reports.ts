@@ -33,6 +33,7 @@ const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role'; roles?: strin
   SECURITY_REVIEW: { mode: 'role', roles: ['security-agent', 'admin'], allowAdmin: true },
   CTO_REVIEW: { mode: 'role', roles: ['admin'] },
   DEPLOY_CONFIRM: { mode: 'role', roles: ['itops-agent', 'admin'], allowAdmin: true },
+  POSTMORTEM: { mode: 'role', roles: ['admin'] }, // 只有 CTO 可以提交验尸报告
 };
 
 /**
@@ -41,6 +42,8 @@ const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role'; roles?: strin
 async function validateReportRole(
   userId: string,
   userRole: string,
+  userName: string,
+  userEmail: string,
   reportType: string,
   requirementId: string,
 ): Promise<void> {
@@ -55,9 +58,11 @@ async function validateReportRole(
   if (rule.mode === 'assignee') {
     const requirement = await prisma.requirement.findUnique({
       where: { id: requirementId },
-      select: { assigneeId: true },
+      select: { assigneeId: true, assignee: true },
     });
     if (requirement?.assigneeId === userId) return;
+    // fallback: 如果 assigneeId 为空，用 name/email 匹配（兼容旧数据）
+    if (requirement?.assignee && (requirement.assignee === userName || requirement.assignee === userEmail)) return;
   }
 
   const allowed = rule.mode === 'assignee'
@@ -85,7 +90,7 @@ reportsRouter.post(
     if (!requirement) throw new HttpError(404, '需求不存在');
 
     // 校验提交者角色
-    await validateReportRole(req.user!.id, req.user!.role, body.reportType, params.id);
+    await validateReportRole(req.user!.id, req.user!.role, req.user!.name, req.user!.email, body.reportType, params.id);
 
     const report = await prisma.requirementReport.create({
       data: {
@@ -187,6 +192,41 @@ reportsRouter.patch(
     });
 
     res.json({ success: true, data: updated });
+  }),
+);
+
+/**
+ * GET /api/requirements/:id/reports/:reportId
+ * GET /api/reports/:reportId
+ * 获取单个报告详情
+ */
+reportsRouter.get(
+  '/:reportId',
+  asyncHandler(async (req, res) => {
+    const reportId = req.params.reportId as string;
+    if (!reportId) throw new HttpError(400, '缺少 reportId');
+
+    const report = await prisma.requirementReport.findUnique({
+      where: { id: reportId },
+      include: {
+        submittedByUser: { select: { id: true, name: true, email: true } },
+        requirement: { select: { id: true, title: true, status: true } },
+      },
+    });
+
+    if (!report) throw new HttpError(404, '报告不存在');
+
+    // 权限检查：只在有 requirementId 上下文时校验
+    if (req.params.id) {
+      // 通过 /api/requirements/:id/reports/:reportId 访问，校验 requirementId 匹配
+      if (report.requirementId !== req.params.id) {
+        throw new HttpError(400, '报告与需求不匹配');
+      }
+      const reqInfo = await prisma.requirement.findUnique({ where: { id: req.params.id }, select: { id: true } });
+      if (!reqInfo) throw new HttpError(404, '需求不存在');
+    }
+
+    res.json({ success: true, data: report });
   }),
 );
 
