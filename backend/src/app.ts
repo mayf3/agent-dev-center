@@ -15,6 +15,7 @@ import { marketplaceDeliverablesRouter } from './routes/marketplace-deliverables
 import { marketplaceUploadsRouter } from './routes/marketplace-uploads.js';
 import { marketplaceAutomationRouter } from './routes/marketplace-automation.js';
 import { goalsRouter } from './routes/goals.js';
+import { postmortemsRouter } from './routes/postmortems.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { gatewayGuard } from './middleware/ip-whitelist.js';
 import { HttpError } from './utils/http-error.js';
@@ -86,6 +87,7 @@ app.use('/api/marketplace/deliverables', marketplaceDeliverablesRouter);
 app.use('/api/marketplace/uploads', marketplaceUploadsRouter);
 app.use('/api/marketplace', marketplaceAutomationRouter);
 app.use('/api/goals', goalsRouter);
+app.use('/api/postmortems', postmortemsRouter);
 
 app.use((_req, _res, next) => {
   next(new HttpError(404, '接口不存在'));

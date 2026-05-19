@@ -97,6 +97,7 @@ model Requirement {
   revisions     RequirementRevision[]
   reports       RequirementReport[]
   serviceLinks  ServiceRequirement[]
+  postmortems   Postmortem[]
 
   requesterUser User? @relation("RequesterRequirements", fields: [requesterId], references: [id])
   assigneeUser  User? @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
@@ -437,4 +438,35 @@ model GoalRevision {
   @@index([goalCardId])
   @@index([createdAt])
   @@map("goal_revisions")
+}
+
+// ─── Postmortem Report ──────────────────────────────────────
+
+enum PostmortemStatus {
+  pending
+  implemented
+  verified
+}
+
+model Postmortem {
+  id              String           @id @default(uuid()) @db.Uuid
+  requirementId   String?          @db.Uuid
+  requirement     Requirement?     @relation(fields: [requirementId], references: [id])
+
+  title           String
+  phenomenon      String           @db.Text
+  rootCause       String           @db.Text
+  whyExistingProcess String        @db.Text
+  longTermPrinciple String         @db.Text
+  preventionMeasures String        @db.Text
+  responsiblePerson String
+  status          PostmortemStatus @default(pending)
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([status])
+  @@index([responsiblePerson])
+  @@index([requirementId])
+  @@map("postmortems")
 }
