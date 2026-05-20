@@ -7,6 +7,7 @@ import {
   LeftOutlined,
   PaperClipOutlined,
   PlusOutlined,
+  ScissorOutlined,
   UserAddOutlined
 } from '@ant-design/icons';
 import {
@@ -119,6 +120,11 @@ export function RequirementDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'description';
 
+  // Decompose state
+  const [decomposePreview, setDecomposePreview] = useState<Array<{ title: string; description: string; agentType: string }> | null>(null);
+  const [decomposeLoading, setDecomposeLoading] = useState(false);
+  const [decomposeModalOpen, setDecomposeModalOpen] = useState(false);
+
   // Revision history state
   const [revisions, setRevisions] = useState<Array<{
     id: string;
@@ -205,7 +211,7 @@ export function RequirementDetailPage() {
     try {
       const shouldApprove =
         assignmentMode === 'approve' ||
-        ['pending', 'rejected', 'approved'].includes(requirement.status);
+        ['pending', 'clarifying', 'rejected', 'approved'].includes(requirement.status);
       const { data } = await api.patch<Requirement>(`/requirements/${requirement.id}`, {
         assignee: values.assignee,
         status: shouldApprove ? 'approved' : undefined
@@ -453,14 +459,37 @@ export function RequirementDetailPage() {
                     title="相关任务"
                     extra={
                       (isAdmin || isDeveloper) && (
-                        <Button
-                          type="primary"
-                          size="small"
-                          icon={<PlusOutlined />}
-                          onClick={() => setCreateTaskOpen(true)}
-                        >
-                          创建任务
-                        </Button>
+                        <Space>
+                          {(requirement.tasks ?? []).length === 0 && (
+                            <Button
+                              size="small"
+                              icon={<ScissorOutlined />}
+                              onClick={async () => {
+                                setDecomposeLoading(true);
+                                try {
+                                  const res = await api.post(`/api/requirements/${id}/decompose`, {});
+                                  setDecomposePreview(res.data.decomposedTasks);
+                                  setDecomposeModalOpen(true);
+                                } catch (err: any) {
+                                  message.error(err?.response?.data?.message || '拆解失败');
+                                } finally {
+                                  setDecomposeLoading(false);
+                                }
+                              }}
+                              loading={decomposeLoading}
+                            >
+                              自动拆解
+                            </Button>
+                          )}
+                          <Button
+                            type="primary"
+                            size="small"
+                            icon={<PlusOutlined />}
+                            onClick={() => setCreateTaskOpen(true)}
+                          >
+                            创建任务
+                          </Button>
+                        </Space>
                       )
                     }
                   >
@@ -757,6 +786,58 @@ export function RequirementDetailPage() {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Decompose Preview Modal */}
+      <Modal
+        title="自动拆解预览"
+        open={decomposeModalOpen}
+        onCancel={() => { setDecomposeModalOpen(false); setDecomposePreview(null); }}
+        onOk={async () => {
+          setDecomposeLoading(true);
+          try {
+            await api.post(`/api/requirements/${id}/decompose`, { confirm: true });
+            message.success('拆解完成，子任务已创建');
+            setDecomposeModalOpen(false);
+            setDecomposePreview(null);
+            // Reload requirement
+            const res = await api.get(`/api/requirements/${id}`);
+            setRequirement(res.data);
+          } catch (err: any) {
+            message.error(err?.response?.data?.message || '拆解失败');
+          } finally {
+            setDecomposeLoading(false);
+          }
+        }}
+        confirmLoading={decomposeLoading}
+        okText="确认创建"
+        cancelText="取消"
+        width={700}
+      >
+        {decomposePreview && (
+          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <Typography.Text type="secondary">
+              系统根据需求描述自动拆解为 {decomposePreview.length} 个子任务，请确认后创建：
+            </Typography.Text>
+            {decomposePreview.map((task, idx) => (
+              <Card key={idx} size="small" style={{ borderLeft: '3px solid #1677ff' }}>
+                <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                  <Space>
+                    <Tag color="blue">#{idx + 1}</Tag>
+                    <Typography.Text strong>{task.title}</Typography.Text>
+                    <Tag>{task.agentType}</Tag>
+                  </Space>
+                  <Typography.Paragraph
+                    ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
+                    style={{ marginBottom: 0, color: '#666' }}
+                  >
+                    {task.description.slice(0, 300)}
+                  </Typography.Paragraph>
+                </Space>
+              </Card>
+            ))}
+          </Space>
+        )}
       </Modal>
     </Space>
   );

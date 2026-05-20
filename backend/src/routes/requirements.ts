@@ -39,7 +39,7 @@ requirementsRouter.use(authRequired);
 
 /** 权限判断：是否可查看该需求（基于 user.id） */
 function canReadRequirement(user: Express.AuthUser, requirement: { requesterId: string | null; requester: string; assigneeId: string | null; assignee: string | null }) {
-  if (user.role === 'admin') {
+  if (user.role === 'admin' || user.role === 'cto_agent') {
     return true;
   }
 
@@ -58,7 +58,7 @@ function canReadRequirement(user: Express.AuthUser, requirement: { requesterId: 
 
 /** 权限判断：是否可编辑该需求（基于 user.id） */
 function canEditRequirement(user: Express.AuthUser, requirement: { requesterId: string | null; requester: string; status: unknown }) {
-  if (user.role === 'admin') {
+  if (user.role === 'admin' || user.role === 'cto_agent') {
     return true;
   }
 
@@ -71,7 +71,7 @@ function canEditRequirement(user: Express.AuthUser, requirement: { requesterId: 
 
 /** 基于角色过滤查询条件（使用 user.id） */
 function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.RequirementWhereInput {
-  if (user.role === 'admin') {
+  if (user.role === 'admin' || user.role === 'cto_agent') {
     return {};
   }
 
@@ -271,8 +271,8 @@ requirementsRouter.post(
         requester: body.requester ?? actor.name,
         requesterId: actor.id,
         department: body.department,
-        // 权限控制：仅 admin（CTO）可在提交时指定负责人
-        assignee: (actor.role === 'admin') ? body.assignee : null,
+        // 权限控制：仅 admin/cto_agent（CTO）可在提交时指定负责人
+        assignee: (actor.role === 'admin' || actor.role === 'cto_agent') ? body.assignee : null,
         dueDate: body.dueDate,
         attachment: body.attachment
       },
@@ -1004,5 +1004,158 @@ requirementsRouter.delete(
       }
       throw err;
     }
+  })
+);
+
+// ─── POST /api/requirements/:id/decompose — 自动拆解需求为子任务 ────────
+
+interface DecomposedTask {
+  title: string;
+  description: string;
+  agentType: string;
+}
+
+function decomposeRequirement(title: string, description: string): DecomposedTask[] {
+  // Extract sections from markdown description
+  const sections: { heading: string; content: string }[] = [];
+  const lines = description.split('\n');
+  let currentHeading = '';
+  let currentContent: string[] = [];
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^#{1,4}\s+(.+)/);
+    if (headingMatch) {
+      if (currentHeading && currentContent.length > 0) {
+        sections.push({ heading: currentHeading, content: currentContent.join('\n').trim() });
+      }
+      currentHeading = headingMatch[1].trim();
+      currentContent = [];
+    } else {
+      currentContent.push(line);
+    }
+  }
+  if (currentHeading && currentContent.length > 0) {
+    sections.push({ heading: currentHeading, content: currentContent.join('\n').trim() });
+  }
+
+  // Filter to task-relevant sections (skip background/验收标准)
+  const skipHeadings = ['背景', '验收标准', '验收', '背景与动机', '动机'];
+  const taskSections = sections.filter(
+    s => !skipHeadings.some(sh => s.heading.includes(sh))
+  );
+
+  if (taskSections.length === 0) {
+    // Fallback: single task
+    return [{
+      title,
+      description,
+      agentType: 'devtools-agent',
+    }];
+  }
+
+  // Map section headings to likely agent types
+  const agentHints: Record<string, string> = {
+    '前端': 'devtools-agent',
+    'UI': 'devtools-agent',
+    '页面': 'devtools-agent',
+    '组件': 'devtools-agent',
+    '后端': 'agent-dev-engineer',
+    'API': 'agent-dev-engineer',
+    '接口': 'agent-dev-engineer',
+    '数据库': 'agent-dev-engineer',
+    '部署': 'itops-agent',
+    '运维': 'itops-agent',
+    '安全': 'security-agent',
+    '测试': 'test-engineer',
+  };
+
+  return taskSections.map(section => {
+    let agentType = 'devtools-agent';
+    for (const [hint, agent] of Object.entries(agentHints)) {
+      if (section.heading.includes(hint) || section.content.slice(0, 200).includes(hint)) {
+        agentType = agent;
+        break;
+      }
+    }
+
+    return {
+      title: `${title} — ${section.heading}`,
+      description: `## ${section.heading}\n\n${section.content}`,
+      agentType,
+    };
+  });
+}
+
+requirementsRouter.post(
+  '/:id/decompose',
+  authRequired,
+  requireRoles('admin', 'developer'),
+  asyncHandler(async (req, res) => {
+    const requirementId = String(req.params.id);
+    const { confirm } = req.body as { confirm?: boolean };
+
+    const requirement = await prisma.requirement.findUnique({
+      where: { id: requirementId },
+      include: { tasks: true },
+    });
+
+    if (!requirement) {
+      throw new HttpError(404, '需求不存在');
+    }
+
+    if (!canReadRequirement(req.user!, requirement)) {
+      throw new HttpError(403, '无权操作该需求');
+    }
+
+    // Generate decomposition
+    const decomposed = decomposeRequirement(requirement.title, requirement.description);
+
+    // If confirm=false or not set, just return preview
+    if (!confirm) {
+      res.json({
+        preview: true,
+        requirementId,
+        requirementTitle: requirement.title,
+        existingTasks: requirement.tasks.length,
+        decomposedTasks: decomposed,
+      });
+      return;
+    }
+
+    // Confirm: create tasks
+    if (requirement.tasks.length > 0) {
+      throw new HttpError(400, '需求已有子任务，请先删除已有任务再拆解');
+    }
+
+    const createdTasks = await prisma.$transaction(
+      decomposed.map(task =>
+        prisma.task.create({
+          data: {
+            requirementId,
+            title: task.title,
+            description: task.description,
+            agentType: task.agentType,
+          },
+        })
+      )
+    );
+
+    void notifyEvent('requirement.decomposed', {
+      id: requirementId,
+      title: requirement.title,
+      taskCount: createdTasks.length,
+      actor: req.user!.name,
+    });
+
+    res.status(201).json({
+      preview: false,
+      requirementId,
+      createdTasks: createdTasks.map(t => ({
+        id: t.id,
+        title: t.title,
+        agentType: t.agentType,
+        status: t.status,
+      })),
+    });
   })
 );
