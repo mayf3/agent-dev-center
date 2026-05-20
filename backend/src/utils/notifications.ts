@@ -60,7 +60,8 @@ type NotificationEvent =
   | 'task.deleted'
   | 'report.submitted'
   | 'report.approved'
-  | 'report.rejected';
+  | 'report.rejected'
+  | 'requirement.decomposed';
 
 interface NotificationPayload {
   id: string;
