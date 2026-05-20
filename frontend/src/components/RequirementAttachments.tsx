@@ -358,10 +358,10 @@ export function RequirementAttachments({ requirementId, isAdmin = false }: Requi
         await api.delete(
           `/requirements/${requirementId}/attachments/${encodeURIComponent(attachment.filename)}`
         );
-        message.success('附件已删除');
+        message.success('附件已归档');
         await loadAttachments();
       } catch (error) {
-        message.error(getErrorMessage(error, '附件删除失败'));
+        message.error(getErrorMessage(error, '附件归档失败'));
       } finally {
         setDeletingFilename(null);
       }
@@ -462,9 +462,9 @@ export function RequirementAttachments({ requirementId, isAdmin = false }: Requi
           </Button>
           {isAdmin ? (
             <Popconfirm
-              title="删除附件"
-              description={`确认删除「${attachment.originalName}」吗？`}
-              okText="删除"
+              title="归档附件"
+              description={`确认归档「${attachment.originalName}」吗？文件将移至归档目录，可以恢复。`}
+              okText="确认归档"
               cancelText="取消"
               okButtonProps={{ danger: true }}
               onConfirm={() => handleDelete(attachment)}
@@ -475,7 +475,7 @@ export function RequirementAttachments({ requirementId, isAdmin = false }: Requi
                 icon={<DeleteOutlined />}
                 loading={deletingFilename === attachment.filename}
               >
-                删除
+                归档
               </Button>
             </Popconfirm>
           ) : null}

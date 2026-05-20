@@ -11,3 +11,6 @@ coverage
 backend/prisma/migrations/dev.db
 backend/prisma/dev.db
 *.bak
+
+# Archive directory (soft-deleted items, not tracked in git)
+archive/

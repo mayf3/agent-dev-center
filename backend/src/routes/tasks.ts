@@ -7,6 +7,7 @@ import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { prismaTaskStatus, serializeTask } from '../utils/status.js';
 import { notifyEvent } from '../utils/notifications.js';
+import { archiveRecord } from '../lib/archive.js';
 
 export const tasksRouter = Router();
 
@@ -211,6 +212,20 @@ tasksRouter.delete(
       throw new HttpError(404, '任务不存在');
     }
 
+    // Archive the record before deleting from DB
+    const serialized = serializeTask(existing);
+    archiveRecord(
+      serialized as unknown as Record<string, unknown>,
+      'tasks',
+      {
+        itemName: existing.title,
+        itemId: existing.id,
+        reason: '管理员归档删除',
+        archivedBy: req.user!.name || req.user!.email,
+        extra: `requirementId=${existing.requirementId}`
+      }
+    );
+
     await prisma.task.delete({
       where: { id: params.id }
     });
@@ -221,6 +236,6 @@ tasksRouter.delete(
       actor: req.user!.name
     });
 
-    res.json({ success: true, id: existing.id });
+    res.json({ success: true, id: existing.id, archived: true });
   })
 );

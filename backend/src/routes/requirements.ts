@@ -28,6 +28,7 @@ import {
   type RequirementStatusApi
 } from '../utils/status.js';
 import { notifyEvent } from '../utils/notifications.js';
+import { archiveFile } from '../lib/archive.js';
 import { listRevisionsSchema } from '../schemas/revision.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../utils/similarity.js';
 import { runOverdueCheck, findOverdueRequirements } from '../utils/overdue-check.js';
@@ -972,7 +973,7 @@ requirementsRouter.get(
   })
 );
 
-// DELETE /api/requirements/:id/attachments/:filename - Delete a requirement attachment
+// DELETE /api/requirements/:id/attachments/:filename - Archive a requirement attachment
 requirementsRouter.delete(
   '/:id/attachments/:filename',
   authRequired,
@@ -988,8 +989,15 @@ requirementsRouter.delete(
     const filePath = getRequirementAttachmentPath(params.id, filenameStr);
 
     try {
-      unlinkSync(filePath);
-      res.json({ success: true, filename: filenameStr });
+      // Archive the file instead of permanently deleting it
+      archiveFile(filePath, `requirements/attachments/${params.id}`, {
+        itemName: filenameStr,
+        itemId: `${params.id}/${filenameStr}`,
+        reason: '用户归档删除附件',
+        archivedBy: req.user!.name || req.user!.email,
+        extra: `requirementId=${params.id}`
+      });
+      res.json({ success: true, filename: filenameStr, archived: true });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         throw new HttpError(404, '文件不存在');

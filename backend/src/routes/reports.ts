@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { notifyEvent } from '../utils/notifications.js';
+import { archiveRecord } from '../lib/archive.js';
 import {
   submitReportSchema,
   listReportsSchema,
@@ -27,13 +28,13 @@ reportsRouter.use(authRequired);
  * - CTO_REVIEW → admin 角色（CTO）
  * - DEPLOY_CONFIRM → itops-agent 角色
  */
-const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role'; roles?: string[]; allowAdmin?: boolean }> = {
+const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role' | 'any'; roles?: string[]; allowAdmin?: boolean }> = {
   DEV_SELF_CHECK: { mode: 'assignee', allowAdmin: true },
   TEST_REPORT: { mode: 'role', roles: ['test-engineer', 'admin'], allowAdmin: true },
   SECURITY_REVIEW: { mode: 'role', roles: ['security-agent', 'admin'], allowAdmin: true },
   CTO_REVIEW: { mode: 'role', roles: ['admin'] },
   DEPLOY_CONFIRM: { mode: 'role', roles: ['itops-agent', 'admin'], allowAdmin: true },
-  POSTMORTEM: { mode: 'role', roles: ['admin'] }, // 只有 CTO 可以提交验尸报告
+  POSTMORTEM: { mode: 'role', roles: ['agent-dev-engineer', 'devtools-agent', 'frontend-react-engineer', 'mobile-app-engineer', 'miniapp-game-engineer', 'game-dev-agent', 'test-engineer', 'security-agent', 'itops-agent', 'admin'], allowAdmin: true }, // 开发团队全员可提交验尸报告（2026-05-20 老板指令）
 };
 
 /**
@@ -53,6 +54,9 @@ async function validateReportRole(
   // admin 总是有权
   if (rule.allowAdmin !== false && userRole === 'admin') return;
   if (rule.roles?.includes(userRole)) return;
+
+  // any 模式：任何认证用户都可以
+  if (rule.mode === 'any') return;
 
   // assignee 模式：检查是否是需求的 assignee
   if (rule.mode === 'assignee') {
@@ -254,6 +258,19 @@ reportsRouter.delete(
     if (report.status !== 'pending' && report.status !== 'changes_requested') {
       throw new HttpError(400, '仅待审核或需要修改状态的报告可删除');
     }
+
+    // Archive the report before deleting
+    archiveRecord(
+      report as unknown as Record<string, unknown>,
+      'reports',
+      {
+        itemName: `${report.reportType} 报告`,
+        itemId: report.id,
+        reason: `${req.user!.name || req.user!.email} 归档删除报告`,
+        archivedBy: req.user!.name || req.user!.email,
+        extra: `requirementId=${report.requirementId}, reportType=${report.reportType}, status=${report.status}`
+      }
+    );
 
     await prisma.requirementReport.delete({
       where: { id: params.reportId },

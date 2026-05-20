@@ -108,10 +108,10 @@ export function TaskDetailDrawer({ task, open, onClose, onRefresh }: TaskDetailD
   const handleDeleteDeliverable = async (id: string) => {
     try {
       await deleteDeliverable(id);
-      message.success('交付物已删除');
+      message.success('交付物已归档');
       await loadDeliverables();
     } catch (err) {
-      message.error(getErrorMessage(err, '删除失败'));
+      message.error(getErrorMessage(err, '归档失败'));
     }
   };
 
@@ -220,7 +220,7 @@ export function TaskDetailDrawer({ task, open, onClose, onRefresh }: TaskDetailD
                   </Space>
                   {isAuthenticated && task.status !== 'completed' && (
                     <Button type="text" danger size="small" onClick={() => void handleDeleteDeliverable(d.id)}>
-                      删除
+                      归档
                     </Button>
                   )}
                 </div>

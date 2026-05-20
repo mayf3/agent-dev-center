@@ -4,6 +4,7 @@ import { authRequired } from '../middleware/auth.js';
 import { registerSSEClient } from '../utils/notifications.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
+import { archiveRecord } from '../lib/archive.js';
 
 export const notificationsRouter = Router();
 
@@ -183,7 +184,19 @@ notificationsRouter.delete(
       throw new HttpError(404, '通知不存在');
     }
 
+    // Archive the notification before deleting
+    archiveRecord(
+      notification as unknown as Record<string, unknown>,
+      'notifications',
+      {
+        itemName: notification.title || notification.id,
+        itemId: notification.id,
+        reason: '用户归档删除通知',
+        archivedBy: user.name || user.email
+      }
+    );
+
     await prisma.notification.delete({ where: { id } });
-    res.json({ ok: true });
+    res.json({ ok: true, archived: true });
   })
 );
