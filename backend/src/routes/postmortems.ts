@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { authRequired, requireRoles } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
+import { archiveRecord } from '../lib/archive.js';
 
 export const postmortemsRouter = Router();
 
@@ -191,9 +192,22 @@ postmortemsRouter.delete(
       throw new HttpError(404, '验尸报告不存在');
     }
 
+    // Archive the postmortem record before deleting from DB
+    archiveRecord(
+      existing as unknown as Record<string, unknown>,
+      'postmortems',
+      {
+        itemName: existing.title,
+        itemId: existing.id,
+        reason: '管理员归档删除验尸报告',
+        archivedBy: req.user!.name || req.user!.email,
+        extra: existing.requirementId ? `requirementId=${existing.requirementId}` : undefined
+      }
+    );
+
     await prisma.postmortem.delete({ where: { id } });
 
-    res.json({ success: true });
+    res.json({ success: true, archived: true });
   })
 );
 

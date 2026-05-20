@@ -22,6 +22,11 @@ import { HttpError } from './utils/http-error.js';
 import { agentsRouter } from './routes/agents.js';
 import { ssoRouter } from './routes/sso.js';
 import { agentSsoRouter } from './routes/agent-sso.js';
+import { profileRouter } from './routes/profile.js';
+import { skillTreeRouter } from './routes/skill-tree.js';
+import { roadmapRouter } from './routes/roadmap.js';
+import { healthRecordsRouter } from './routes/health-records.js';
+import { familyRouter } from './routes/family.js';
 
 export const app = express();
 
@@ -48,6 +53,10 @@ if (env.NODE_ENV === 'production') {
   app.use(gatewayGuard());
 }
 app.use(express.json({ limit: '10mb' }));
+
+// Initialize archive directory on startup
+import { ensureArchiveRoot } from './lib/archive.js';
+ensureArchiveRoot();
 
 // JSON 解析错误处理（BUG-001 修复）
 app.use((err: Error & { type?: string }, _req: express.Request, _res: express.Response, next: express.NextFunction) => {
@@ -91,6 +100,11 @@ app.use('/api/marketplace', marketplaceAutomationRouter);
 app.use('/api/goals', goalsRouter);
 app.use('/api/agents', agentsRouter);
 app.use('/api/postmortems', postmortemsRouter);
+app.use('/api/profile', profileRouter);
+app.use('/api/skill-tree', skillTreeRouter);
+app.use('/api/roadmap', roadmapRouter);
+app.use('/api/health-records', healthRecordsRouter);
+app.use('/api/family', familyRouter);
 
 app.use((_req, _res, next) => {
   next(new HttpError(404, '接口不存在'));

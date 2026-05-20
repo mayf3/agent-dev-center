@@ -15,6 +15,7 @@ import {
   getMarketplaceUploadMimeType,
   getMarketplaceUploadPath
 } from '../lib/multer.js';
+import { archiveRecord } from '../lib/archive.js';
 
 export const marketplaceDeliverablesRouter = Router();
 
@@ -126,10 +127,23 @@ marketplaceDeliverablesRouter.delete(
       throw new HttpError(400, '已完成任务不能删除交付物');
     }
 
+    // Archive the deliverable record before deleting from DB
+    archiveRecord(
+      deliverable as unknown as Record<string, unknown>,
+      'marketplace/deliverables',
+      {
+        itemName: deliverable.title || deliverable.id,
+        itemId: deliverable.id,
+        reason: '用户归档删除交付物',
+        archivedBy: req.user!.name || req.user!.email,
+        extra: `taskId=${deliverable.taskId}, type=${deliverable.type}`
+      }
+    );
+
     await prisma.marketplaceDeliverable.delete({
       where: { id: params.id }
     });
 
-    res.json({ success: true, id: params.id });
+    res.json({ success: true, id: params.id, archived: true });
   })
 );

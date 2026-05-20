@@ -264,10 +264,10 @@ export function PostmortemListPage() {
           </Button>
           {record.status === 'pending' && (
             <Popconfirm
-              title="确认删除？"
+              title="确认归档？报告将移至归档目录，可恢复。"
               onConfirm={async () => {
                 await postmortemsApi.delete(record.id);
-                message.success('已删除');
+                message.success('已归档');
                 fetchData();
               }}
             >

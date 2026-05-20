@@ -114,18 +114,18 @@ export function TaskListPage() {
 
   const handleDelete = (task: TaskWithReq) => {
     modal.confirm({
-      title: '确认删除任务',
-      content: `确定要删除任务「${task.title}」吗？此操作不可撤销。`,
-      okText: '确认删除',
+      title: '归档任务',
+      content: `确定要归档任务「${task.title}」吗？任务将被移至归档目录，可以恢复。`,
+      okText: '确认归档',
       okButtonProps: { danger: true },
       cancelText: '取消',
       onOk: async () => {
         try {
           await api.delete(`/tasks/${task.id}`);
-          message.success('任务已删除');
+          message.success('任务已归档');
           await loadTasks();
         } catch (err) {
-          message.error(getErrorMessage(err, '删除失败'));
+          message.error(getErrorMessage(err, '归档失败'));
         }
       }
     });

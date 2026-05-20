@@ -1,4 +1,4 @@
-import { createReadStream, statSync, unlinkSync } from 'node:fs';
+import { createReadStream, statSync } from 'node:fs';
 import { authRequired } from '../middleware/auth.js';
 import {
   getMarketplaceUploadExtension,
@@ -11,6 +11,7 @@ import {
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { Router } from 'express';
+import { archiveFile } from '../lib/archive.js';
 
 export const marketplaceUploadsRouter = Router();
 
@@ -79,7 +80,7 @@ marketplaceUploadsRouter.get(
   })
 );
 
-// DELETE /api/marketplace/uploads/:filename - Delete a file
+// DELETE /api/marketplace/uploads/:filename - Archive a file
 marketplaceUploadsRouter.delete(
   '/:filename',
   authRequired,
@@ -94,8 +95,14 @@ marketplaceUploadsRouter.delete(
     const filePath = getMarketplaceUploadPath(filenameStr);
 
     try {
-      unlinkSync(filePath);
-      res.json({ success: true, filename: filenameStr });
+      // Archive the file instead of permanently deleting it
+      archiveFile(filePath, 'marketplace/uploads', {
+        itemName: filenameStr,
+        itemId: filenameStr,
+        reason: '用户归档删除文件',
+        archivedBy: req.user!.name || req.user!.email
+      });
+      res.json({ success: true, filename: filenameStr, archived: true });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         throw new HttpError(404, '文件不存在');
