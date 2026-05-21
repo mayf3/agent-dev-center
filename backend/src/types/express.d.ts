@@ -8,6 +8,7 @@ declare global {
       email: string;
       role: UserRole;
       internalRole?: InternalRole | null | undefined;
+      okrRole?: string | null | undefined;
     }
 
     interface Request {
