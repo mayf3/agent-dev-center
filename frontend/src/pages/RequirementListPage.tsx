@@ -1,4 +1,4 @@
-import { CheckOutlined, CloseOutlined, EyeOutlined, ReloadOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
+import { CheckOutlined, CloseOutlined, EyeOutlined, ProjectOutlined, ReloadOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
 import {
   App as AntApp,
   Button,
@@ -229,9 +229,14 @@ export function RequirementListPage() {
           </Typography.Text>
         </div>
         {isAuthenticated && (
-          <Button type="primary" onClick={() => navigate('/requirements/new')}>
-            {isMobile ? '提交' : '提交需求'}
-          </Button>
+          <Space>
+            <Button icon={<ProjectOutlined />} onClick={() => navigate('/kanban')}>
+              看板视图
+            </Button>
+            <Button type="primary" onClick={() => navigate('/requirements/new')}>
+              {isMobile ? '提交' : '提交需求'}
+            </Button>
+          </Space>
         )}
       </div>
 

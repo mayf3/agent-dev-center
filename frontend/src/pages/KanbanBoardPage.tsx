@@ -16,17 +16,18 @@ import {
   verticalListSortingStrategy
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ReloadOutlined, UserOutlined } from '@ant-design/icons';
-import { App as AntApp, Badge, Button, Card, Empty, Space, Spin, Typography } from 'antd';
+import { CalendarOutlined, ReloadOutlined, UnorderedListOutlined, UserOutlined } from '@ant-design/icons';
+import { App as AntApp, Badge, Button, Card, Empty, Space, Spin, Tooltip, Typography } from 'antd';
+import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { PaginatedResponse, Requirement, RequirementStatus } from '../api/types';
 import { PriorityTag } from '../components/PriorityTag';
 import { StatusTag } from '../components/StatusTag';
 import { useAuth } from '../contexts/AuthContext';
 
-type BoardColumnId = 'pending' | 'in-progress' | 'testing' | 'review' | 'deploying' | 'done';
+type BoardColumnId = 'pending' | 'clarifying' | 'in-progress' | 'testing' | 'review' | 'deploying' | 'done';
 
 interface BoardColumnConfig {
   id: BoardColumnId;
@@ -39,6 +40,11 @@ const boardColumns: BoardColumnConfig[] = [
     id: 'pending',
     title: '待审核',
     statuses: ['pending', 'rejected']
+  },
+  {
+    id: 'clarifying',
+    title: '需求澄清中',
+    statuses: ['clarifying']
   },
   {
     id: 'in-progress',
@@ -69,6 +75,17 @@ const boardColumns: BoardColumnConfig[] = [
 
 const boardColumnIds = boardColumns.map((column) => column.id);
 
+// WIP（Work In Progress）限制配置
+const WIP_LIMITS: Record<BoardColumnId, number> = {
+  pending: 0,       // 待审核无限制
+  clarifying: 0,    // 澄清中无限制
+  'in-progress': 8, // 开发中最多8个
+  testing: 5,       // 测试中最多5个
+  review: 5,        // 待验收最多5个
+  deploying: 3,     // 部署中最多3个
+  done: 0           // 已完成无限制
+};
+
 function classNames(...values: Array<string | false | undefined>) {
   return values.filter(Boolean).join(' ');
 }
@@ -97,9 +114,16 @@ function RequirementCardContent({ requirement }: { requirement: Requirement }) {
         <StatusTag status={requirement.status} />
       </Space>
       <div className="kanban-card-meta">
-        <Typography.Text type="secondary">
-          <UserOutlined /> {requirement.assignee || '未分配'}
-        </Typography.Text>
+        <Space size={8} wrap>
+          <Typography.Text type="secondary">
+            <UserOutlined /> {requirement.assignee || '未分配'}
+          </Typography.Text>
+          {requirement.dueDate && (
+            <Typography.Text type={dayjs(requirement.dueDate).isBefore(dayjs()) ? 'danger' : 'secondary'}>
+              <CalendarOutlined /> {dayjs(requirement.dueDate).format('MM-DD')}
+            </Typography.Text>
+          )}
+        </Space>
       </div>
     </>
   );
@@ -148,6 +172,8 @@ function KanbanColumn({
   dragDisabled: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
+  const wipLimit = WIP_LIMITS[column.id];
+  const wipExceeded = wipLimit > 0 && items.length > wipLimit;
 
   return (
     <section
@@ -156,7 +182,22 @@ function KanbanColumn({
     >
       <div className="kanban-column-title">
         <Typography.Title level={5}>{column.title}</Typography.Title>
-        <Badge count={items.length} showZero />
+        <Tooltip title={wipLimit > 0 ? `WIP限制: ${wipLimit}` : '无WIP限制'}>
+          <Badge
+            count={items.length}
+            showZero
+            color={wipExceeded ? 'red' : undefined}
+            overflowCount={999}
+          />
+        </Tooltip>
+        {wipLimit > 0 && (
+          <Typography.Text
+            type={wipExceeded ? 'danger' : 'secondary'}
+            style={{ fontSize: 11, marginLeft: 4 }}
+          >
+            /{wipLimit}
+          </Typography.Text>
+        )}
       </div>
       <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
         <div className="kanban-list">
@@ -175,6 +216,7 @@ function KanbanColumn({
 
 export function KanbanBoardPage() {
   const { message } = AntApp.useApp();
+  const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -219,6 +261,7 @@ export function KanbanBoardPage() {
       },
       {
         pending: [],
+        clarifying: [],
         'in-progress': [],
         testing: [],
         review: [],
@@ -290,9 +333,14 @@ export function KanbanBoardPage() {
             拖动需求卡片在待审核、开发、测试和完成阶段之间流转
           </Typography.Text>
         </div>
-        <Button icon={<ReloadOutlined />} onClick={() => void loadRequirements()}>
-          刷新
-        </Button>
+        <Space>
+          <Button icon={<UnorderedListOutlined />} onClick={() => navigate('/requirements')}>
+            列表视图
+          </Button>
+          <Button icon={<ReloadOutlined />} onClick={() => void loadRequirements()}>
+            刷新
+          </Button>
+        </Space>
       </div>
 
       <DndContext

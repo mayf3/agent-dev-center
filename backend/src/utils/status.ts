@@ -7,6 +7,7 @@ import type {
 
 export const requirementStatusValues = [
   'pending',
+  'clarifying',
   'approved',
   'rejected',
   'in-progress',
@@ -23,6 +24,7 @@ export type TaskStatusApi = (typeof taskStatusValues)[number];
 
 export const prismaRequirementStatus = {
   pending: 'pending',
+  clarifying: 'clarifying',
   approved: 'approved',
   rejected: 'rejected',
   'in-progress': 'in_progress',
@@ -34,6 +36,7 @@ export const prismaRequirementStatus = {
 
 export const apiRequirementStatus = {
   pending: 'pending',
+  clarifying: 'clarifying',
   approved: 'approved',
   rejected: 'rejected',
   in_progress: 'in-progress',

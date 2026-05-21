@@ -232,7 +232,86 @@ function renderDeployConfirm(content: Record<string, unknown>) {
   );
 }
 
+function renderPostmortem(content: Record<string, unknown>) {
+  const rca = (content.rootCauseAnalysis as Array<{why: string; depth: number; finding: string}>) ?? [];
+  const principles = (content.principles as Array<{title: string; content: string}>) ?? [];
+  const fixes = (content.fixes as Array<{action: string; type: string; status: string}>) ?? [];
+
+  return (
+    <>
+      <Descriptions bordered size="small" column={2} style={{ marginBottom: 12 }}>
+        <Descriptions.Item label="Incident">{String(content.incidentTitle ?? '-')}</Descriptions.Item>
+        <Descriptions.Item label="Severity">{String(content.severity ?? '-')}</Descriptions.Item>
+        <Descriptions.Item label="Time">{String(content.incidentTime ?? '-')}</Descriptions.Item>
+      </Descriptions>
+
+      {content.symptom && (
+        <Typography.Paragraph style={{ marginBottom: 12 }}>
+          <Typography.Text strong>Symptom: </Typography.Text>
+          {String(content.symptom)}
+        </Typography.Paragraph>
+      )}
+
+      {rca.length > 0 && (
+        <>
+          <Typography.Text strong>Root Cause Analysis (5 Whys)</Typography.Text>
+          <Table
+            rowKey={(_, i) => String(i)}
+            size="small"
+            pagination={false}
+            style={{ marginTop: 8, marginBottom: 12 }}
+            dataSource={rca}
+            columns={[
+              { title: 'Why', dataIndex: 'why', key: 'why', width: 80, render: (_v: string, _r: unknown, i: number) => `Why ${i + 1}` },
+              { title: 'Finding', dataIndex: 'finding', key: 'finding' },
+              { title: 'Depth', dataIndex: 'depth', key: 'depth', width: 80 },
+            ]}
+          />
+        </>
+      )}
+
+      {principles.length > 0 && (
+        <>
+          <Typography.Text strong>Long-term Principles</Typography.Text>
+          {principles.map((p, i) => (
+            <div key={i} style={{ marginTop: 8, marginBottom: 8, padding: 8, borderLeft: '3px solid #1677ff', background: '#f0f5ff', borderRadius: 4 }}>
+              <Typography.Text strong>{p.title}</Typography.Text>
+              <Typography.Paragraph style={{ margin: '4px 0 0' }}>{p.content}</Typography.Paragraph>
+            </div>
+          ))}
+        </>
+      )}
+
+      {fixes.length > 0 && (
+        <>
+          <Typography.Text strong>Preventive Measures</Typography.Text>
+          <Table
+            rowKey="action"
+            size="small"
+            pagination={false}
+            style={{ marginTop: 8 }}
+            dataSource={fixes}
+            columns={[
+              { title: 'Action', dataIndex: 'action', key: 'action' },
+              { title: 'Type', dataIndex: 'type', key: 'type', width: 100 },
+              { title: 'Status', dataIndex: 'status', key: 'status', width: 80 },
+            ]}
+          />
+        </>
+      )}
+
+      {content.summary && (
+        <Typography.Paragraph style={{ marginTop: 12 }}>
+          <Typography.Text strong>Summary: </Typography.Text>
+          {String(content.summary)}
+        </Typography.Paragraph>
+      )}
+    </>
+  );
+}
+
 const renderers: Record<ReportType, (content: Record<string, unknown>) => React.ReactNode> = {
+  POSTMORTEM: renderPostmortem,
   DEV_SELF_CHECK: renderDevSelfCheck,
   SECURITY_REVIEW: renderSecurityReview,
   TEST_REPORT: renderTestReport,

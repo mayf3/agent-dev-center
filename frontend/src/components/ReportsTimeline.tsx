@@ -212,9 +212,95 @@ function renderDeployConfirm(content: Record<string, unknown>) {
   );
 }
 
+function renderPostmortem(content: Record<string, unknown>) {
+  const rootCauseAnalysis = (content.rootCauseAnalysis || []) as Array<{ why: string; depth: number; finding: string }>;
+  const principles = (content.principles || []) as Array<{ title: string; content: string }>;
+  const fixes = (content.fixes || []) as Array<{ action: string; type: string; status: string }>;
+  return (
+    <>
+      <Descriptions bordered size="small" column={2} style={{ marginBottom: 12 }}>
+        <Descriptions.Item label="事故标题">{String(content.incidentTitle ?? '-')}</Descriptions.Item>
+        <Descriptions.Item label="严重等级">
+          <Tag color={
+            String(content.severity ?? '') === 'critical' ? 'red' :
+            String(content.severity ?? '') === 'high' ? 'volcano' :
+            String(content.severity ?? '') === 'medium' ? 'gold' : 'green'
+          }>{String(content.severity ?? '-')}</Tag>
+        </Descriptions.Item>
+        <Descriptions.Item label="发生时间" span={2}>{String(content.incidentTime ?? '-')}</Descriptions.Item>
+      </Descriptions>
+
+      {content.symptom && (
+        <Typography.Paragraph style={{ marginBottom: 12 }}>
+          <Typography.Text strong>现象：</Typography.Text>
+          {String(content.symptom)}
+        </Typography.Paragraph>
+      )}
+
+      {rootCauseAnalysis.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <Typography.Text strong>根因分析（5 Whys）</Typography.Text>
+          <Table
+            rowKey={(_, i) => String(i)}
+            size="small"
+            pagination={false}
+            style={{ marginTop: 8 }}
+            dataSource={rootCauseAnalysis}
+            columns={[
+              { title: '追问', dataIndex: 'why', key: 'why', width: 80, render: (v: string, _r: unknown, i: number) => `Why ${i + 1}` },
+              { title: '回答', dataIndex: 'finding', key: 'finding' },
+              { title: '层级', dataIndex: 'depth', key: 'depth', width: 80 },
+            ]}
+          />
+        </div>
+      )}
+
+      {principles.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <Typography.Text strong>提取的长期原则</Typography.Text>
+          {principles.map((p, i) => (
+            <Card key={i} size="small" style={{ marginTop: 8, borderLeft: '3px solid #1677ff' }}>
+              <Typography.Text strong>{p.title}</Typography.Text>
+              <Typography.Paragraph style={{ marginTop: 4 }}>{p.content}</Typography.Paragraph>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {fixes.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <Typography.Text strong>预防措施</Typography.Text>
+          <Table
+            rowKey="action"
+            size="small"
+            pagination={false}
+            style={{ marginTop: 8 }}
+            dataSource={fixes}
+            columns={[
+              { title: '措施', dataIndex: 'action', key: 'action' },
+              { title: '类型', dataIndex: 'type', key: 'type', width: 100, render: (v: string) => <Tag>{v}</Tag> },
+              { title: '状态', dataIndex: 'status', key: 'status', width: 100, render: (v: string) => (
+                <Tag color={v === 'done' ? 'green' : v === 'in-progress' ? 'blue' : 'orange'}>{v}</Tag>
+              )},
+            ]}
+          />
+        </div>
+      )}
+
+      {content.summary && (
+        <Typography.Paragraph style={{ marginTop: 12 }}>
+          <Typography.Text strong>总结：</Typography.Text>
+          {String(content.summary)}
+        </Typography.Paragraph>
+      )}
+    </>
+  );
+}
+
 function renderReportContent(report: RequirementReport) {
   const { reportType, content } = report;
   switch (reportType) {
+    case 'POSTMORTEM': return renderPostmortem(content);
     case 'DEV_SELF_CHECK': return renderDevSelfCheck(content);
     case 'SECURITY_REVIEW': return renderSecurityReview(content);
     case 'TEST_REPORT': return renderTestReport(content);

@@ -6,6 +6,7 @@ export const reportTypeValues = [
   'TEST_REPORT',
   'CTO_REVIEW',
   'DEPLOY_CONFIRM',
+  'POSTMORTEM',
 ] as const;
 
 export const reportStatusValues = [
