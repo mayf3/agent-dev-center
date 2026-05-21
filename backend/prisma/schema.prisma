@@ -73,6 +73,7 @@ model User {
   password  String
   role          UserRole    @default(requester)
   internalRole  InternalRole?  @map("internal_role")
+  okrRole       OkrRole       @default(okr_member) @map("okr_role")
   // SSO Agent fields
   agentId     String?  @unique
   permissions Json     @default("[]")
@@ -395,6 +396,22 @@ enum PipelineName {
   lifestyle
   devops
   education
+  business
+  cross_cutting    @map("cross-cutting")
+}
+
+enum OkrRole {
+  okr_admin    @map("okr_admin")
+  okr_reviewer @map("okr_reviewer")
+  okr_member   @map("okr_member")
+  okr_owner    @map("okr_owner")
+}
+
+enum GoalLayer {
+  mainline
+  explore
+  life
+  infra
 }
 
 enum MonthlyGoalStatus {
@@ -410,6 +427,7 @@ model AgentGoalCard {
 
   // Pipeline
   pipeline        PipelineName
+  layer           GoalLayer      @default(mainline)
   upstreamAgentIds String[]    @default([])
   downstreamAgentIds String[]  @default([])
 
