@@ -7,7 +7,7 @@ declare global {
       name: string;
       email: string;
       role: UserRole;
-      internalRole?: InternalRole;
+      internalRole?: InternalRole | null;
     }
 
     interface Request {
