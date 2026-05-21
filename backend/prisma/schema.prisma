@@ -15,6 +15,16 @@ enum UserRole {
   cto_agent
 }
 
+
+enum InternalRole {
+  cto
+  pm
+  developer
+  tester
+  security
+  ops
+  qa
+}
 enum RequirementPriority {
   P0
   P1
@@ -61,7 +71,8 @@ model User {
   name      String
   email     String   @unique
   password  String
-  role      UserRole @default(requester)
+  role          UserRole    @default(requester)
+  internalRole  InternalRole?  @map("internal_role")
   // SSO Agent fields
   agentId     String?  @unique
   permissions Json     @default("[]")
@@ -88,6 +99,8 @@ model Requirement {
   department    String
   assignee      String?
   assigneeId    String?               @db.Uuid
+  pmApprovedAt  DateTime?  @map("pm_approved_at")
+  pmApprovedBy  String?  @map("pm_approved_by")
   dueDate       DateTime?
   attachment    String?
   rejectReason  String?               @db.Text
@@ -163,6 +176,8 @@ model RequirementReport {
   submittedById   String?      @db.Uuid
   submittedByUser User?        @relation("ReportSubmitter", fields: [submittedById], references: [id])
   status          ReportStatus @default(pending)
+  qaReviewedAt    DateTime?  @map("qa_reviewed_at")
+  qaReviewedBy    String?  @map("qa_reviewed_by")
   reviewComment   String?      @db.Text
   reviewedAt      DateTime?
   createdAt       DateTime     @default(now())
@@ -244,6 +259,7 @@ model MarketplaceAgent {
   tasks MarketplaceTask[]
   accessTokens AgentAccessToken[]
   goalCard     AgentGoalCard?
+  weeklyReports WeeklyReport[]
 
   @@index([status])
   @@map("marketplace_agents")
@@ -440,6 +456,50 @@ model GoalRevision {
   @@index([goalCardId])
   @@index([createdAt])
   @@map("goal_revisions")
+}
+
+// ─── Weekly Report ──────────────────────────────────────────
+
+enum WeeklyReportStatus {
+  draft
+  submitted
+  reviewed
+  approved
+  changes_requested
+}
+
+model WeeklyReport {
+  id            String             @id @default(uuid()) @db.Uuid
+  agentId       String             @db.Uuid
+  agent         MarketplaceAgent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  // Week identification (e.g. "2026-W21" or "2026-05-19")
+  week          String
+
+  // Report content
+  content       String             @db.Text
+  summary       String             @default("") @db.Text
+  nextWeekPlan  String             @default("") @db.Text
+  blockers      String             @default("") @db.Text
+
+  // Submission
+  submittedBy   String             @default("")
+  submittedAt   DateTime?
+
+  // Review
+  status        WeeklyReportStatus @default(draft)
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  reviewComment String?            @db.Text
+
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([agentId, week])
+  @@index([agentId])
+  @@index([week])
+  @@index([status])
+  @@map("weekly_reports")
 }
 
 // ─── Postmortem Report ──────────────────────────────────────
