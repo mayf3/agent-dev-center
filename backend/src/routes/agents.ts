@@ -262,9 +262,9 @@ agentsRouter.post(
     const { week, content, summary, nextWeekPlan, blockers } = req.body as {
       week: string;
       content: string;
-      summary: string;
-      nextWeekPlan: string;
-      blockers: string;
+      summary?: string;
+      nextWeekPlan?: string;
+      blockers?: string;
     };
 
     if (!week || !content) {
@@ -276,33 +276,34 @@ agentsRouter.post(
       throw new HttpError(404, 'Agent 不存在');
     }
 
-    // Store weekly report in a simple way - use a new table or store in a JSON field
-    // For now, we'll use a dedicated model via raw query or just return success
-    // Since we don't have a weekly report model yet, let's use the marketplace_deliverables as a workaround
-    // Or better, create a simple in-memory/store approach
-
-    // Actually let's create a proper weekly report through existing mechanisms
-    // We can use a simple approach: store in a JSON field or create a generic record
-
-    // For MVP, we'll use the requirement reports mechanism as a store
-    // Create a "WEEKLY_REPORT" type report on a virtual requirement
-    // Or simply store as a JSON blob in a new simple model
-
-    // Simplified: return success and store in memory (backend will restart = data lost)
-    // TODO: Add WeeklyReport model to Prisma schema in v2
-    res.status(201).json({
-      data: {
-        id: `wr_${Date.now()}`,
-        agentId,
-        week,
-        summary: summary || '',
+    // Upsert: if report for this agent+week exists, update it; otherwise create
+    const report = await prisma.weeklyReport.upsert({
+      where: {
+        agentId_week: { agentId, week },
+      },
+      update: {
         content,
+        summary: summary || '',
         nextWeekPlan: nextWeekPlan || '',
         blockers: blockers || '',
         submittedBy: req.user!.name,
-        createdAt: new Date().toISOString(),
+        submittedAt: new Date(),
+        status: 'submitted',
+      },
+      create: {
+        agentId,
+        week,
+        content,
+        summary: summary || '',
+        nextWeekPlan: nextWeekPlan || '',
+        blockers: blockers || '',
+        submittedBy: req.user!.name,
+        submittedAt: new Date(),
+        status: 'submitted',
       },
     });
+
+    res.status(201).json({ data: report });
   })
 );
 
@@ -311,9 +312,112 @@ agentsRouter.post(
 agentsRouter.get(
   '/:agentId/weekly-reports',
   authRequired,
+  asyncHandler(async (req, res) => {
+    const agentId = String(req.params.agentId);
+    const { status, limit, offset } = req.query as {
+      status?: string;
+      limit?: string;
+      offset?: string;
+    };
+
+    const where: Prisma.WeeklyReportWhereInput = { agentId };
+    if (status) {
+      where.status = status as Prisma.WeeklyReportWhereInput['status'];
+    }
+
+    const take = limit ? parseInt(limit, 10) : 20;
+    const skip = offset ? parseInt(offset, 10) : 0;
+
+    const [reports, total] = await Promise.all([
+      prisma.weeklyReport.findMany({
+        where,
+        orderBy: { week: 'desc' },
+        take,
+        skip,
+      }),
+      prisma.weeklyReport.count({ where }),
+    ]);
+
+    res.json({ data: reports, total });
+  })
+);
+
+// ─── 7. 获取单条周报 ────────────────────────────────────────
+
+agentsRouter.get(
+  '/:agentId/weekly-reports/:reportId',
+  authRequired,
+  asyncHandler(async (req, res) => {
+    const agentId = String(req.params.agentId);
+    const reportId = String(req.params.reportId);
+
+    const report = await prisma.weeklyReport.findFirst({
+      where: { id: reportId, agentId },
+    });
+
+    if (!report) {
+      throw new HttpError(404, '周报不存在');
+    }
+
+    res.json({ data: report });
+  })
+);
+
+// ─── 8. 审批周报 ────────────────────────────────────────────
+
+agentsRouter.patch(
+  '/:agentId/weekly-reports/:reportId/review',
+  authRequired,
+  asyncHandler(async (req, res) => {
+    const agentId = String(req.params.agentId);
+    const reportId = String(req.params.reportId);
+    const { action, comment } = req.body as {
+      action: 'approved' | 'changes_requested';
+      comment?: string;
+    };
+
+    if (!action || !['approved', 'changes_requested'].includes(action)) {
+      throw new HttpError(400, 'action 必须是 approved 或 changes_requested');
+    }
+
+    const report = await prisma.weeklyReport.findFirst({
+      where: { id: reportId, agentId },
+    });
+
+    if (!report) {
+      throw new HttpError(404, '周报不存在');
+    }
+
+    const updated = await prisma.weeklyReport.update({
+      where: { id: reportId },
+      data: {
+        status: action === 'approved' ? 'approved' : 'changes_requested',
+        reviewedBy: req.user!.name,
+        reviewedAt: new Date(),
+        reviewComment: comment || null,
+      },
+    });
+
+    res.json({ data: updated });
+  })
+);
+
+// ─── 9. 获取待审批周报（所有 Agent） ────────────────────────
+
+agentsRouter.get(
+  '/weekly-reports/pending',
+  authRequired,
   asyncHandler(async (_req, res) => {
-    // MVP: return empty list (no persistence yet)
-    // In v2, we'll add a WeeklyReport model
-    res.json({ data: [] });
+    const pendingReports = await prisma.weeklyReport.findMany({
+      where: { status: 'submitted' },
+      orderBy: { submittedAt: 'asc' },
+      include: {
+        agent: {
+          select: { id: true, name: true, displayName: true, avatar: true },
+        },
+      },
+    });
+
+    res.json({ data: pendingReports });
   })
 );

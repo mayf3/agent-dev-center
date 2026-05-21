@@ -6,6 +6,8 @@ import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { notifyEvent } from '../utils/notifications.js';
 import { archiveRecord } from '../lib/archive.js';
+import { InternalRole, ReportType } from '@prisma/client';
+import { requireInternalRole } from '../middleware/internal-workflow.js';
 import {
   submitReportSchema,
   listReportsSchema,
@@ -21,24 +23,32 @@ reportsRouter.use(authRequired);
 /**
  * 报告类型 → 允许提交的角色/身份映射
  *
- * 规则：
+ * ⚠️ 2026-05-21 验尸修复：废除 admin 万能豁免
+ *
+ * 规则（写死原则）：
  * - DEV_SELF_CHECK → 需求 assignee 可提
- * - TEST_REPORT → test-engineer 角色
- * - SECURITY_REVIEW → security-agent 角色
- * - CTO_REVIEW → admin 角色（CTO）
- * - DEPLOY_CONFIRM → itops-agent 角色
+ * - TEST_REPORT → 仅 internal_role=tester 可提
+ * - SECURITY_REVIEW → 仅 internal_role=security 可提
+ * - CTO_REVIEW → 仅 internal_role=cto（admin）可提
+ * - DEPLOY_CONFIRM → 仅 internal_role=ops 可提
+ * - POSTMORTEM → 任何认证用户可提（全员验尸文化）
+ * - ⛔ admin 不能代提交任何报告（allowAdmin: 已废除）
+ * - ⛔ 角色校验使用 internal_role（因为所有 Agent 的 role 字段都是 'developer'）
  */
-const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role' | 'any'; roles?: string[]; allowAdmin?: boolean }> = {
-  DEV_SELF_CHECK: { mode: 'assignee', allowAdmin: true },
-  TEST_REPORT: { mode: 'role', roles: ['test-engineer', 'admin'], allowAdmin: true },
-  SECURITY_REVIEW: { mode: 'role', roles: ['security-agent', 'admin'], allowAdmin: true },
-  CTO_REVIEW: { mode: 'role', roles: ['cto_agent', 'admin'], allowAdmin: true },
-  DEPLOY_CONFIRM: { mode: 'role', roles: ['itops-agent', 'admin'], allowAdmin: true },
-  POSTMORTEM: { mode: 'role', roles: ['agent-dev-engineer', 'devtools-agent', 'frontend-react-engineer', 'mobile-app-engineer', 'miniapp-game-engineer', 'game-dev-agent', 'test-engineer', 'security-agent', 'itops-agent', 'admin'], allowAdmin: true }, // 开发团队全员可提交验尸报告（2026-05-20 老板指令）
+const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role' | 'any'; internalRoles?: InternalRole[]; allowAdmin?: boolean }> = {
+  DEV_SELF_CHECK:    { mode: 'assignee', allowAdmin: false },
+  TEST_REPORT:       { mode: 'role', internalRoles: ['tester'], allowAdmin: false },
+  SECURITY_REVIEW:   { mode: 'role', internalRoles: ['security'], allowAdmin: false },
+  CTO_REVIEW:        { mode: 'role', internalRoles: ['cto'], allowAdmin: true },
+  DEPLOY_CONFIRM:    { mode: 'role', internalRoles: ['ops'], allowAdmin: false },
+  POSTMORTEM:        { mode: 'any', allowAdmin: true },
 };
 
 /**
  * 校验提交者是否有权提交该类型的报告
+ *
+ * ⚠️ 2026-05-21 验尸修复：废除 admin 万能豁免 + 改用 internal_role 校验
+ * 验证记录：docs/postmortem-cto-hack-20260521.md
  */
 async function validateReportRole(
   userId: string,
@@ -47,13 +57,37 @@ async function validateReportRole(
   userEmail: string,
   reportType: string,
   requirementId: string,
+  internalRole?: string,
 ): Promise<void> {
   const rule = REPORT_ROLE_MAP[reportType];
   if (!rule) return; // 未知类型暂不限制
 
-  // admin/cto_agent 总是有权
-  if (rule.allowAdmin !== false && (userRole === 'admin' || userRole === 'cto_agent')) return;
-  if (rule.roles?.includes(userRole)) return;
+  const isAdminEnv = userRole === 'admin' || userRole === 'cto_agent';
+
+  // admin 特赦：仅 allowAdmin=true 时放行（目前只有 CTO_REVIEW 和 POSTMORTEM）
+  if (isAdminEnv && rule.allowAdmin) {
+    // admin 只能提交 CTO_REVIEW 或 POSTMORTEM，不能代提交其他类型
+    if (rule.mode === 'assignee') {
+      throw new HttpError(403, `⛔ ${reportType} 仅需求 assignee 可提交，admin 不能代提交`);
+    }
+    if (rule.internalRoles && rule.internalRoles.length > 0 && !rule.internalRoles.includes('cto')) {
+      throw new HttpError(403, `⛔ ${reportType} 仅 ${rule.internalRoles.join('/')} 可提交，admin 不能代提交`);
+    }
+    return; // admin 提交 CTO_REVIEW / POSTMORTEM → 放行
+  }
+
+  // admin 被明确拒绝 → 直接 403
+  if (isAdminEnv && !rule.allowAdmin) {
+    throw new HttpError(403, `⛔ admin 不能提交 ${reportType} 报告，请使用对应角色的 ADC 账号自行提交`);
+  }
+
+  // role 模式：使用 internal_role 校验
+  // 注意：用 internal_role（测试工程师 = tester，安全卫士 = security）而非 role（全是 developer）
+  if (rule.mode === 'role' && rule.internalRoles && rule.internalRoles.length > 0) {
+    if (internalRole && rule.internalRoles.includes(internalRole as InternalRole)) return;
+    const allowed = rule.internalRoles.map(r => `internal_role=${r}`).join(' 或 ');
+    throw new HttpError(403, `${reportType} 报告仅 ${allowed} 可提交（你的 internal_role: ${internalRole ?? '未设置'}）`);
+  }
 
   // any 模式：任何认证用户都可以
   if (rule.mode === 'any') return;
@@ -67,12 +101,10 @@ async function validateReportRole(
     if (requirement?.assigneeId === userId) return;
     // fallback: 如果 assigneeId 为空，用 name/email 匹配（兼容旧数据）
     if (requirement?.assignee && (requirement.assignee === userName || requirement.assignee === userEmail)) return;
+    throw new HttpError(403, `${reportType} 仅需求 assignee 可提交，当前 assignee: ${requirement?.assignee ?? '未分配'}`);
   }
 
-  const allowed = rule.mode === 'assignee'
-    ? `需求 assignee${rule.allowAdmin ? ' 或 admin' : ''}`
-    : (rule.roles || []).join(' / ');
-  throw new HttpError(403, `${reportType} 报告仅 ${allowed} 可提交`);
+  throw new HttpError(403, `${reportType} 报告类型配置错误，请联系管理员`);
 }
 
 /**
@@ -94,7 +126,7 @@ reportsRouter.post(
     if (!requirement) throw new HttpError(404, '需求不存在');
 
     // 校验提交者角色
-    await validateReportRole(req.user!.id, req.user!.role, req.user!.name, req.user!.email, body.reportType, params.id);
+    await validateReportRole(req.user!.id, req.user!.role, req.user!.name, req.user!.email, body.reportType, params.id, req.user!.internalRole);
 
     const report = await prisma.requirementReport.create({
       data: {
@@ -157,6 +189,48 @@ reportsRouter.get(
  * PATCH /api/requirements/:id/reports/:reportId
  * CTO 审核报告（仅 admin 角色）
  */
+// QA 审批 TEST_REPORT 和 SECURITY_REVIEW
+reportsRouter.patch(
+  '/:reportId/qa-review',
+  requireInternalRole('qa'),
+  asyncHandler(async (req, res) => {
+    const { params, body } = reviewReportSchema.parse({
+      params: req.params,
+      body: req.body,
+    });
+
+    const report = await prisma.requirementReport.findUnique({
+      where: { id: params.reportId },
+    });
+    if (!report) throw new HttpError(404, '报告不存在');
+    if (report.status !== 'pending') throw new HttpError(400, '该报告已审核');
+
+    // TEST_REPORT 和 SECURITY_REVIEW 才需要 QA 审批
+    if (report.reportType !== ReportType.TEST_REPORT && report.reportType !== ReportType.SECURITY_REVIEW) {
+      throw new HttpError(400, '只有测试报告和安全审查需要 QA 审批');
+    }
+
+    const updated = await prisma.requirementReport.update({
+      where: { id: params.reportId },
+      data: {
+        qaReviewedAt: new Date(),
+        qaReviewedBy: req.user!.name,
+        // QA 审批不改变最终状态，只是标记已审查
+        reviewComment: body.reviewComment,
+      },
+    });
+
+    void notifyEvent('report.qa_reviewed' as any, {
+      id: params.id,
+      title: report.reportType,
+      qa: req.user!.name,
+    });
+
+    res.json({ success: true, data: updated, message: 'QA 审查完成，等待 CTO 最终审批' });
+  }),
+);
+
+// CTO 最终审批（或直接审批非 QA 流程的报告）
 reportsRouter.patch(
   '/:reportId',
   requireRoles('admin'),
@@ -171,6 +245,13 @@ reportsRouter.patch(
     });
     if (!report) throw new HttpError(404, '报告不存在');
     if (report.requirementId !== params.id) throw new HttpError(400, '报告与需求不匹配');
+
+    // TEST_REPORT 和 SECURITY_REVIEW 必须先经 QA 审查
+    const requiresQaReview = report.reportType === ReportType.TEST_REPORT || report.reportType === ReportType.SECURITY_REVIEW;
+    if (requiresQaReview && !report.qaReviewedAt) {
+      throw new HttpError(403, '测试报告和安全审查必须先经 QA 审查，再由 CTO 最终审批');
+    }
+
     if (report.status !== 'pending') throw new HttpError(400, '该报告已审核');
 
     const updated = await prisma.requirementReport.update({
