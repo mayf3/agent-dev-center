@@ -563,17 +563,21 @@ requirementsRouter.patch(
       throw new HttpError(400, '拒绝需求时必须填写拒绝原因');
     }
 
-    // P0 工作流限制：WIP 限制检查
-    // 从 existing 或解析 assignee 获取 targetAssigneeId
+    // P0 工作流限制：WIP 限制检查（仅分配或转 in-progress 时触发）
     let targetAssigneeId = existing.assigneeId;
-    if (body.assignee !== undefined) {
+    const isAssigneeChange = body.assignee !== undefined && body.assignee !== existing.assignee;
+    const isStatusToInProgress = body.status === 'in-progress' && existing.status !== 'in-progress';
+
+    if (!isAssigneeChange && !isStatusToInProgress) {
+      // 纯状态变更（testing/review/done），跳过 WIP 检查
+    } else if (body.assignee !== undefined) {
       const assigneeUser = await prisma.user.findFirst({
         where: { OR: [{ name: body.assignee }, { email: body.assignee }] },
         select: { id: true }
       });
       targetAssigneeId = assigneeUser?.id ?? null;
     }
-    if (targetAssigneeId || (body.status === 'in-progress' && existing.assigneeId)) {
+    if (targetAssigneeId) {
       const finalAssigneeId = targetAssigneeId || existing.assigneeId;
       const inProgressCount = await prisma.requirement.count({
         where: {
