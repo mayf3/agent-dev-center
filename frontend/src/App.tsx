@@ -7,6 +7,8 @@ import { AuthProvider } from './contexts/AuthContext';
 import { DashboardPage } from './pages/DashboardPage';
 import { KanbanBoardPage } from './pages/KanbanBoardPage';
 import { LoginPage } from './pages/LoginPage';
+import { AgentTeamBoard } from './pages/AgentTeamBoard';
+import { AgentDetailPage } from './pages/AgentDetailPage';
 import { RequirementDetailPage } from './pages/RequirementDetailPage';
 import { RequirementListPage } from './pages/RequirementListPage';
 import { SubmitRequirementPage } from './pages/SubmitRequirementPage';
@@ -20,6 +22,7 @@ import { ServicesPage } from './pages/ServicesPage';
 import { ServiceDetailPage } from './pages/ServiceDetailPage';
 import { SsoPortalPage } from './pages/SsoPortalPage';
 import AgentSsoPage from './pages/AgentSsoPage';
+import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { lazy, Suspense } from 'react';
 import { Spin } from 'antd';
 
@@ -51,6 +54,8 @@ const router = createBrowserRouter([
             { path: 'services', element: <ServicesPage /> },
             { path: 'services/:id', element: <ServiceDetailPage /> },
             { path: 'portal', element: <SsoPortalPage /> },
+            { path: 'team', element: <AgentTeamBoard /> },
+            { path: 'team/agents/:agentId', element: <AgentDetailPage /> },
             { path: 'tasks', element: <TaskListPage /> },
             { path: 'tasks/kanban', element: <TaskKanbanPage /> },
             { path: 'goals', element: <GoalDashboardPage /> },
@@ -103,6 +108,14 @@ const router = createBrowserRouter([
             element: <SsoPortalPage />
           },
           {
+            path: 'team',
+            element: <AgentTeamBoard />
+          },
+          {
+            path: 'team/agents/:agentId',
+            element: <AgentDetailPage />
+          },
+          {
             path: 'tasks',
             element: <TaskListPage />
           },
@@ -133,6 +146,10 @@ const router = createBrowserRouter([
           {
             path: 'agent-sso',
             element: <AgentSsoPage />
+          },
+          {
+            path: 'change-password',
+            element: <ChangePasswordPage />
           }
         ]
       }

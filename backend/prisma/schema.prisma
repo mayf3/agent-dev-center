@@ -12,6 +12,7 @@ enum UserRole {
   requester
   developer
   agent
+  cto_agent
 }
 
 enum RequirementPriority {
@@ -23,6 +24,7 @@ enum RequirementPriority {
 
 enum RequirementStatus {
   pending
+  clarifying  @map("clarifying")   // PM 跟需求方澄清中
   approved
   rejected
   in_progress @map("in-progress")

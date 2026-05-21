@@ -32,7 +32,7 @@ const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role' | 'any'; roles
   DEV_SELF_CHECK: { mode: 'assignee', allowAdmin: true },
   TEST_REPORT: { mode: 'role', roles: ['test-engineer', 'admin'], allowAdmin: true },
   SECURITY_REVIEW: { mode: 'role', roles: ['security-agent', 'admin'], allowAdmin: true },
-  CTO_REVIEW: { mode: 'role', roles: ['admin'] },
+  CTO_REVIEW: { mode: 'role', roles: ['cto_agent', 'admin'], allowAdmin: true },
   DEPLOY_CONFIRM: { mode: 'role', roles: ['itops-agent', 'admin'], allowAdmin: true },
   POSTMORTEM: { mode: 'role', roles: ['agent-dev-engineer', 'devtools-agent', 'frontend-react-engineer', 'mobile-app-engineer', 'miniapp-game-engineer', 'game-dev-agent', 'test-engineer', 'security-agent', 'itops-agent', 'admin'], allowAdmin: true }, // 开发团队全员可提交验尸报告（2026-05-20 老板指令）
 };
@@ -51,8 +51,8 @@ async function validateReportRole(
   const rule = REPORT_ROLE_MAP[reportType];
   if (!rule) return; // 未知类型暂不限制
 
-  // admin 总是有权
-  if (rule.allowAdmin !== false && userRole === 'admin') return;
+  // admin/cto_agent 总是有权
+  if (rule.allowAdmin !== false && (userRole === 'admin' || userRole === 'cto_agent')) return;
   if (rule.roles?.includes(userRole)) return;
 
   // any 模式：任何认证用户都可以
@@ -249,9 +249,9 @@ reportsRouter.delete(
     if (!report) throw new HttpError(404, '报告不存在');
     if (report.requirementId !== params.id) throw new HttpError(400, '报告与需求不匹配');
 
-    // 权限检查：仅提交者本人或 admin
+    // 权限检查：仅提交者本人或 admin/cto_agent
     const isOwner = report.submittedById === req.user!.id;
-    const isAdmin = req.user!.role === 'admin';
+    const isAdmin = req.user!.role === 'admin' || req.user!.role === 'cto_agent';
     if (!isOwner && !isAdmin) throw new HttpError(403, '无权删除该报告');
 
     // 仅允许删除 pending 或 changes_requested 状态的报告

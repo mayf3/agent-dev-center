@@ -12,7 +12,9 @@ import {
   DownloadOutlined,
   CloudServerOutlined,
   AimOutlined,
-  BugOutlined
+  BugOutlined,
+  TeamOutlined,
+  KeyOutlined
 } from '@ant-design/icons';
 import { Button, Drawer, Layout, Menu, Space, Tag, Typography, Popover } from 'antd';
 import type { MenuProps } from 'antd';
@@ -54,7 +56,9 @@ export function AppLayout() {
   const selectedKey =
     location.pathname === '/'
       ? '/'
-      : location.pathname.startsWith('/requirements/new')
+      : location.pathname.startsWith('/team')
+        ? '/team'
+        : location.pathname.startsWith('/requirements/new')
         ? '/requirements/new'
         : location.pathname.startsWith('/requirements')
           ? searchParamsHasMy()
@@ -90,6 +94,7 @@ export function AppLayout() {
     { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
     { key: '/requirements', icon: <UnorderedListOutlined />, label: '需求管理' },
     ...(!isPublicMode ? [{ key: '/requirements/new', icon: <PlusCircleOutlined />, label: '提交需求' }] : []),
+    { key: '/team', icon: <TeamOutlined />, label: '团队看板' },
     { key: '/kanban', icon: <ProjectOutlined />, label: '开发看板' },
     { key: '/goals', icon: <AimOutlined />, label: '目标卡' },
     { key: '/postmortems', icon: <BugOutlined />, label: '验尸报告' },
@@ -172,6 +177,15 @@ export function AppLayout() {
             style={{ border: 'none' }}
           />
           <div style={{ padding: '16px 0 0', borderTop: '1px solid #f0f0f0', marginTop: 8 }}>
+            <Button
+              type="default"
+              icon={<KeyOutlined />}
+              block
+              onClick={() => { navigate('/change-password'); setDrawerOpen(false); }}
+              style={{ marginBottom: 8 }}
+            >
+              修改密码
+            </Button>
             <div style={{ marginBottom: 8 }}>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 Agent Dev Center
@@ -264,9 +278,19 @@ export function AppLayout() {
               </>
             )}
             {user && (
-              <Button icon={<LogoutOutlined />} onClick={handleLogout}>
-                退出
-              </Button>
+              <Space size="small">
+                <Button
+                  icon={<KeyOutlined />}
+                  onClick={() => navigate('/change-password')}
+                  type="text"
+                  style={{ color: '#fff' }}
+                >
+                  改密
+                </Button>
+                <Button icon={<LogoutOutlined />} onClick={handleLogout}>
+                  退出
+                </Button>
+              </Space>
             )}
           </Space>
         </Header>

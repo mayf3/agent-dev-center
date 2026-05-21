@@ -2,6 +2,7 @@ export type UserRole = 'admin' | 'requester' | 'developer';
 export type RequirementPriority = 'P0' | 'P1' | 'P2' | 'P3';
 export type RequirementStatus =
   | 'pending'
+  | 'clarifying'
   | 'approved'
   | 'rejected'
   | 'in-progress'
@@ -107,7 +108,7 @@ export interface GitCommit {
 
 // ─── Reports ──────────────────────────────────────────────────────
 
-export type ReportType = 'DEV_SELF_CHECK' | 'SECURITY_REVIEW' | 'TEST_REPORT' | 'CTO_REVIEW' | 'DEPLOY_CONFIRM';
+export type ReportType = 'DEV_SELF_CHECK' | 'SECURITY_REVIEW' | 'TEST_REPORT' | 'CTO_REVIEW' | 'DEPLOY_CONFIRM' | 'POSTMORTEM';
 export type ReportStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested';
 
 export interface RequirementReport {

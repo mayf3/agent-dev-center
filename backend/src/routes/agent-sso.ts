@@ -31,7 +31,7 @@ interface AgentTokenPayload {
 }
 
 function signAgentToken(payload: AgentTokenPayload): string {
-  return jwt.sign(payload, env.JWT_SECRET_SSO, { expiresIn: '7d' });
+  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: '7d' });
 }
 
 // ─── 1. Agent 统一登录 ─────────────────────────────────────
@@ -308,7 +308,7 @@ agentSsoRouter.get(
     if (!token) throw new HttpError(401, '请提供 Token');
 
     try {
-      const payload = jwt.verify(token, env.JWT_SECRET_SSO) as AgentTokenPayload;
+      const payload = jwt.verify(token, env.JWT_SECRET) as AgentTokenPayload;
       res.json({
         valid: true,
         agent: {

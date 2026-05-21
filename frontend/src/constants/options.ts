@@ -27,6 +27,7 @@ export const priorityColors: Record<RequirementPriority, string> = {
 
 export const statusLabels: Record<RequirementStatus, string> = {
   pending: '待审核',
+  clarifying: '需求澄清中',
   approved: '待开发',
   rejected: '已拒绝',
   'in-progress': '开发中',
@@ -38,6 +39,7 @@ export const statusLabels: Record<RequirementStatus, string> = {
 
 export const statusColors: Record<RequirementStatus, string> = {
   pending: 'default',
+  clarifying: 'gold',
   approved: 'processing',
   rejected: 'error',
   'in-progress': 'blue',
@@ -123,6 +125,7 @@ export const reportTypeLabels: Record<ReportType, string> = {
   TEST_REPORT: '测试报告',
   CTO_REVIEW: 'CTO 验收',
   DEPLOY_CONFIRM: '发布确认',
+  POSTMORTEM: '验尸报告',
 };
 
 export const reportStatusLabels: Record<ReportStatus, string> = {
@@ -140,6 +143,7 @@ export const reportStatusColors: Record<ReportStatus, string> = {
 };
 
 export const reportTypeOrder: ReportType[] = [
+  'POSTMORTEM',
   'DEV_SELF_CHECK',
   'SECURITY_REVIEW',
   'TEST_REPORT',

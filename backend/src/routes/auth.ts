@@ -4,9 +4,10 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js';
-import { loginSchema, registerSchema } from '../schemas/auth.js';
+import { signAccessToken, signRefreshToken, verifyRefreshToken, authRequired } from '../middleware/auth.js';
+import { loginSchema, registerSchema, changePasswordSchema } from '../schemas/auth.js';
 import { env } from '../config/env.js';
+import { UserRole } from '@prisma/client';
 
 export const authRouter = Router();
 
@@ -14,7 +15,7 @@ function toSafeUser(user: {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'requester' | 'developer' | 'agent';
+  role: UserRole;
 }) {
   return user;
 }
@@ -116,6 +117,36 @@ authRouter.post(
       refreshToken,
       user: safeUser
     });
+  })
+);
+
+authRouter.post(
+  '/change-password',
+  authRequired,
+  asyncHandler(async (req, res) => {
+    const { body } = changePasswordSchema.parse({ body: req.body });
+    const userId = req.user!.id;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user) {
+      throw new HttpError(401, '用户不存在');
+    }
+
+    const passwordMatches = await bcrypt.compare(body.oldPassword, user.password);
+    if (!passwordMatches) {
+      throw new HttpError(401, '当前密码不正确');
+    }
+
+    const hashedPassword = await bcrypt.hash(body.newPassword, 10);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword }
+    });
+
+    res.json({ message: '密码修改成功' });
   })
 );
 
