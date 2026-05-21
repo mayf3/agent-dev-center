@@ -18,7 +18,8 @@ function toSafeUser(user: any): Express.AuthUser {
     name: user.name,
     email: user.email,
     role: user.role,
-    internalRole: user.internalRole ?? undefined,
+    internalRole: user.internalRole,
+    okrRole: user.okrRole ?? undefined,
   };
 }
 
@@ -42,7 +43,7 @@ authRouter.get(
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true }
     });
 
     if (!user) {
@@ -73,7 +74,7 @@ authRouter.post(
         password,
         role: body.role
       },
-      select: { id: true, name: true, email: true, role: true, internalRole: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true }
     });
 
     const accessToken = signAccessToken(user as Express.AuthUser);
@@ -109,7 +110,8 @@ authRouter.post(
       name: user.name,
       email: user.email,
       role: user.role,
-      internalRole: user.internalRole
+      internalRole: user.internalRole,
+      okrRole: user.okrRole
     });
 
     const accessToken = signAccessToken(safeUser);
@@ -171,7 +173,7 @@ authRouter.post(
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true }
     });
 
     if (!user) {
