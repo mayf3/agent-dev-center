@@ -570,6 +570,7 @@ requirementsRouter.patch(
 
     if (!isAssigneeChange && !isStatusToInProgress) {
       // 纯状态变更（testing/review/done），跳过 WIP 检查
+      targetAssigneeId = null;
     } else if (body.assignee !== undefined) {
       const assigneeUser = await prisma.user.findFirst({
         where: { OR: [{ name: body.assignee }, { email: body.assignee }] },
