@@ -7,7 +7,7 @@ import { HttpError } from '../utils/http-error.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken, authRequired } from '../middleware/auth.js';
 import { loginSchema, registerSchema, changePasswordSchema } from '../schemas/auth.js';
 import { env } from '../config/env.js';
-import { UserRole } from '@prisma/client';
+import { UserRole, InternalRole } from '@prisma/client';
 
 export const authRouter = Router();
 
@@ -16,8 +16,15 @@ function toSafeUser(user: {
   name: string;
   email: string;
   role: UserRole;
+  internalRole?: InternalRole | null;
 }) {
-  return user;
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    internalRole: user.internalRole ?? null,
+  };
 }
 
 // GET /auth/me - Token 验证，返回当前用户信息
@@ -40,7 +47,7 @@ authRouter.get(
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true }
     });
 
     if (!user) {
@@ -71,7 +78,7 @@ authRouter.post(
         password,
         role: body.role
       },
-      select: { id: true, name: true, email: true, role: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true }
     });
 
     const accessToken = signAccessToken(user);
@@ -106,7 +113,8 @@ authRouter.post(
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role
+      role: user.role,
+      internalRole: user.internalRole
     });
 
     const accessToken = signAccessToken(safeUser);
@@ -168,7 +176,7 @@ authRouter.post(
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true }
     });
 
     if (!user) {
