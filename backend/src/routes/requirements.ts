@@ -32,6 +32,13 @@ import { archiveFile } from '../lib/archive.js';
 import { listRevisionsSchema } from '../schemas/revision.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../utils/similarity.js';
 import { runOverdueCheck, findOverdueRequirements } from '../utils/overdue-check.js';
+import {
+  requireInternalRole,
+  requirePmApproval,
+  checkWipLimit,
+  preventSelfApproval,
+  enforceReportReviewFlow
+} from '../middleware/internal-workflow.js';
 
 export const requirementsRouter = Router();
 
@@ -556,6 +563,39 @@ requirementsRouter.patch(
       throw new HttpError(400, '拒绝需求时必须填写拒绝原因');
     }
 
+    // P0 工作流限制：WIP 限制检查
+    // 从 existing 或解析 assignee 获取 targetAssigneeId
+    let targetAssigneeId = existing.assigneeId;
+    if (body.assignee !== undefined) {
+      const assigneeUser = await prisma.user.findFirst({
+        where: { OR: [{ name: body.assignee }, { email: body.assignee }] },
+        select: { id: true }
+      });
+      targetAssigneeId = assigneeUser?.id ?? null;
+    }
+    if (targetAssigneeId || (body.status === 'in-progress' && existing.assigneeId)) {
+      const finalAssigneeId = targetAssigneeId || existing.assigneeId;
+      const inProgressCount = await prisma.requirement.count({
+        where: {
+          assigneeId: finalAssigneeId,
+          status: 'in_progress', // 使用正确的枚举值
+          id: { not: params.id } // 排除当前需求
+        }
+      });
+      const WIP_LIMIT = parseInt(process.env.WIP_LIMIT || '2', 10);
+      if (inProgressCount >= WIP_LIMIT) {
+        throw new HttpError(403, `WIP 限制：当前开发已有 ${inProgressCount} 个进行中的需求，已达上限 (${WIP_LIMIT})`);
+      }
+    }
+
+    // P0 工作流限制：P0-P1 需求必须先经 PM 审批
+    if ((body.status === 'approved' || body.status === 'in-progress') &&
+        (existing.priority === 'P0' || existing.priority === 'P1')) {
+      if (!existing.pmApprovedAt) {
+        throw new HttpError(403, 'P0/P1 需求必须先经 PM 审批才能分配开发');
+      }
+    }
+
     // 强制逐步流转校验
     if (body.status) {
       const currentStatus = apiRequirementStatus[existing.status as keyof typeof apiRequirementStatus] as string;
@@ -668,6 +708,75 @@ requirementsRouter.patch(
     });
 
     res.json(serializeRequirement(updated));
+  })
+);
+
+// PM 审批 P0/P1 需求
+requirementsRouter.post(
+  '/:id/pm-approve',
+  authRequired,
+  requireInternalRole('pm'),
+  asyncHandler(async (req, res) => {
+    const id = String(req.params.id);
+    const { approved, comment } = req.body as { approved: boolean; comment?: string };
+
+    if (typeof approved !== 'boolean') {
+      throw new HttpError(400, '缺少 approved 字段 (boolean)');
+    }
+
+    const existing = await prisma.requirement.findUnique({
+      where: { id }
+    });
+
+    if (!existing) {
+      throw new HttpError(404, '需求不存在');
+    }
+
+    if (existing.priority !== 'P0' && existing.priority !== 'P1') {
+      throw new HttpError(400, '只有 P0/P1 需求需要 PM 审批');
+    }
+
+    if (existing.pmApprovedAt) {
+      throw new HttpError(409, '该需求已经 PM 审批过');
+    }
+
+    if (!approved) {
+      // PM 拒绝：更新状态为 rejected
+      const updated = await prisma.requirement.update({
+        where: { id },
+        data: {
+          status: 'rejected',
+          rejectReason: comment || 'PM 审批未通过'
+        }
+      });
+
+      void notifyEvent('requirement.updated' as any, {
+        id: updated.id,
+        title: updated.title,
+        pm: req.user!.name,
+        comment: (comment || '') as string,
+      } as any);
+
+      return res.json({ requirement: updated, message: 'PM 审批未通过' });
+    }
+
+    // PM 批准
+    const updated = await prisma.requirement.update({
+      where: { id },
+      data: {
+        pmApprovedAt: new Date(),
+        pmApprovedBy: req.user!.name
+      }
+    });
+
+    void notifyEvent('requirement.updated' as any, {
+      id: updated.id,
+      title: updated.title,
+      pm: req.user!.name,
+      comment: (comment || '') as string,
+    } as any);
+
+    res.json({ requirement: updated, message: 'PM 审批通过' });
   })
 );
 

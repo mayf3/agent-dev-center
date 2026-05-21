@@ -1,7 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import type { SignOptions, JwtPayload } from 'jsonwebtoken';
-import type { UserRole } from '@prisma/client';
+import type { UserRole, InternalRole } from '@prisma/client';
 import { env } from '../config/env.js';
 import { prisma } from '../lib/prisma.js';
 import { HttpError } from '../utils/http-error.js';
@@ -145,22 +145,22 @@ export const authRequired = asyncHandler(async (req: Request, _res: Response, ne
     // Agent JWT: sub 是 agentId，查 User 表 by agentId
     const user = await prisma.user.findFirst({
       where: { agentId: payload.sub },
-      select: { id: true, name: true, email: true, role: true, permissions: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, permissions: true }
     });
     if (!user) {
       throw new HttpError(401, 'Agent 不存在或已被禁用');
     }
-    req.user = user;
+    req.user = user as Express.AuthUser;
   } else {
     // 用户 JWT: sub 是 UUID
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, permissions: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, permissions: true }
     });
     if (!user) {
       throw new HttpError(401, '用户不存在或已被禁用');
     }
-    req.user = user;
+    req.user = user as Express.AuthUser;
   }
 
   next();
@@ -172,7 +172,7 @@ export function requireRoles(...roles: UserRole[]): RequestHandler {
       return next(new HttpError(401, '请先登录'));
     }
 
-    if (!roles.includes(req.user.role)) {
+    if (!roles.includes(req.user.role as UserRole)) {
       return next(new HttpError(403, '当前角色无权执行此操作'));
     }
 
