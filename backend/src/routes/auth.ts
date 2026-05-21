@@ -16,14 +16,14 @@ function toSafeUser(user: {
   name: string;
   email: string;
   role: UserRole;
-  internalRole?: InternalRole | null;
+  internalRole: InternalRole | null;
 }) {
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     role: user.role,
-    internalRole: user.internalRole ?? null,
+    internalRole: user.internalRole,
   };
 }
 
@@ -81,8 +81,8 @@ authRouter.post(
       select: { id: true, name: true, email: true, role: true, internalRole: true }
     });
 
-    const accessToken = signAccessToken(user);
-    const refreshToken = signRefreshToken(user);
+    const accessToken = signAccessToken(user as Express.AuthUser);
+    const refreshToken = signRefreshToken(user as Express.AuthUser);
 
     res.status(201).json({
       accessToken,
@@ -183,8 +183,8 @@ authRouter.post(
       throw new HttpError(401, '用户不存在或已被禁用');
     }
 
-    const accessToken = signAccessToken(user);
-    const newRefreshToken = signRefreshToken(user);
+    const accessToken = signAccessToken(user as Express.AuthUser);
+    const newRefreshToken = signRefreshToken(user as Express.AuthUser);
 
     res.json({
       accessToken,
