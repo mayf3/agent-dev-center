@@ -566,7 +566,7 @@ requirementsRouter.patch(
     // P0 工作流限制：WIP 限制检查（仅分配或转 in-progress 时触发）
     let targetAssigneeId = existing.assigneeId;
     const isAssigneeChange = body.assignee !== undefined && body.assignee !== existing.assignee;
-    const isStatusToInProgress = body.status === 'in-progress' && existing.status !== 'in-progress';
+    const isStatusToInProgress = body.status === 'in-progress' && existing.status !== 'in_progress';
 
     if (!isAssigneeChange && !isStatusToInProgress) {
       // 纯状态变更（testing/review/done），跳过 WIP 检查
