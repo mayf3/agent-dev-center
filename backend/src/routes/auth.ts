@@ -11,19 +11,14 @@ import { UserRole, InternalRole } from '@prisma/client';
 
 export const authRouter = Router();
 
-function toSafeUser(user: {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  internalRole: InternalRole | null;
-}) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toSafeUser(user: any): Express.AuthUser {
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     role: user.role,
-    internalRole: user.internalRole,
+    internalRole: user.internalRole ?? undefined,
   };
 }
 
