@@ -254,6 +254,12 @@ model MarketplaceAgent {
   agentToken        String?           @unique
   ownerId      String?                @db.Uuid
   owner        User?                  @relation("MarketplaceAgentOwner", fields: [ownerId], references: [id])
+  // SSO dedup: track which OpenClaw agent this maps to
+  openclawAgentId   String?           // e.g. "education-agent" — the OpenClaw agentId
+  registrationSource String?          // "seed" | "sso" | "manual"
+  registrationGroup String?           // e.g. "workspace-oc_xxx" — the OpenClaw group/session
+  mergedInto        String?           @db.Uuid // if merged, points to the surviving agent ID
+  mergedAt          DateTime?
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
 
