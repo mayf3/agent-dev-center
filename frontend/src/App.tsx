@@ -1,5 +1,5 @@
 import { ConfigProvider, App as AntApp } from 'antd';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
 import { PublicLayout } from './components/PublicLayout';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -18,6 +18,8 @@ import { GoalDashboardPage } from './pages/GoalDashboardPage';
 import { GoalDetailPage } from './pages/GoalDetailPage';
 import { PostmortemListPage } from './pages/PostmortemListPage';
 import { PostmortemDetailPage } from './pages/PostmortemDetailPage';
+import IdentityListPage from './pages/IdentityListPage';
+import IdentityProfilePage from './pages/IdentityProfilePage';
 import { ServicesPage } from './pages/ServicesPage';
 import { ServiceDetailPage } from './pages/ServiceDetailPage';
 import { SsoPortalPage } from './pages/SsoPortalPage';
@@ -62,6 +64,11 @@ const router = createBrowserRouter([
             { path: 'goals/:agentId', element: <GoalDetailPage /> },
             { path: 'postmortems', element: <PostmortemListPage /> },
             { path: 'postmortems/:id', element: <PostmortemDetailPage /> },
+            { path: 'identity', element: <IdentityListPage /> },
+            { path: 'identity/:type/:id', element: <IdentityProfilePage /> },
+            // 301 redirects from old routes
+            { path: 'team', element: <Navigate to="/identity?type=agent" replace /> },
+            { path: 'goals', element: <Navigate to="/identity?type=human" replace /> },
             { path: 'marketplace', element: <Suspense fallback={<Spin className="page-spin" />}><MarketplacePage /></Suspense> }
           ]
         }
@@ -139,6 +146,17 @@ const router = createBrowserRouter([
             path: 'postmortems/:id',
             element: <PostmortemDetailPage />
           },
+          {
+            path: 'identity',
+            element: <IdentityListPage />
+          },
+          {
+            path: 'identity/:type/:id',
+            element: <IdentityProfilePage />
+          },
+          // 301 redirects from old routes
+          { path: 'team', element: <Navigate to="/identity?type=agent" replace /> },
+          { path: 'goals', element: <Navigate to="/identity?type=human" replace /> },
           {
             path: 'marketplace',
             element: <Suspense fallback={<Spin className="page-spin" />}><MarketplacePage /></Suspense>
