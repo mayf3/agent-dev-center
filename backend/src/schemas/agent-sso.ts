@@ -16,6 +16,8 @@ export const agentRegisterSchema = z.object({
     category: z.string().trim().optional(),
     role: z.enum(['admin-agent', 'manager-agent', 'dev-agent', 'viewer-agent']).default('dev-agent'),
     capabilities: z.array(z.string()).default([]),
+    // SSO dedup fields
+    registrationGroup: z.string().trim().optional(), // OpenClaw group/session name
   }),
 });
 

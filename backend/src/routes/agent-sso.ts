@@ -134,13 +134,142 @@ agentSsoRouter.post(
 
     const { body } = agentRegisterSchema.parse({ body: req.body });
 
-    // 检查是否已注册
-    const existing = await prisma.user.findFirst({
-      where: { agentId: body.agentId },
+    // ──── Dedup: check by openclawAgentId first ────
+    // If any marketplace_agent already has openclawAgentId = body.agentId, reuse it
+    const existingByOpenclawId = await prisma.marketplaceAgent.findFirst({
+      where: { openclawAgentId: body.agentId, mergedInto: null },
+      include: { owner: true },
     });
-    if (existing) {
-      throw new HttpError(409, `Agent "${body.agentId}" 已注册`);
+
+    if (existingByOpenclawId) {
+      // Already registered — update info if needed, return existing
+      const updated = await prisma.marketplaceAgent.update({
+        where: { id: existingByOpenclawId.id },
+        data: {
+          displayName: body.name,
+          registrationSource: 'sso',
+          registrationGroup: body.registrationGroup ?? existingByOpenclawId.registrationGroup,
+        },
+      });
+
+      // Ensure user exists
+      let user = existingByOpenclawId.owner;
+      if (!user) {
+        user = await prisma.user.findFirst({
+          where: { agentId: body.agentId },
+        });
+      }
+
+      // Update user name if changed
+      if (user && user.name !== body.name) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { name: body.name },
+        });
+      }
+
+      // Ensure access token exists
+      const existingToken = await prisma.agentAccessToken.findFirst({
+        where: { agentId: updated.id, name: 'sso-default' },
+      });
+
+      let rawToken = existingToken?.token;
+      if (!existingToken) {
+        rawToken = `agent_${randomBytes(32).toString('hex')}`;
+        await prisma.agentAccessToken.create({
+          data: { agentId: updated.id, token: rawToken, name: 'sso-default' },
+        });
+        await prisma.marketplaceAgent.update({
+          where: { id: updated.id },
+          data: { agentToken: rawToken },
+        });
+      }
+
+      const permissions = (user?.permissions as string[]) ?? ROLE_PERMISSIONS[body.role]! as unknown as string[];
+      const jwtToken = signAgentToken({
+        sub: body.agentId,
+        name: body.name,
+        role: body.role,
+        permissions,
+      });
+
+      res.json({
+        message: 'Agent 已注册（复用现有记录）',
+        deduped: true,
+        user: {
+          id: user?.id,
+          agentId: body.agentId,
+          name: body.name,
+          role: user?.role ?? body.role,
+          permissions,
+        },
+        agentToken: rawToken,
+        jwt: jwtToken,
+      });
+      return;
     }
+
+    // ──── Check user-level dedup (agentId on users table) ────
+    const existingUser = await prisma.user.findFirst({
+      where: { agentId: body.agentId },
+      include: { marketplaceAgents: { take: 1 } },
+    });
+    if (existingUser) {
+      // User exists but no openclawAgentId mapping — link existing agent
+      const existingAgent = existingUser.marketplaceAgents[0];
+      if (existingAgent) {
+        // Add openclawAgentId to existing agent
+        await prisma.marketplaceAgent.update({
+          where: { id: existingAgent.id },
+          data: {
+            openclawAgentId: body.agentId,
+            registrationSource: 'sso',
+            registrationGroup: body.registrationGroup,
+          },
+        });
+
+        const permissions = (existingUser.permissions as string[]) ?? ROLE_PERMISSIONS[body.role]! as unknown as string[];
+        const jwtToken = signAgentToken({
+          sub: body.agentId,
+          name: body.name,
+          role: body.role,
+          permissions,
+        });
+
+        // Ensure access token
+        const existingToken = await prisma.agentAccessToken.findFirst({
+          where: { agentId: existingAgent.id, name: 'sso-default' },
+        });
+        let rawToken = existingToken?.token;
+        if (!existingToken) {
+          rawToken = `agent_${randomBytes(32).toString('hex')}`;
+          await prisma.agentAccessToken.create({
+            data: { agentId: existingAgent.id, token: rawToken, name: 'sso-default' },
+          });
+          await prisma.marketplaceAgent.update({
+            where: { id: existingAgent.id },
+            data: { agentToken: rawToken },
+          });
+        }
+
+        res.json({
+          message: 'Agent 已注册（关联已有记录）',
+          linked: true,
+          user: {
+            id: existingUser.id,
+            agentId: body.agentId,
+            name: body.name,
+            role: existingUser.role,
+            permissions,
+          },
+          agentToken: rawToken,
+          jwt: jwtToken,
+        });
+        return;
+      }
+    }
+
+    // ──── New registration ────
 
     // 获取角色权限
     const permissions = ROLE_PERMISSIONS[body.role] ?? ROLE_PERMISSIONS['dev-agent']!;
@@ -170,6 +299,20 @@ agentSsoRouter.post(
           description: `Auto-registered via SSO (${body.category ?? 'uncategorized'})`,
           capabilities: body.capabilities,
           ownerId: user.id,
+          openclawAgentId: body.agentId,
+          registrationSource: 'sso',
+          registrationGroup: body.registrationGroup,
+        },
+      });
+    } else {
+      // Agent exists by name — link it with openclawAgentId
+      await prisma.marketplaceAgent.update({
+        where: { id: marketplaceAgent.id },
+        data: {
+          ownerId: user.id,
+          openclawAgentId: body.agentId,
+          registrationSource: 'sso',
+          registrationGroup: body.registrationGroup,
         },
       });
     }
@@ -425,6 +568,225 @@ agentSsoRouter.post(
       created: results.filter((r) => r.status === 'created').length,
       skipped: results.filter((r) => r.status === 'skipped').length,
       errors: results.filter((r) => r.status === 'error').length,
+    });
+  })
+);
+
+// ─── 7. Merge duplicate agents (admin only) ──────────────
+
+import { z as zod } from 'zod';
+
+const mergeSchema = zod.object({
+  body: zod.object({
+    survivorId: zod.string().uuid(),     // the agent that survives
+    duplicateIds: zod.array(zod.string().uuid()).min(1), // agents to merge into survivor
+    openclawAgentId: zod.string().optional(), // set the OpenClaw agentId on survivor
+  }),
+});
+
+agentSsoRouter.post(
+  '/merge',
+  internalOnly,
+  authRequired,
+  asyncHandler(async (req, res) => {
+    if (req.user!.role !== 'admin') {
+      throw new HttpError(403, '仅管理员可执行合并');
+    }
+
+    const { body } = mergeSchema.parse({ body: req.body });
+    const { survivorId, duplicateIds, openclawAgentId } = body;
+
+    // Verify survivor exists
+    const survivor = await prisma.marketplaceAgent.findUnique({
+      where: { id: survivorId },
+    });
+    if (!survivor) throw new HttpError(404, '目标 Agent 不存在');
+
+    // Prevent merging self
+    if (duplicateIds.includes(survivorId)) {
+      throw new HttpError(400, '不能将自己合并到自己');
+    }
+
+    const results: Array<{ id: string; status: string; details: string }> = [];
+
+    for (const dupId of duplicateIds) {
+      try {
+        const dup = await prisma.marketplaceAgent.findUnique({ where: { id: dupId } });
+        if (!dup) {
+          results.push({ id: dupId, status: 'not_found', details: 'Agent 不存在' });
+          continue;
+        }
+
+        // 1. Move goal card
+        const goalCard = await prisma.agentGoalCard.findUnique({
+          where: { agentId: dupId },
+        });
+        if (goalCard) {
+          // Check if survivor already has a goal card
+          const existingGC = await prisma.agentGoalCard.findUnique({
+            where: { agentId: survivorId },
+          });
+          if (!existingGC) {
+            await prisma.agentGoalCard.update({
+              where: { agentId: dupId },
+              data: { agentId: survivorId },
+            });
+          }
+          // If both have goal cards, keep survivor's and just delete duplicate's
+          else {
+            await prisma.agentGoalCard.delete({ where: { agentId: dupId } });
+          }
+        }
+
+        // 2. Move goal revisions
+        const revisionsResult = await prisma.goalRevision.updateMany({
+          where: { goalCardId: dupId },
+          data: { goalCardId: survivorId },
+        });
+
+        // 3. Move marketplace tasks
+        const tasksMoved = await prisma.marketplaceTask.updateMany({
+          where: { agentId: dupId },
+          data: { agentId: survivorId },
+        });
+
+        // 4. Move access tokens
+        const tokensMoved = await prisma.agentAccessToken.updateMany({
+          where: { agentId: dupId },
+          data: { agentId: survivorId },
+        });
+
+        // 5. Move weekly reports
+        const reportsMoved = await prisma.weeklyReport.updateMany({
+          where: { agentId: dupId },
+          data: { agentId: survivorId },
+        });
+
+        // 6. Move owner if survivor has none
+        if (!survivor.ownerId && dup.ownerId) {
+          await prisma.marketplaceAgent.update({
+            where: { id: survivorId },
+            data: { ownerId: dup.ownerId },
+          });
+        }
+
+        // 7. Merge capabilities
+        const survCaps = (survivor.capabilities as string[]) ?? [];
+        const dupCaps = (dup.capabilities as string[]) ?? [];
+        const mergedCaps = [...new Set([...survCaps, ...dupCaps])];
+        if (mergedCaps.length > survCaps.length) {
+          await prisma.marketplaceAgent.update({
+            where: { id: survivorId },
+            data: { capabilities: mergedCaps as any },
+          });
+        }
+
+        // 8. Mark duplicate as merged
+        await prisma.marketplaceAgent.update({
+          where: { id: dupId },
+          data: {
+            mergedInto: survivorId,
+            mergedAt: new Date(),
+            status: 'inactive',
+          },
+        });
+
+        // 9. Update duplicate's user (if any) to point to survivor
+        await prisma.user.updateMany({
+          where: { agentId: dup.name },
+          data: { agentId: openclawAgentId ?? survivor.name },
+        });
+
+        results.push({
+          id: dupId,
+          status: 'merged',
+          details: `goalCard=${goalCard ? 'moved' : 'none'}, tasks=${tasksMoved.count}, tokens=${tokensMoved.count}, reports=${reportsMoved.count}`,
+        });
+      } catch (err) {
+        results.push({
+          id: dupId,
+          status: 'error',
+          details: (err as Error).message,
+        });
+      }
+    }
+
+    // Update survivor with openclawAgentId if provided
+    if (openclawAgentId) {
+      await prisma.marketplaceAgent.update({
+        where: { id: survivorId },
+        data: {
+          openclawAgentId,
+          registrationSource: 'merged',
+        },
+      });
+    }
+
+    res.json({
+      message: `合并完成: ${results.filter((r) => r.status === 'merged').length} 个 Agent 已合并到 ${survivor.displayName}`,
+      survivor: {
+        id: survivorId,
+        name: survivor.name,
+        displayName: survivor.displayName,
+        openclawAgentId: openclawAgentId ?? survivor.openclawAgentId,
+      },
+      results,
+    });
+  })
+);
+
+// ─── 8. List duplicate agents ─────────────────────────────
+
+agentSsoRouter.get(
+  '/duplicates',
+  authRequired,
+  asyncHandler(async (_req, res) => {
+    // Find marketplace_agents that might be duplicates:
+    // Same owner, similar displayName, or with mergedInto set
+    const merged = await prisma.marketplaceAgent.findMany({
+      where: { mergedInto: { not: null } },
+      select: {
+        id: true,
+        name: true,
+        displayName: true,
+        mergedInto: true,
+        mergedAt: true,
+        openclawAgentId: true,
+      },
+    });
+
+    // Find potential duplicates: same openclawAgentId or similar names
+    // Group by ownerId where owner has multiple agents
+    const agents = await prisma.marketplaceAgent.findMany({
+      where: { mergedInto: null, status: 'active' },
+      select: {
+        id: true,
+        name: true,
+        displayName: true,
+        openclawAgentId: true,
+        ownerId: true,
+        registrationSource: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    // Group by ownerId to find potential duplicates
+    const byOwner = new Map<string, typeof agents>();
+    for (const a of agents) {
+      if (!a.ownerId) continue;
+      const list = byOwner.get(a.ownerId) ?? [];
+      list.push(a);
+      byOwner.set(a.ownerId, list);
+    }
+
+    const potentialDuplicates = Array.from(byOwner.entries())
+      .filter(([, list]) => list.length > 1)
+      .map(([ownerId, list]) => ({ ownerId, agents: list }));
+
+    res.json({
+      merged,
+      potentialDuplicates,
+      totalActive: agents.length,
     });
   })
 );
