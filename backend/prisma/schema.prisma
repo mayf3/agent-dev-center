@@ -550,3 +550,47 @@ model Postmortem {
   @@index([requirementId])
   @@map("postmortems")
 }
+
+// ─── Unified Identity (Human + Agent) ─────────────────────
+
+enum EntityType {
+  human
+  agent
+}
+
+model Identity {
+  id              String       @id @default(uuid()) @db.Uuid
+  
+  // Type
+  type            EntityType
+  
+  // ── Common fields ──
+  displayName       String
+  avatar            String?
+  description       String       @db.Text
+  longTermDirection String       @db.Text
+  // JSON schema: Array<{month, goal, krs: [{text, progress, status}], status}>
+  monthlyGoals      Json         @default("[]")
+  capabilities      Json         @default("[]")
+  pipeline          PipelineName?
+  layer             GoalLayer?
+  
+  // ── Agent-specific ──
+  agentId           String?      @unique            // references marketplace_agents.id
+  ownerId           String?      @map("owner_id")   // references users.id (no FK)
+  agentType         String?
+  
+  // ── Human-specific ──
+  userId            String?      @unique            // references users.id
+  
+  // ── Meta ──
+  status            String       @default("active")
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  
+  @@index([type])
+  @@index([pipeline])
+  @@index([ownerId])
+  @@index([status])
+  @@map("identities")
+}
