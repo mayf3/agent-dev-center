@@ -9,6 +9,14 @@ declare global {
       role: UserRole;
       internalRole?: InternalRole | null | undefined;
       okrRole?: string | null | undefined;
+      bio?: string | null;
+      phone?: string | null;
+      avatar?: string | null;
+      department?: string | null;
+      title?: string | null;
+      employeeNo?: string | null;
+      onboardingDate?: Date | null;
+      managerId?: string | null;
     }
 
     interface Request {
