@@ -9,7 +9,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 async function main() {
-  const password = await bcrypt.hash('PASSWORD_REMOVED_BY_SECURITY_CLEANUP', 10);
+  const password = await bcrypt.hash('agent2026', 10);
   const requesterPassword = await bcrypt.hash('requester123', 10);
   const developerPassword = await bcrypt.hash('developer123', 10);
 
@@ -128,7 +128,7 @@ async function main() {
   }
 
   console.log('Seed completed.');
-  console.log('Admin: admin@agent.dev / PASSWORD_REMOVED_BY_SECURITY_CLEANUP');
+  console.log('Admin: admin@agent.dev / agent2026');
   console.log('Requester: requester@agent.dev / requester123');
   console.log('Developer: frontend@agent.dev / developer123');
 }
