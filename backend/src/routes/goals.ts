@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authRequired, requireRoles } from '../middleware/auth.js';
+import { authRequired } from '../middleware/auth.js';
 import { agentTokenRequired } from '../middleware/marketplace-auth.js';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
@@ -7,6 +7,20 @@ import { HttpError } from '../utils/http-error.js';
 import { GoalStatus, PipelineName } from '@prisma/client';
 
 export const goalsRouter = Router();
+
+// ─── OKR Permission helpers (68e8ceed) ─────────────────────
+
+function canEditGoals(okrRole: string | null | undefined): boolean {
+  return okrRole === 'okr_admin' || okrRole === 'okr_reviewer' || okrRole === 'okr_owner';
+}
+
+function requireOkrEdit(req: any, _res: any, next: any): void {
+  const okrRole = req.user?.okrRole;
+  if (!canEditGoals(okrRole)) {
+    throw new HttpError(403, '需要 okr_admin / okr_reviewer / okr_owner 权限才能操作目标卡');
+  }
+  next();
+}
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -101,15 +115,37 @@ goalsRouter.get(
     return authRequired(req, res, next);
   }),
   asyncHandler(async (req, res) => {
-    const agentId = String(req.params.agentId);
+    const agentParam = String(req.params.agentId);
 
-    const goalCard = await prisma.agentGoalCard.findUnique({
-      where: { agentId },
+    // Try as agentId first, then as agent name
+    let goalCard = await prisma.agentGoalCard.findUnique({
+      where: { agentId: agentParam },
       include: {
         agent: { select: { id: true, name: true, displayName: true, avatar: true } },
         revisions: { orderBy: { createdAt: 'desc' }, take: 20 },
       },
     });
+
+    // If not found by ID, try by agent name
+    if (!goalCard) {
+      const agent = await prisma.marketplaceAgent.findFirst({
+        where: {
+          OR: [
+            { name: agentParam },
+            { displayName: agentParam },
+          ],
+        },
+      });
+      if (agent) {
+        goalCard = await prisma.agentGoalCard.findUnique({
+          where: { agentId: agent.id },
+          include: {
+            agent: { select: { id: true, name: true, displayName: true, avatar: true } },
+            revisions: { orderBy: { createdAt: 'desc' }, take: 20 },
+          },
+        });
+      }
+    }
 
     if (!goalCard) {
       throw new HttpError(404, '目标卡不存在');
@@ -155,7 +191,7 @@ goalsRouter.get(
 goalsRouter.post(
   '/',
   authRequired,
-  requireRoles('admin', 'developer'),
+  requireOkrEdit,
   asyncHandler(async (req, res) => {
     const {
       agentId,
@@ -177,6 +213,12 @@ goalsRouter.post(
 
     if (!agentId || !pipeline || !longTermDirection) {
       throw new HttpError(400, '缺少必填字段: agentId, pipeline, longTermDirection');
+    }
+
+    // Validate pipeline enum (68e8ceed: clearer error for invalid values)
+    const validPipelines = ['content', 'parenting', 'investment', 'health', 'planning', 'lifestyle', 'devops', 'education', 'business', 'cross-cutting'];
+    if (!validPipelines.includes(pipeline)) {
+      throw new HttpError(400, `无效的 pipeline 值: "${pipeline}"。有效值: ${validPipelines.join(', ')}`);
     }
 
     const agent = await prisma.marketplaceAgent.findUnique({ where: { id: agentId } });
@@ -227,7 +269,7 @@ goalsRouter.post(
 goalsRouter.put(
   '/:agentId',
   authRequired,
-  requireRoles('admin', 'developer'),
+  requireOkrEdit,
   asyncHandler(async (req, res) => {
     const agentId = String(req.params.agentId);
     const body = req.body as {
@@ -244,6 +286,14 @@ goalsRouter.put(
     const existing = await prisma.agentGoalCard.findUnique({ where: { agentId } });
     if (!existing) {
       throw new HttpError(404, '目标卡不存在');
+    }
+
+    // Validate pipeline if provided (68e8ceed)
+    if (body.pipeline !== undefined) {
+      const validPipelines = ['content', 'parenting', 'investment', 'health', 'planning', 'lifestyle', 'devops', 'education', 'business', 'cross-cutting'];
+      if (!validPipelines.includes(body.pipeline)) {
+        throw new HttpError(400, `无效的 pipeline 值: "${body.pipeline}"。有效值: ${validPipelines.join(', ')}`);
+      }
     }
 
     const updateData: Record<string, unknown> = {};
@@ -336,7 +386,7 @@ goalsRouter.patch(
 goalsRouter.post(
   '/:agentId/push-todos',
   authRequired,
-  requireRoles('admin', 'developer'),
+  requireOkrEdit,
   asyncHandler(async (req, res) => {
     const agentId = String(req.params.agentId);
     const { month } = req.body as { month: string };
