@@ -117,28 +117,33 @@ goalsRouter.get(
   asyncHandler(async (req, res) => {
     const agentParam = String(req.params.agentId);
 
-    // Try as agentId first, then as agent name
-    let goalCard = await prisma.agentGoalCard.findUnique({
-      where: { agentId: agentParam },
-      include: {
-        agent: { select: { id: true, name: true, displayName: true, avatar: true } },
-        revisions: { orderBy: { createdAt: 'desc' }, take: 20 },
-      },
-    });
-
-    // If not found by ID, try by agent name
-    if (!goalCard) {
-      const agent = await prisma.marketplaceAgent.findFirst({
-        where: {
-          OR: [
-            { name: agentParam },
-            { displayName: agentParam },
-          ],
+    // Try as agentId first (only if input looks like a UUID to avoid Prisma errors)
+    let goalCard: any = null;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentParam);
+    if (isUuid) {
+      goalCard = await prisma.agentGoalCard.findUnique({
+        where: { agentId: agentParam },
+        include: {
+          agent: { select: { id: true, name: true, displayName: true, avatar: true } },
+          revisions: { orderBy: { createdAt: 'desc' }, take: 20 },
         },
       });
-      if (agent) {
+    }
+
+    // If not found by ID, try by agent name/displayName
+    if (!goalCard) {
+      const agents = await prisma.marketplaceAgent.findMany({
+        where: {
+          OR: [
+            { name: { contains: agentParam, mode: 'insensitive' } },
+            { displayName: { contains: agentParam, mode: 'insensitive' } },
+          ],
+        },
+        take: 1,
+      });
+      if (agents.length > 0) {
         goalCard = await prisma.agentGoalCard.findUnique({
-          where: { agentId: agent.id },
+          where: { agentId: agents[0].id },
           include: {
             agent: { select: { id: true, name: true, displayName: true, avatar: true } },
             revisions: { orderBy: { createdAt: 'desc' }, take: 20 },
