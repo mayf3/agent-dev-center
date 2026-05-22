@@ -113,14 +113,25 @@ model Identity {
   avatar            String?
   description       String         @db.Text
   longTermDirection String         @db.Text    // 长期方向
-  monthlyGoals      Json           @default("[]") // [{month, goals: [{text, kr: [], status}]}]
+  // monthlyGoals JSON schema:
+  // Array<{
+  //   month: string;        // "2026-05"
+  //   goal: string;         // 目标描述
+  //   krs: Array<{          // Key Results
+  //     text: string;
+  //     progress: number;   // 0-100
+  //     status: 'todo'|'doing'|'done'
+  //   }>;
+  //   status: 'active'|'completed'|'cancelled';
+  // }>
+  monthlyGoals      Json           @default("[]")
   capabilities      Json           @default("[]") // ["skill1", "skill2"]
   pipeline          PipelineName?
   layer             GoalLayer?
   
   // ── Agent 特有字段 ──
   agentId           String?        @unique     // 关联 marketplace_agents.id
-  ownerId           String?        @db.Uuid    // 属于哪个 User
+  ownerId           String?        @map("owner_id")    // 属于哪个 User，引用 users.id（无 FK 约束）
   agentType         String?                    // "devtools" | "dev-engineer" | "itops" | ...
   
   // ── Human 特有字段 ──
@@ -134,6 +145,7 @@ model Identity {
   @@index([type])
   @@index([pipeline])
   @@index([status])
+  @@index([ownerId])      // 高频查询：查某个 User 有哪些 Agent
   @@map("identities")
 }
 ```
@@ -154,7 +166,7 @@ model Identity {
 
 **数据流：**
 1. **读路径**：前端查 `GET /api/identities` → 返回 Unified 列表（人 + Agent 合并排序）
-2. **写路径**：编辑 OKR → 写 `identities` 表 → 异步同步回 `agent_goal_cards`（过渡期）
+2. **写路径**（⚠️ 同步双写）：编辑 OKR → 写 `identities` 表 → **同步**写回 `agent_goal_cards`（同一事务或失败时拒绝请求，避免时间窗口不一致）
 3. **迁移后**：Agent 的 goal card 数据从 `agent_goal_cards` 迁移到 `identities.monthlyGoals`
 
 ---
@@ -224,10 +236,17 @@ frontend/src/components/
 ```
 当前:                   统一后:
 ├─ 需求管理             ├─ 需求管理
-├─ Agent 看板  ← 移除  ├─ 统一身份  ← 新增
-├─ OKR 看板    ← 移除  ├─ OKR 管理   ← 统一
+├─ Agent 看板  ← 301   ├─ 统一身份  ← 新增 (替代)
+├─ OKR 看板    ← 301   ├─ OKR 管理   ← 统一入口
 ├─ Kanban 看板          ├─ Kanban 看板
 ```
+
+**301 重定向规则：**
+```
+/agent-team-board  →  /identity?type=agent   (301)
+/goals             →  /identity?type=human   (301)
+```
+旧路径 301 永久重定向，浏览器/爬虫自动更新 bookmark。
 
 ---
 
