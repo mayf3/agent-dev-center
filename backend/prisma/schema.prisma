@@ -77,6 +77,19 @@ model User {
   // SSO Agent fields
   agentId     String?  @unique
   permissions Json     @default("[]")
+  // Profile fields
+  bio        String?
+  phone       String?
+  avatar      String?
+  department  String?
+  title       String?   // job title, e.g. "高级工程师"
+  // HR management fields
+  employeeNo      String?    @unique
+  onboardingDate  DateTime?
+  managerId       String?    @db.Uuid
+  manager         User?      @relation("UserManager", fields: [managerId], references: [id])
+  directReports    User[]     @relation("UserManager")
+
   createdAt DateTime @default(now())
 
   requestedRequirements Requirement[]         @relation("RequesterRequirements")
