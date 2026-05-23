@@ -91,6 +91,13 @@ export function gatewayGuard(allowedIpsStr?: string) {
       return next();
     }
 
+    // 请求来自 Nginx 反向代理（socket 层面是本地回环）→ 直接放行
+    // Nginx 是安全边界，经由 Nginx 转发的请求都是可信的
+    const socketAddr = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+    if (socketAddr === '127.0.0.1' || socketAddr === '::1') {
+      return next();
+    }
+
     // 解析额外允许的 IP（从环境变量）
     const extraIps = allowedIpsStr?.split(',').map(s => s.trim()).filter(Boolean) || [];
 
