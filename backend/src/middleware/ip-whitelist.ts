@@ -91,10 +91,13 @@ export function gatewayGuard(allowedIpsStr?: string) {
       return next();
     }
 
-    // 请求来自 Nginx 反向代理（socket 层面是本地回环）→ 直接放行
+    // 请求来自 Nginx 反向代理（socket 层面是本地回环或 Docker 网桥）→ 直接放行
     // Nginx 是安全边界，经由 Nginx 转发的请求都是可信的
+    // Docker 环境下容器内 socket 源 IP 是 Docker 网桥网关（如 172.17.0.1 / 172.22.0.1），
+    // 不是 127.0.0.1，所以需要检查 RFC 1918 私有网段
     const socketAddr = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
-    if (socketAddr === '127.0.0.1' || socketAddr === '::1') {
+    const isSocketTrusted = PRIVATE_RANGES.some(range => isIpInCidr(socketAddr, range));
+    if (isSocketTrusted) {
       return next();
     }
 
