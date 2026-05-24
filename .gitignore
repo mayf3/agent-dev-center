@@ -14,3 +14,4 @@ backend/prisma/dev.db
 
 # Archive directory (soft-deleted items, not tracked in git)
 archive/
+baby-daily-print/
