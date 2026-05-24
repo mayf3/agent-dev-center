@@ -30,7 +30,7 @@ import {
   HistoryOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
-import { goalsApi, type GoalCard, type GoalRevision, type MonthlyGoalGroup } from '../api/goals';
+import { goalsApi, type GoalCard, type GoalRevision, type MonthlyGoalGroup } from '../../api/goals';
 
 const { Title, Text, Paragraph } = Typography;
 

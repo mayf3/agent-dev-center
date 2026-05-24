@@ -13,9 +13,9 @@ import {
 import type { Dayjs } from 'dayjs';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api/client';
-import type { Requirement, RequirementPriority } from '../api/types';
-import { agentOptions, departmentOptions, priorityLabels } from '../constants/options';
+import { api } from '../../api/client';
+import type { Requirement, RequirementPriority } from '../../api/types';
+import { agentOptions, departmentOptions, priorityLabels } from '../../constants/options';
 
 const { TextArea } = Input;
 

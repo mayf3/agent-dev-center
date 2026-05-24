@@ -33,16 +33,32 @@ export function canReadRequirement(user: Express.AuthUser, requirement: { reques
 }
 
 /** 权限判断：是否可编辑该需求（基于 user.id） */
-export function canEditRequirement(user: Express.AuthUser, requirement: { requesterId: string | null; requester: string; status: unknown }) {
+export function canEditRequirement(user: Express.AuthUser, requirement: {
+  requesterId: string | null;
+  requester: string;
+  assigneeId: string | null;
+  assignee: string | null;
+  status: unknown;
+}) {
   if (user.role === 'admin' || user.role === 'cto_agent') {
     return true;
   }
 
-  return (
-    user.role === 'requester' &&
-    (requirement.requesterId === user.id || requirement.requester === user.name) &&
-    ['pending', 'rejected'].includes(String(requirement.status))
-  );
+  // requester 可在 pending/rejected 状态下编辑
+  const isRequester = requirement.requesterId === user.id || requirement.requester === user.name;
+  if (isRequester && ['pending', 'rejected'].includes(String(requirement.status))) {
+    return true;
+  }
+
+  // assignee 可在非终态下编辑
+  const isAssignee = requirement.assigneeId === user.id ||
+    requirement.assignee === user.name ||
+    requirement.assignee === user.email;
+  if (isAssignee && !['done', 'cancelled'].includes(String(requirement.status))) {
+    return true;
+  }
+
+  return false;
 }
 
 /** 基于角色过滤查询条件（使用 user.id） */

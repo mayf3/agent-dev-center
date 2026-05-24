@@ -19,18 +19,18 @@ import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { api } from '../api/client';
+import { api } from '../../api/client';
 import type {
   PaginatedResponse,
   Requirement,
   RequirementPriority,
   RequirementStatus,
   User
-} from '../api/types';
-import { PriorityTag } from '../components/PriorityTag';
-import { StatusTag } from '../components/StatusTag';
-import { priorityLabels, statusLabels } from '../constants/options';
-import { useAuth } from '../contexts/AuthContext';
+} from '../../api/types';
+import { PriorityTag } from '../../components/PriorityTag';
+import { StatusTag } from '../../components/StatusTag';
+import { priorityLabels, statusLabels } from '../../constants/options';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface FilterValues {
   search?: string;

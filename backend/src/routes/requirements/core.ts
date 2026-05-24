@@ -264,7 +264,8 @@ router.put(
       data: {
         title: body.title, description: body.description, priority: body.priority,
         requester: body.requester, department: body.department,
-        assignee: body.assignee, assigneeId, dueDate: body.dueDate, attachment: body.attachment
+        assignee: body.assignee, assigneeId, dueDate: body.dueDate, attachment: body.attachment,
+        notes: body.notes
       },
       include: { tasks: true }
     });

@@ -28,7 +28,7 @@ import {
   postmortemsApi,
   type Postmortem,
   type PostmortemStatus,
-} from '../api/postmortems';
+} from '../../api/postmortems';
 
 const { Title, Text, Paragraph } = Typography;
 

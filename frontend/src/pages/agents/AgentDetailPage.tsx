@@ -35,7 +35,7 @@ import {
   RocketOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
-import { agentsApi, type AgentDetail } from '../api/agents';
+import { agentsApi, type AgentDetail } from '../../api/agents';
 
 const { Title, Text, Paragraph } = Typography;
 
