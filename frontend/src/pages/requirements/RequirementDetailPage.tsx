@@ -4,7 +4,7 @@
  */
 import {
   CheckCircleOutlined, CloseCircleOutlined, EditOutlined,
-  LeftOutlined, PaperClipOutlined, PlusOutlined, UserAddOutlined
+  LeftOutlined, PaperClipOutlined, SaveOutlined, UserAddOutlined
 } from '@ant-design/icons';
 import {
   App as AntApp, Button, Card, Descriptions, Form,
@@ -24,7 +24,9 @@ import { RevisionHistoryTab, RevisionHistoryTabLabel } from '../../components/re
 import { RequirementModals } from '../../components/requirements/RequirementModals';
 import type { ModalHandles } from '../../components/requirements/RequirementModals';
 import { useAuth } from '../../contexts/AuthContext';
-import { formatDateTime, formatDate } from '../../components/requirements/utils';
+import { formatDateTime, formatDate, getErrorMessage } from '../../components/requirements/utils';
+
+const { TextArea } = Input;
 
 export function RequirementDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +37,9 @@ export function RequirementDetailPage() {
   const [loading, setLoading] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
   const [isMobile, setIsMobile] = useState(false);
+  const [notesEditing, setNotesEditing] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [notesSaving, setNotesSaving] = useState(false);
   const activeTab = searchParams.get('tab') || 'description';
   const modalsRef = useRef<ModalHandles>(null);
 
@@ -59,6 +64,39 @@ export function RequirementDetailPage() {
   }, [id, message]);
 
   useEffect(() => { void loadRequirement(); }, [loadRequirement]);
+
+  useEffect(() => {
+    if (!notesEditing) {
+      setNotesDraft(requirement?.notes ?? '');
+    }
+  }, [requirement?.notes, notesEditing]);
+
+  const handleStartNotesEdit = useCallback(() => {
+    setNotesDraft(requirement?.notes ?? '');
+    setNotesEditing(true);
+  }, [requirement?.notes]);
+
+  const handleCancelNotesEdit = useCallback(() => {
+    setNotesDraft(requirement?.notes ?? '');
+    setNotesEditing(false);
+  }, [requirement?.notes]);
+
+  const handleSaveNotes = useCallback(async () => {
+    if (!requirement) return;
+    setNotesSaving(true);
+    try {
+      const { data } = await api.put<Requirement>(`/requirements/${requirement.id}`, {
+        notes: notesDraft
+      });
+      setRequirement(data);
+      setNotesEditing(false);
+      message.success('备注已更新');
+    } catch (error) {
+      message.error(getErrorMessage(error, '备注更新失败'));
+    } finally {
+      setNotesSaving(false);
+    }
+  }, [requirement, notesDraft, message]);
 
   const isAdmin = user?.role === 'admin';
   const isDeveloper = user?.role === 'developer';
@@ -123,6 +161,38 @@ export function RequirementDetailPage() {
                     <div className="markdown-body">
                       <ReactMarkdown>{requirement.description}</ReactMarkdown>
                     </div>
+                  </Card>
+                  <Card
+                    title="备注"
+                    extra={
+                      notesEditing ? (
+                        <Space>
+                          <Button size="small" onClick={handleCancelNotesEdit} disabled={notesSaving}>取消</Button>
+                          <Button
+                            type="primary"
+                            size="small"
+                            icon={<SaveOutlined />}
+                            loading={notesSaving}
+                            onClick={() => void handleSaveNotes()}
+                          >
+                            保存
+                          </Button>
+                        </Space>
+                      ) : (
+                        isAuthenticated && (
+                          <Button size="small" icon={<EditOutlined />} onClick={handleStartNotesEdit}>编辑</Button>
+                        )
+                      )
+                    }
+                  >
+                    <TextArea
+                      value={notesEditing ? notesDraft : requirement.notes ?? ''}
+                      onChange={(event) => setNotesDraft(event.target.value)}
+                      placeholder="暂无备注"
+                      rows={5}
+                      disabled={!notesEditing}
+                      showCount={notesEditing}
+                    />
                   </Card>
                   <TaskTableSection
                     requirementId={requirement.id}
