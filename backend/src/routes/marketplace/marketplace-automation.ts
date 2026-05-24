@@ -1,18 +1,18 @@
 import { Prisma, MarketplaceAgentStatus } from '@prisma/client';
 import { randomUUID, randomBytes } from 'crypto';
 import { Router } from 'express';
-import { authRequired } from '../middleware/auth.js';
-import { agentTokenRequired } from '../middleware/marketplace-auth.js';
-import { prisma } from '../lib/prisma.js';
-import { asyncHandler } from '../utils/async-handler.js';
-import { HttpError } from '../utils/http-error.js';
-import { notifyAgentNewTask } from '../utils/marketplace-notify.js';
+import { authRequired } from '../../middleware/auth.js';
+import { agentTokenRequired } from '../../middleware/marketplace-auth.js';
+import { prisma } from '../../lib/prisma.js';
+import { asyncHandler } from '../../utils/async-handler.js';
+import { HttpError } from '../../utils/http-error.js';
+import { notifyAgentNewTask } from '../../utils/marketplace-notify.js';
 import {
   registerAgentSchema,
   taskCallbackSchema,
   heartbeatSchema,
   rankingsSchema,
-} from '../schemas/marketplace-automation.js';
+} from '../../schemas/marketplace-automation.js';
 
 export const marketplaceAutomationRouter = Router();
 

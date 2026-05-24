@@ -1,21 +1,21 @@
 import { statSync } from 'node:fs';
 import { Prisma } from '@prisma/client';
 import { Router } from 'express';
-import { authRequired } from '../middleware/auth.js';
-import { prisma } from '../lib/prisma.js';
+import { authRequired } from '../../middleware/auth.js';
+import { prisma } from '../../lib/prisma.js';
 import {
   createDeliverableSchema,
   marketplaceIdSchema,
   marketplaceTaskIdSchema
-} from '../schemas/marketplace.js';
-import { asyncHandler } from '../utils/async-handler.js';
-import { HttpError } from '../utils/http-error.js';
+} from '../../schemas/marketplace.js';
+import { asyncHandler } from '../../utils/async-handler.js';
+import { HttpError } from '../../utils/http-error.js';
 import {
   getMarketplaceUploadFilenameFromReference,
   getMarketplaceUploadMimeType,
   getMarketplaceUploadPath
-} from '../lib/multer.js';
-import { archiveRecord } from '../lib/archive.js';
+} from '../../lib/multer.js';
+import { archiveRecord } from '../../lib/archive.js';
 
 export const marketplaceDeliverablesRouter = Router();
 

@@ -1,15 +1,15 @@
 import { Prisma } from '@prisma/client';
 import { Router } from 'express';
-import { authRequired } from '../middleware/auth.js';
-import { prisma } from '../lib/prisma.js';
+import { authRequired } from '../../middleware/auth.js';
+import { prisma } from '../../lib/prisma.js';
 import {
   createAgentSchema,
   listAgentsSchema,
   marketplaceIdSchema,
   updateAgentSchema
-} from '../schemas/marketplace.js';
-import { asyncHandler } from '../utils/async-handler.js';
-import { HttpError } from '../utils/http-error.js';
+} from '../../schemas/marketplace.js';
+import { asyncHandler } from '../../utils/async-handler.js';
+import { HttpError } from '../../utils/http-error.js';
 
 export const marketplaceAgentsRouter = Router();
 
