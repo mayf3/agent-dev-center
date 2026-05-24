@@ -193,6 +193,10 @@ model RequirementReport {
   status          ReportStatus @default(pending)
   qaReviewedAt    DateTime?  @map("qa_reviewed_at")
   qaReviewedBy    String?  @map("qa_reviewed_by")
+  qaBypass        Boolean      @default(false) @map("qa_bypass")
+  qaBypassReason  String?      @map("qa_bypass_reason") @db.Text
+  qaBypassAt      DateTime?    @map("qa_bypass_at")
+  qaBypassBy      String?      @map("qa_bypass_by")
   reviewComment   String?      @db.Text
   reviewedAt      DateTime?
   createdAt       DateTime     @default(now())
