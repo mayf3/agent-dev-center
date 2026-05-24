@@ -70,7 +70,8 @@ export const updateRequirementSchema = requirementIdSchema.extend({
       department: z.string().trim().min(2).max(80).optional(),
       assignee: nullableString,
       dueDate: optionalDate,
-      attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined))
+      attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
+      notes: z.string().optional()
     })
     .refine((body) => Object.keys(body).length > 0, {
       message: '至少提供一个要更新的字段'

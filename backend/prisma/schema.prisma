@@ -118,6 +118,7 @@ model Requirement {
   dueDate       DateTime?
   attachment    String?
   rejectReason  String?               @db.Text
+  notes         String?               @db.Text
   gitHash       String?
   deployVersion String?
   createdAt     DateTime              @default(now())

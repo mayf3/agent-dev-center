@@ -24,7 +24,7 @@ import {
   RocketOutlined,
 } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
-import { goalsApi, type GoalCard } from '../api/goals';
+import { goalsApi, type GoalCard } from '../../api/goals';
 
 const { Title, Text, Paragraph } = Typography;
 

@@ -25,7 +25,7 @@ import {
   RobotOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { identitiesApi, type Identity, type MonthlyGoalGroup } from '../api/identities';
+import { identitiesApi, type Identity, type MonthlyGoalGroup } from '../../api/identities';
 
 const { Title, Text, Paragraph } = Typography;
 
