@@ -133,7 +133,7 @@ export async function enforceReportReviewFlow(req: Request, _res: Response, next
 
   const report = await prisma.requirementReport.findUnique({
     where: { id: reportId },
-    select: { reportType: true, qaReviewedAt: true, qaReviewedBy: true, status: true },
+    select: { reportType: true, qaReviewedAt: true, qaReviewedBy: true, qaBypass: true, status: true },
   });
 
   if (!report) {
@@ -145,13 +145,15 @@ export async function enforceReportReviewFlow(req: Request, _res: Response, next
                           report.reportType === ReportType.SECURITY_REVIEW;
 
   if (requiresQaReview) {
+    const hasQaClearance = Boolean(report.qaReviewedAt || report.qaBypass);
+
     // 非 QA 角色尝试审批
-    if (req.user.internalRole !== InternalRole.qa && !report.qaReviewedAt) {
+    if (req.user.internalRole !== InternalRole.qa && !hasQaClearance) {
       return next(new HttpError(403, '测试报告和安全审查必须先经 QA 审查，再由 CTO 最终审批'));
     }
 
     // QA 已经审查，现在由 CTO 审批
-    if (req.user.internalRole === InternalRole.cto && !report.qaReviewedAt) {
+    if (req.user.internalRole === InternalRole.cto && !hasQaClearance) {
       return next(new HttpError(403, '请先由 QA 进行审查，CTO 才能最终审批'));
     }
   }
