@@ -1,5 +1,5 @@
 import { createReadStream, statSync } from 'node:fs';
-import { authRequired } from '../middleware/auth.js';
+import { authRequired } from '../../middleware/auth.js';
 import {
   getMarketplaceUploadExtension,
   getMarketplaceUploadMimeType,
@@ -7,11 +7,11 @@ import {
   getMarketplaceUploadUrl,
   isAllowedMarketplaceUploadFilename,
   marketplaceUpload
-} from '../lib/multer.js';
-import { asyncHandler } from '../utils/async-handler.js';
-import { HttpError } from '../utils/http-error.js';
+} from '../../lib/multer.js';
+import { asyncHandler } from '../../utils/async-handler.js';
+import { HttpError } from '../../utils/http-error.js';
 import { Router } from 'express';
-import { archiveFile } from '../lib/archive.js';
+import { archiveFile } from '../../lib/archive.js';
 
 export const marketplaceUploadsRouter = Router();
 
