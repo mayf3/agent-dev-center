@@ -44,6 +44,8 @@ const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role' | 'any'; inter
   POSTMORTEM:        { mode: 'any', allowAdmin: true },
 };
 
+const QA_BYPASS_MIN_WAIT_MS = 2 * 60 * 60 * 1000;
+
 /**
  * 校验提交者是否有权提交该类型的报告
  *
@@ -248,7 +250,18 @@ reportsRouter.patch(
 
     // TEST_REPORT 和 SECURITY_REVIEW 必须先经 QA 审查
     const requiresQaReview = report.reportType === ReportType.TEST_REPORT || report.reportType === ReportType.SECURITY_REVIEW;
-    if (requiresQaReview && !report.qaReviewedAt) {
+    const shouldBypassQa = requiresQaReview && body.qa_bypass === true;
+    const reviewedAt = new Date();
+
+    if (shouldBypassQa) {
+      if (report.status !== 'pending') throw new HttpError(400, '该报告已审核，不能执行 QA Bypass');
+      if (!body.qa_bypass_reason) throw new HttpError(400, 'qa_bypass=true 时必须提供 qa_bypass_reason');
+
+      const elapsedMs = reviewedAt.getTime() - report.createdAt.getTime();
+      if (elapsedMs < QA_BYPASS_MIN_WAIT_MS) {
+        throw new HttpError(403, '报告提交未满 2 小时，不能执行 QA Bypass');
+      }
+    } else if (requiresQaReview && !report.qaReviewedAt) {
       throw new HttpError(403, '测试报告和安全审查必须先经 QA 审查，再由 CTO 最终审批');
     }
 
@@ -259,7 +272,13 @@ reportsRouter.patch(
       data: {
         status: body.status,
         reviewComment: body.reviewComment,
-        reviewedAt: new Date(),
+        reviewedAt,
+        ...(shouldBypassQa ? {
+          qaBypass: true,
+          qaBypassReason: body.qa_bypass_reason,
+          qaBypassAt: reviewedAt,
+          qaBypassBy: req.user!.name,
+        } : {}),
       },
     });
 
