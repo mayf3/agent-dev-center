@@ -49,6 +49,7 @@ export interface Requirement {
   id: string;
   title: string;
   description: string;
+  notes?: string;
   priority: RequirementPriority;
   status: RequirementStatus;
   requester: string;
