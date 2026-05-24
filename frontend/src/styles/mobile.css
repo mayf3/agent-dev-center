@@ -49,6 +49,58 @@
 .mobile-detail-header { margin-bottom: 12px; }
 .mobile-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
+/* Mobile form: full width items */
+.mobile-form .ant-form-item { margin-bottom: 12px; }
+.mobile-form .ant-form-item-control-input-content > .ant-input,
+.mobile-form .ant-form-item-control-input-content > .ant-select,
+.mobile-form .ant-form-item-control-input-content > .ant-input-affix-wrapper,
+.mobile-form .ant-form-item-control-input-content > .ant-picker { width: 100% !important; }
+.mobile-form .ant-cascader-picker { width: 100%; }
+
+/* Mobile description list - sidebar info panel */
+.mobile-descriptions-panel .ant-descriptions-row { display: flex; flex-direction: column; }
+.mobile-descriptions-panel .ant-descriptions-item { padding: 6px 0 !important; }
+.mobile-descriptions-panel .ant-descriptions-item-label {
+  padding-bottom: 0 !important; font-size: 12px; line-height: 1.4;
+}
+.mobile-descriptions-panel .ant-descriptions-item-content { font-size: 13px; }
+.mobile-descriptions-panel .ant-descriptions-bordered .ant-descriptions-view { border: none; }
+.mobile-descriptions-panel .ant-descriptions-bordered .ant-descriptions-item-label,
+.mobile-descriptions-panel .ant-descriptions-bordered .ant-descriptions-item-content {
+  border: none; background: transparent; padding: 2px 0;
+}
+
+/* Mobile report timeline */
+.mobile-report-card { padding: 10px 12px; }
+.mobile-report-card .report-status { margin-bottom: 6px; }
+.mobile-report-card .report-status .ant-tag { margin-right: 4px; }
+.mobile-report-item { padding: 10px; border-bottom: 1px solid #f0f0f0; }
+.mobile-report-item:last-child { border-bottom: none; }
+
+/* Mobile submit requirement page */
+.mobile-submit-page { padding: 12px; }
+.mobile-submit-page .ant-card { border-radius: 8px; }
+.mobile-submit-page .ant-btn { height: 44px; font-size: 15px; }
+
+/* Mobile tabs scrollable */
+.mobile-tabs .ant-tabs-nav { margin-bottom: 8px; }
+.mobile-tabs .ant-tabs-tab { padding: 6px 10px; font-size: 13px; }
+
+/* Mobile kanban - horizontal scroll */
+.mobile-kanban-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 8px; }
+.mobile-kanban-row { display: flex; gap: 10px; min-width: max-content; }
+.mobile-kanban-col { min-width: 260px; max-width: 300px; }
+
+/* Mobile task list */
+.mobile-task-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid #f0f0f0; gap: 8px;
+}
+.mobile-task-item:last-child { border-bottom: none; }
+.mobile-task-item .task-info { flex: 1; min-width: 0; }
+.mobile-task-item .task-title { font-size: 14px; font-weight: 500; line-height: 1.4; }
+.mobile-task-item .task-meta { font-size: 12px; color: #8c8c8c; margin-top: 2px; }
+
 /* Batch actions bar */
 .mobile-batch-bar {
   position: fixed; bottom: 56px; left: 0; right: 0;
@@ -70,6 +122,19 @@
   .filter-bar .ant-form-item, .filter-bar .ant-input-affix-wrapper,
   .filter-bar .ant-select, .filter-bar .ant-space { width: 100% !important; }
   .app-header .page-title { display: none; }
+  /* Stat cards stack */
+  .ant-statistic-title { font-size: 12px !important; }
+  .ant-statistic-content { font-size: 18px !important; }
+  /* Card body padding */
+  .ant-card-body { padding: 12px !important; }
+  .ant-card-head { min-height: 40px; padding: 0 12px !important; }
+  .ant-card-head-title { font-size: 14px !important; }
+  /* Table cells */
+  .ant-table-cell { font-size: 12px !important; padding: 6px 8px !important; }
+  /* Buttons */
+  .ant-btn { font-size: 13px !important; }
+  /* Form */
+  .ant-form-item-label > label { font-size: 13px !important; }
 }
 
 @media (max-width: 767px) {
@@ -78,18 +143,30 @@
   .filter-bar .ant-form-item .ant-input, .filter-bar .ant-form-item .ant-select,
   .filter-bar .ant-form-item .ant-input-affix-wrapper { width: 100% !important; }
   .detail-grid { grid-template-columns: 1fr !important; }
-  .kanban-board { grid-template-columns: 1fr; }
+  .kanban-board { grid-template-columns: 1fr; gap: 12px; }
   .kanban-column { min-height: auto; }
   .kanban-list { min-height: auto; }
   .desktop-table-view { display: none !important; }
   .mobile-card-list { display: flex !important; }
   .app-header { display: none !important; }
   .app-content { padding-bottom: 0; }
+  /* Detail page full width stack */
+  .detail-grid .ant-card-head-title { font-size: 14px; }
+  /* Report timeline checklist table -> card view */
+  .report-checklist-table { display: none !important; }
+  .report-checklist-cards { display: block !important; }
+  /* Modal full screen on mobile */
+  .ant-modal { max-width: 100vw !important; margin: 0 !important; top: 0 !important; }
+  .ant-modal-content { border-radius: 0 !important; min-height: 100vh; }
+  .ant-modal-header { border-radius: 0 !important; }
+  /* 3-column stats => 2-column */
+  .stats-grid-3 { grid-template-columns: repeat(2, 1fr) !important; }
 }
 
 @media (min-width: 768px) {
   .mobile-card-list { display: none !important; }
   .mobile-shell { display: none !important; }
+  .report-checklist-cards { display: none !important; }
 }
 
 @media (max-width: 480px) {

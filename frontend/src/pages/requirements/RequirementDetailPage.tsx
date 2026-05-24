@@ -34,8 +34,16 @@ export function RequirementDetailPage() {
   const [requirement, setRequirement] = useState<Requirement | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [isMobile, setIsMobile] = useState(false);
   const activeTab = searchParams.get('tab') || 'description';
   const modalsRef = useRef<ModalHandles>(null);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   const loadRequirement = useCallback(async () => {
     if (!id) return;
