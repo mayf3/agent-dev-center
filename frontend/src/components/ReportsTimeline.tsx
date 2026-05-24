@@ -66,14 +66,43 @@ function renderChecklistTable(items: ChecklistItem[], title?: string) {
   return (
     <div style={{ marginBottom: 16 }}>
       {title && <Typography.Text strong>{title}</Typography.Text>}
-      <Table
-        rowKey={(_, i) => String(i)}
-        columns={columns}
-        dataSource={items}
-        pagination={false}
-        size="small"
-        style={{ marginTop: 8 }}
-      />
+      {/* Desktop: Table */}
+      <div className="report-checklist-table">
+        <Table
+          rowKey={(_, i) => String(i)}
+          columns={columns}
+          dataSource={items}
+          pagination={false}
+          size="small"
+          style={{ marginTop: 8 }}
+        />
+      </div>
+      {/* Mobile: Card list */}
+      <div className="report-checklist-cards" style={{ marginTop: 8 }}>
+        {items.map((item, i) => {
+          const color = item.status === 'pass' ? '#52c41a' : item.status === 'fail' ? '#ff4d4f' : '#fa8c16';
+          const label = item.status === 'pass' ? '通过' : item.status === 'fail' ? '失败' : '警告';
+          return (
+            <div key={i} style={{
+              padding: '8px 10px',
+              borderBottom: '1px solid #f0f0f0',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 8,
+            }}>
+              <Tag color={color} style={{ margin: 0, flexShrink: 0, fontSize: 11 }}>{label}</Tag>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Typography.Text style={{ fontSize: 13, lineHeight: 1.4 }}>{item.item}</Typography.Text>
+                {item.note && (
+                  <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 2 }}>
+                    {item.note}
+                  </Typography.Text>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
