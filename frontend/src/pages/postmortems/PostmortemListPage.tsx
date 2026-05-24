@@ -38,7 +38,7 @@ import {
   type Postmortem,
   type PostmortemStatus,
   type PostmortemCreatePayload,
-} from '../api/postmortems';
+} from '../../api/postmortems';
 
 const { Title, Text, Paragraph } = Typography;
 const { RangePicker } = DatePicker;

@@ -25,7 +25,7 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { identitiesApi, type Identity } from '../api/identities';
+import { identitiesApi, type Identity } from '../../api/identities';
 
 const { Title, Text } = Typography;
 

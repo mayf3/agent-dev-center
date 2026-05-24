@@ -25,7 +25,7 @@ import {
   TeamOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { agentsApi, type AgentListItem } from '../api/agents';
+import { agentsApi, type AgentListItem } from '../../api/agents';
 
 const { Title, Text } = Typography;
 
