@@ -2,6 +2,10 @@ import { app } from './app.js';
 import { env } from './config/env.js';
 import { prisma } from './lib/prisma.js';
 import { runOverdueCheck } from './utils/overdue-check.js';
+import { startupSSOCheck } from './middleware/sso-config-guard.js';
+
+// 启动时 SSO 配置自检（生产环境不通过则拒绝启动）
+startupSSOCheck();
 
 const server = app.listen(env.PORT, () => {
   console.log(`Agent开发中心 backend is running on http://localhost:${env.PORT}`);
