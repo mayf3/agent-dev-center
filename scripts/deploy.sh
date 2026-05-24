@@ -63,6 +63,12 @@ echo ">>> [5/5] 等待部署并执行健康检查..."
 sleep 10
 
 echo "--- 健康检查 ---"
+
+echo ">>> [5b] SSO 全链路集成测试..."
+bash scripts/sso-integration-test.sh || {
+  echo "❌ SSO 集成测试失败"
+  HEALTH_PASS=false
+}
 HEALTH_PASS=true
 
 # 检查前端
