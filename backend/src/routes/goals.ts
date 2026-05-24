@@ -40,6 +40,39 @@ function parseMonthlyGoals(val: unknown): MonthlyGoalGroup[] {
   return (val as MonthlyGoalGroup[]) || [];
 }
 
+// ─── Helper: resolve agentId (UUID or name) to marketplaceAgent ───
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function resolveAgentParam(param: string): Promise<{ id: string; name: string }> {
+  // If it's a valid UUID, try direct lookup
+  if (UUID_REGEX.test(param)) {
+    const agent = await prisma.marketplaceAgent.findUnique({
+      where: { id: param },
+      select: { id: true, name: true },
+    });
+    if (agent) return agent;
+  }
+
+  // Fallback: lookup by name (exact match, case-insensitive)
+  const agent = await prisma.marketplaceAgent.findFirst({
+    where: { name: { equals: param, mode: 'insensitive' } },
+    select: { id: true, name: true },
+  });
+  if (!agent) {
+    throw new HttpError(404, `Agent 不存在: "${param}"`);
+  }
+  return agent;
+}
+
+// ─── Validate UUID format before Prisma queries ────────────
+
+function assertValidUuid(value: string, fieldName: string): void {
+  if (!UUID_REGEX.test(value)) {
+    throw new HttpError(400, `无效的参数格式: ${fieldName} 不是有效的 UUID 格式`);
+  }
+}
+
 // ─── 1. Agent 自助: 读取自己的目标卡 ────────────────────────
 
 goalsRouter.get(
@@ -82,7 +115,13 @@ goalsRouter.get(
 
 goalsRouter.get(
   '/',
-  authRequired,
+  asyncHandler(async (req, res, next) => {
+    const authHeader = req.header('authorization')?.replace(/^Bearer\s+/i, '');
+    if (authHeader?.startsWith('agent_')) {
+      return agentTokenRequired(req, res, next);
+    }
+    return authRequired(req, res, next);
+  }),
   asyncHandler(async (req, res) => {
     const pipeline = req.query.pipeline as string | undefined;
     const status = req.query.status as string | undefined;
@@ -105,6 +144,87 @@ goalsRouter.get(
 
 // ─── 3. 获取单个目标卡 ──────────────────────────────────────
 
+
+// ─── 3. 按 name 查询目标卡 ──────────────────────────────────
+
+goalsRouter.get(
+  '/by-name/:openclawAgentId',
+  asyncHandler(async (req, res, next) => {
+    const authHeader = req.header('authorization')?.replace(/^Bearer\s+/i, '');
+    if (authHeader?.startsWith('agent_')) {
+      return agentTokenRequired(req, res, next);
+    }
+    return authRequired(req, res, next);
+  }),
+  asyncHandler(async (req, res) => {
+    const key = String(req.params.openclawAgentId);
+
+    // 1. Look up agent by openclawAgentId first, then name
+    const agent = await prisma.marketplaceAgent.findFirst({
+      where: {
+        OR: [
+          { openclawAgentId: { equals: key, mode: 'insensitive' } },
+          { name: { equals: key, mode: 'insensitive' } },
+        ],
+      },
+    });
+
+    if (!agent) {
+      throw new HttpError(404, `Agent "${key}" 不存在`);
+    }
+
+    // 2. Permission check
+    if (req.agentAuth) {
+      if (req.agentAuth.agentId !== agent.id) {
+        throw new HttpError(403, 'Agent 只能查询自己的目标卡');
+      }
+    } else {
+      const user = req.user as Express.AuthUser | undefined;
+      if (user) {
+        const okrRole = user.okrRole;
+        if (!okrRole || !['okr_admin', 'okr_owner', 'okr_reviewer'].includes(okrRole)) {
+          throw new HttpError(403, '需要 okr_admin / okr_owner / okr_reviewer 权限');
+        }
+      }
+    }
+
+    // 3. Fetch goal card
+    const goalCard = await prisma.agentGoalCard.findUnique({
+      where: { agentId: agent.id },
+      include: {
+        agent: {
+          select: {
+            id: true, name: true, displayName: true, avatar: true,
+            openclawAgentId: true, capabilities: true,
+          },
+        },
+      },
+    });
+
+    if (!goalCard) {
+      throw new HttpError(404, `Agent "${key}" 暂无目标卡`);
+    }
+
+    // 4. Return structured response
+    res.json({
+      agent: {
+        id: agent.id,
+        name: agent.name,
+        displayName: agent.displayName,
+        openclawAgentId: agent.openclawAgentId,
+      },
+      pipeline: goalCard.pipeline,
+      layer: goalCard.layer,
+      longTermDirection: goalCard.longTermDirection,
+      monthlyGoals: (goalCard.monthlyGoals as Array<{
+        month: string;
+        goals: Array<{ text: string; status: string }>;
+      }>) || [],
+      status: goalCard.status,
+      updatedAt: goalCard.updatedAt,
+    });
+  })
+);
 goalsRouter.get(
   '/:agentId',
   asyncHandler(async (req, res, next) => {
@@ -117,43 +237,19 @@ goalsRouter.get(
   asyncHandler(async (req, res) => {
     const agentParam = String(req.params.agentId);
 
-    // Try as agentId first (only if input looks like a UUID to avoid Prisma errors)
-    let goalCard: any = null;
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentParam);
-    if (isUuid) {
-      goalCard = await prisma.agentGoalCard.findUnique({
-        where: { agentId: agentParam },
-        include: {
-          agent: { select: { id: true, name: true, displayName: true, avatar: true } },
-          revisions: { orderBy: { createdAt: 'desc' }, take: 20 },
-        },
-      });
-    }
+    // Resolve UUID or name to agent
+    const agent = await resolveAgentParam(agentParam);
 
-    // If not found by ID, try by agent name/displayName
-    if (!goalCard) {
-      const agents = await prisma.marketplaceAgent.findMany({
-        where: {
-          OR: [
-            { name: { contains: agentParam, mode: 'insensitive' } },
-            { displayName: { contains: agentParam, mode: 'insensitive' } },
-          ],
-        },
-        take: 1,
-      });
-      if (agents.length > 0) {
-        goalCard = await prisma.agentGoalCard.findUnique({
-          where: { agentId: agents[0].id },
-          include: {
-            agent: { select: { id: true, name: true, displayName: true, avatar: true } },
-            revisions: { orderBy: { createdAt: 'desc' }, take: 20 },
-          },
-        });
-      }
-    }
+    const goalCard = await prisma.agentGoalCard.findUnique({
+      where: { agentId: agent.id },
+      include: {
+        agent: { select: { id: true, name: true, displayName: true, avatar: true } },
+        revisions: { orderBy: { createdAt: 'desc' }, take: 20 },
+      },
+    });
 
     if (!goalCard) {
-      throw new HttpError(404, '目标卡不存在');
+      throw new HttpError(404, `Agent "${agent.name}" 暂无目标卡`);
     }
 
     res.json({ goalCard });
@@ -276,7 +372,10 @@ goalsRouter.put(
   authRequired,
   requireOkrEdit,
   asyncHandler(async (req, res) => {
-    const agentId = String(req.params.agentId);
+    // Resolve agentId param: UUID or name
+    const agent = await resolveAgentParam(String(req.params.agentId));
+    const agentId = agent.id;
+
     const body = req.body as {
       pipeline?: string;
       longTermDirection?: string;
@@ -352,7 +451,11 @@ goalsRouter.patch(
     return authRequired(req, res, next);
   }),
   asyncHandler(async (req, res) => {
-    const { agentId, month, goalIndex } = req.params as { agentId: string; month: string; goalIndex: string };
+    const { month, goalIndex } = req.params as { month: string; goalIndex: string };
+    // Resolve agentId param: UUID or name
+    const agent = await resolveAgentParam(String(req.params.agentId));
+    const agentId = agent.id;
+
     const { status } = req.body as { status: string };
 
     if (!status || !['not_started', 'in_progress', 'done'].includes(status)) {
@@ -393,7 +496,10 @@ goalsRouter.post(
   authRequired,
   requireOkrEdit,
   asyncHandler(async (req, res) => {
-    const agentId = String(req.params.agentId);
+    // Resolve agentId param: UUID or name
+    const agent = await resolveAgentParam(String(req.params.agentId));
+    const agentId = agent.id;
+
     const { month } = req.body as { month: string };
 
     if (!month) {
@@ -470,9 +576,10 @@ goalsRouter.get(
   '/:agentId/revisions',
   authRequired,
   asyncHandler(async (req, res) => {
-    const agentId = String(req.params.agentId);
+    // Resolve agentId param: UUID or name
+    const agent = await resolveAgentParam(String(req.params.agentId));
 
-    const goalCard = await prisma.agentGoalCard.findUnique({ where: { agentId } });
+    const goalCard = await prisma.agentGoalCard.findUnique({ where: { agentId: agent.id } });
     if (!goalCard) {
       throw new HttpError(404, '目标卡不存在');
     }
