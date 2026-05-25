@@ -32,6 +32,6 @@ RUN npm prune --omit=dev \
 
 USER app
 EXPOSE 4000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD node -e "fetch('http://127.0.0.1:4000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD wget -qO /dev/null http://127.0.0.1:4000/api/health || exit 1
 ENTRYPOINT ["tini", "--"]
 CMD ["npm", "--workspace", "@agent-dev-center/backend", "run", "start:migrate"]
