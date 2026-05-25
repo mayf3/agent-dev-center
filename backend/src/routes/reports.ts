@@ -212,6 +212,10 @@ reportsRouter.patch(
       throw new HttpError(400, '只有测试报告和安全审查需要 QA 审批');
     }
 
+    if (report.submittedById === req.user!.id) {
+      throw new HttpError(403, '审核者和提交者不能为同一人，报告不能自己审自己');
+    }
+
     const updated = await prisma.requirementReport.update({
       where: { id: params.reportId },
       data: {
@@ -247,6 +251,11 @@ reportsRouter.patch(
     });
     if (!report) throw new HttpError(404, '报告不存在');
     if (report.requirementId !== params.id) throw new HttpError(400, '报告与需求不匹配');
+    // CTO_REVIEW 自审豁免：CTO 审的是整个需求（开发+测试+安全），不是审自己
+    const isCtoSelfReview = report.reportType === ReportType.CTO_REVIEW && report.submittedById === req.user!.id;
+    if (report.submittedById === req.user!.id && !isCtoSelfReview) {
+      throw new HttpError(403, '审核者和提交者不能为同一人，报告不能自己审自己');
+    }
 
     // TEST_REPORT 和 SECURITY_REVIEW 必须先经 QA 审查
     const requiresQaReview = report.reportType === ReportType.TEST_REPORT || report.reportType === ReportType.SECURITY_REVIEW;
