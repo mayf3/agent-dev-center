@@ -31,6 +31,9 @@ export function signAccessToken(user: Express.AuthUser): string {
   return jwt.sign(
     {
       sub: user.id,
+      name: user.name,
+      role: user.role,
+      okrRole: user.okrRole,
       iss: JWT_ISSUER,
       aud: JWT_AUDIENCE,
       jti,
