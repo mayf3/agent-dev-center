@@ -60,6 +60,8 @@ const router = createBrowserRouter([
             { path: 'portal', element: <SsoPortalPage /> },
             { path: 'team', element: <AgentTeamBoard /> },
             { path: 'team/agents/:agentId', element: <AgentDetailPage /> },
+            { path: 'agents', element: <AgentTeamBoard /> },
+            { path: 'agents/:agentId', element: <AgentDetailPage /> },
             { path: 'tasks', element: <TaskListPage /> },
             { path: 'tasks/kanban', element: <TaskKanbanPage /> },
             { path: 'goals', element: <GoalDashboardPage /> },
