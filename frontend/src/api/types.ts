@@ -1,4 +1,6 @@
-export type UserRole = 'admin' | 'requester' | 'developer';
+export type UserRole = 'admin' | 'requester' | 'developer' | 'agent' | 'cto_agent';
+export type OkrRole = 'okr_admin' | 'okr_reviewer' | 'okr_member' | 'okr_owner';
+export type InternalRole = 'cto' | 'pm' | 'developer' | 'tester' | 'security' | 'ops' | 'qa';
 export type RequirementPriority = 'P0' | 'P1' | 'P2' | 'P3';
 export type RequirementStatus =
   | 'pending'
@@ -17,6 +19,10 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  internalRole?: InternalRole | null;
+  okrRole?: OkrRole | null;
+  mustChangePassword?: boolean;
+  createdAt?: string;
 }
 
 export interface AuthResponse {
@@ -134,4 +140,15 @@ export interface PaginatedResponse<T> {
     total: number;
     totalPages: number;
   };
+}
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  internalRole: InternalRole | null;
+  okrRole: OkrRole;
+  mustChangePassword: boolean;
+  createdAt: string;
 }
