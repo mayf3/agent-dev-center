@@ -3,13 +3,57 @@ import type {
   MarketplacePriority,
   MarketplaceTaskStatus
 } from '../api/marketplace-types';
-import type { ReportStatus, ReportType, RequirementPriority, RequirementStatus, TaskStatus, UserRole } from '../api/types';
+import type { InternalRole, OkrRole, ReportStatus, ReportType, RequirementPriority, RequirementStatus, TaskStatus, UserRole } from '../api/types';
 
 export const roleLabels: Record<UserRole, string> = {
   admin: 'CTO',
   requester: '需求提交者',
-  developer: '开发Agent'
+  developer: '开发Agent',
+  agent: 'Agent',
+  cto_agent: 'CTO Agent'
 };
+
+export const okrRoleLabels: Record<OkrRole, string> = {
+  okr_admin: 'OKR Admin',
+  okr_reviewer: 'OKR Reviewer',
+  okr_member: 'OKR Member',
+  okr_owner: 'OKR Owner'
+};
+
+export const internalRoleLabels: Record<InternalRole, string> = {
+  cto: 'CTO',
+  pm: 'PM',
+  developer: 'Developer',
+  tester: 'Tester',
+  security: 'Security',
+  ops: 'Ops',
+  qa: 'QA'
+};
+
+export const userRoleOptions: { value: UserRole; label: string }[] = [
+  { value: 'admin', label: 'CTO' },
+  { value: 'requester', label: '需求提交者' },
+  { value: 'developer', label: '开发Agent' },
+  { value: 'agent', label: 'Agent' },
+  { value: 'cto_agent', label: 'CTO Agent' },
+];
+
+export const okrRoleOptions: { value: OkrRole; label: string }[] = [
+  { value: 'okr_admin', label: 'OKR Admin' },
+  { value: 'okr_reviewer', label: 'OKR Reviewer' },
+  { value: 'okr_member', label: 'OKR Member' },
+  { value: 'okr_owner', label: 'OKR Owner' },
+];
+
+export const internalRoleOptions: { value: InternalRole; label: string }[] = [
+  { value: 'cto', label: 'CTO' },
+  { value: 'pm', label: 'PM' },
+  { value: 'developer', label: 'Developer' },
+  { value: 'tester', label: 'Tester' },
+  { value: 'security', label: 'Security' },
+  { value: 'ops', label: 'Ops' },
+  { value: 'qa', label: 'QA' },
+];
 
 export const priorityLabels: Record<RequirementPriority, string> = {
   P0: 'P0 紧急',

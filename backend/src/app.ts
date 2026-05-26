@@ -28,6 +28,7 @@ import { roadmapRouter } from './routes/roadmap.js';
 import { identitiesRouter } from './routes/identities.js';
 import { healthRecordsRouter } from './routes/health-records.js';
 import { familyRouter } from './routes/family.js';
+import { adminUsersRouter } from './routes/admin-users.js';
 
 export const app = express();
 
@@ -107,6 +108,7 @@ app.use('/api/roadmap', roadmapRouter);
 app.use('/api/health-records', healthRecordsRouter);
 app.use('/api/family', familyRouter);
 app.use('/api/identities', identitiesRouter);
+app.use('/api/admin/users', adminUsersRouter);
 
 app.use((_req, _res, next) => {
   next(new HttpError(404, '接口不存在'));
