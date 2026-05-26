@@ -32,8 +32,8 @@ router.patch(
     });
     if (!existing) throw new HttpError(404, '需求不存在');
 
-    // 非管理员权限检查
-    if (req.user!.role !== 'admin') {
+    // 非管理员/CTO 权限检查
+    if (req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
       const isAssignee = existing.assigneeId === req.user!.id || existing.assignee === req.user!.name;
       if (!isAssignee) throw new HttpError(403, '当前角色无权执行此操作');
       const allowedStatuses = ['in-progress', 'testing'];
