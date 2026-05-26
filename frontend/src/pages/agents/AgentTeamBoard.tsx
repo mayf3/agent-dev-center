@@ -24,8 +24,9 @@ import {
   SearchOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { agentsApi, type AgentListItem } from '../../api/agents';
+import { svcOkrApi, type OkrGoalCard, type OkrStatus } from '../../api/svc-okr';
 
 const { Title, Text } = Typography;
 
@@ -43,19 +44,28 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   maintenance: { label: '维护中', color: 'orange' },
 };
 
-const PIPELINE_CONFIG: Record<string, string> = {
-  content: '内容生产',
-  parenting: '育儿',
-  investment: '投资',
-  health: '健康',
-  planning: '规划',
-  lifestyle: '生活',
-  devops: '运维',
-  education: '教育',
+const PIPELINE_CONFIG: Record<string, { label: string; color: string }> = {
+  content: { label: '内容生产', color: 'blue' },
+  parenting: { label: '育儿', color: 'pink' },
+  investment: { label: '投资', color: 'gold' },
+  health: { label: '健康', color: 'green' },
+  planning: { label: '规划', color: 'purple' },
+  lifestyle: { label: '生活', color: 'orange' },
+  devops: { label: '运维', color: 'cyan' },
+  education: { label: '教育', color: 'geekblue' },
+  business: { label: '业务', color: 'red' },
+  cross_cutting: { label: '跨层职能', color: 'lime' },
+};
+
+const OKR_STATUS_CONFIG: Record<OkrStatus, { label: string; color: string }> = {
+  draft: { label: '草稿', color: 'orange' },
+  proposed: { label: '提案中', color: 'blue' },
+  under_review: { label: '审核中', color: 'purple' },
+  approved: { label: '已批准', color: 'green' },
+  active: { label: '进行中', color: 'cyan' },
 };
 
 function DualProgressBar({ done, total }: { done: number; total: number }) {
-  const inProgress = total - done; // simplified: we show remaining as "in progress"
   const donePct = total > 0 ? (done / total) * 100 : 0;
   const remainingPct = total > 0 ? ((total - done) / total) * 100 : 0;
 
@@ -96,14 +106,27 @@ function DualProgressBar({ done, total }: { done: number; total: number }) {
   );
 }
 
-function AgentCard({ agent }: { agent: AgentListItem }) {
+function AgentCard({
+  agent,
+  okrStatus,
+}: {
+  agent: AgentListItem;
+  okrStatus?: OkrStatus | null;
+}) {
   const navigate = useNavigate();
+  const location = useLocation();
   const layer = agent.tags[0] || 'unknown';
   const layerCfg = LAYER_CONFIG[layer] || { label: layer, color: 'default' };
   const statusCfg = STATUS_CONFIG[agent.status] || STATUS_CONFIG.active;
   const goalCard = agent.goalCard;
   const stats = goalCard?.stats || { total: 0, done: 0, inProgress: 0 };
   const pipeline = goalCard?.pipeline || '';
+  const pipelineCfg = pipeline ? PIPELINE_CONFIG[pipeline] || { label: pipeline, color: 'default' } : null;
+  const okrCfg = okrStatus ? OKR_STATUS_CONFIG[okrStatus] : null;
+
+  // Build detail link based on current route prefix
+  const basePath = location.pathname.startsWith('/agents') ? '/agents' : '/team';
+  const detailLink = `${basePath}/${agent.id}`;
 
   return (
     <Card
@@ -111,7 +134,7 @@ function AgentCard({ agent }: { agent: AgentListItem }) {
       size="small"
       style={{ height: '100%' }}
       styles={{ body: { padding: '14px 16px' } }}
-      onClick={() => navigate(`/team/agents/${agent.id}`)}
+      onClick={() => navigate(detailLink)}
     >
       <Space direction="vertical" style={{ width: '100%' }} size={8}>
         {/* Header: Avatar + Name + Status */}
@@ -138,14 +161,19 @@ function AgentCard({ agent }: { agent: AgentListItem }) {
           </Tag>
         </div>
 
-        {/* Layer + Pipeline tags */}
+        {/* Layer + Pipeline + OKR Status tags */}
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           <Tag color={layerCfg.color} style={{ fontSize: 11 }}>
             {layerCfg.label}
           </Tag>
-          {pipeline && (
-            <Tag style={{ fontSize: 11 }}>
-              {PIPELINE_CONFIG[pipeline] || pipeline}
+          {pipelineCfg && (
+            <Tag color={pipelineCfg.color} style={{ fontSize: 11 }}>
+              {pipelineCfg.label}
+            </Tag>
+          )}
+          {okrCfg && (
+            <Tag color={okrCfg.color} style={{ fontSize: 11 }}>
+              {okrCfg.label}
             </Tag>
           )}
         </div>
@@ -183,8 +211,10 @@ function AgentCard({ agent }: { agent: AgentListItem }) {
 
 export function AgentTeamBoard() {
   const [agents, setAgents] = useState<AgentListItem[]>([]);
+  const [okrCardMap, setOkrCardMap] = useState<Record<string, OkrGoalCard>>({});
   const [loading, setLoading] = useState(true);
   const [layerFilter, setLayerFilter] = useState<string | undefined>();
+  const [pipelineFilter, setPipelineFilter] = useState<string | undefined>();
   const [searchText, setSearchText] = useState('');
 
   const loadAgents = async () => {
@@ -194,10 +224,23 @@ export function AgentTeamBoard() {
       if (layerFilter) params.layer = layerFilter;
       if (searchText) params.search = searchText;
 
-      const response = await agentsApi.list(
-        Object.keys(params).length > 0 ? params : undefined
-      );
-      setAgents(response.data.data || []);
+      const [agentsRes, okrRes] = await Promise.all([
+        agentsApi.list(Object.keys(params).length > 0 ? params : undefined),
+        svcOkrApi.list(pipelineFilter ? { pipeline: pipelineFilter as any } : undefined).catch(() => null),
+      ]);
+
+      setAgents(agentsRes.data.data || []);
+
+      // Build okrStatus lookup map from svc-okr response
+      if (okrRes?.data?.goalCards) {
+        const map: Record<string, OkrGoalCard> = {};
+        for (const card of okrRes.data.goalCards) {
+          map[card.agentId] = card;
+        }
+        setOkrCardMap(map);
+      } else {
+        setOkrCardMap({});
+      }
     } catch {
       message.error('加载 Agent 数据失败');
     } finally {
@@ -207,7 +250,7 @@ export function AgentTeamBoard() {
 
   useEffect(() => {
     void loadAgents();
-  }, [layerFilter]);
+  }, [layerFilter, pipelineFilter]);
 
   // Debounced search
   useEffect(() => {
@@ -275,6 +318,17 @@ export function AgentTeamBoard() {
               value: key,
             }))}
           />
+          <Select
+            placeholder="按管线筛选"
+            allowClear
+            style={{ width: 140 }}
+            value={pipelineFilter}
+            onChange={(v) => setPipelineFilter(v || undefined)}
+            options={Object.entries(PIPELINE_CONFIG).map(([key, val]) => ({
+              label: val.label,
+              value: key,
+            }))}
+          />
           <Button icon={<ReloadOutlined />} onClick={() => void loadAgents()}>
             刷新
           </Button>
@@ -286,7 +340,10 @@ export function AgentTeamBoard() {
           <Row gutter={[12, 12]}>
             {agents.map((agent) => (
               <Col key={agent.id} xs={24} sm={12} md={8} lg={6}>
-                <AgentCard agent={agent} />
+                <AgentCard
+                  agent={agent}
+                  okrStatus={okrCardMap[agent.id]?.okrStatus}
+                />
               </Col>
             ))}
           </Row>
