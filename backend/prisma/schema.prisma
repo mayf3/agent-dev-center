@@ -87,6 +87,7 @@ model User {
   employeeNo      String?    @unique
   onboardingDate  DateTime?
   managerId       String?    @db.Uuid
+  mustChangePassword Boolean @default(true) @map("must_change_password")
   manager         User?      @relation("UserManager", fields: [managerId], references: [id])
   directReports    User[]     @relation("UserManager")
 
