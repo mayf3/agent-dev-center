@@ -12,6 +12,10 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(16).default('dev-only-refresh-secret-change-me'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   JWT_SECRET_SSO: z.string().min(16).default('dev-only-sso-secret-change-me'),
+  // For verifying auth-service JWTs (auth-service shares this secret with all services)
+  AUTH_JWT_SECRET: z.string().min(16).default('dev-only-auth-service-secret-16'),
+  AUTH_JWT_ISSUER: z.string().default('auth-service'),
+  AUTH_JWT_AUDIENCE: z.string().default('agent-platform'),
   FRONTEND_ORIGIN: z.string().default('http://localhost:5173'),
   REGISTER_INVITE_CODE: z.string().optional(),
   FEISHU_WEBHOOK_URL: z.string().optional(),
