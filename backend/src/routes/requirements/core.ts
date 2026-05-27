@@ -147,6 +147,57 @@ router.get(
   })
 );
 
+// GET /summary - 轻量摘要接口 (47ce94b8: 6字段 + status过滤, 目标<200ms)
+router.get(
+  '/summary',
+  asyncHandler(async (req, res) => {
+    const actor = req.user!;
+    const statusFilter = req.query.status as string | undefined;
+    const where: Prisma.RequirementWhereInput = roleAwareRequirementWhere(actor);
+
+    // status filter: active=pending+approved+in-progress+testing+review+deploying, pending, all
+    if (statusFilter && statusFilter !== 'all') {
+      if (statusFilter === 'active') {
+        where.AND = [
+          ...(Array.isArray(where.AND) ? where.AND : []),
+          { status: { in: ['pending', 'approved', 'in_progress', 'testing', 'review', 'deploying'] } }
+        ];
+      } else {
+        // Map API status to DB status if needed
+        const dbStatus = (apiRequirementStatus as Record<string, string>)[statusFilter] ?? statusFilter;
+        where.AND = [
+          ...(Array.isArray(where.AND) ? where.AND : []),
+          { status: dbStatus } as Prisma.RequirementWhereInput
+        ];
+      }
+    }
+
+    const requirements = await prisma.requirement.findMany({
+      where,
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        priority: true,
+        assignee: true,
+        assigneeId: true,
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+
+    const data = requirements.map(r => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      priority: r.priority,
+      assigneeName: r.assignee,
+      assignee: r.assigneeId,
+    }));
+
+    res.json({ success: true, data, meta: { total: data.length } });
+  })
+);
+
 // GET / - 列表
 router.get(
   '/',

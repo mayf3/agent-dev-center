@@ -86,12 +86,13 @@ export function verifyRefreshToken(token: string): TokenPayload {
 
 /**
  * 统一 JWT 验证中间件 (87c0d549 - 全平台统一JWT鉴权加固)
- * 
- * 支持三种令牌来源：
- * 1. 用户访问令牌 (JWT_SECRET)
- * 2. Agent SSO令牌 (JWT_SECRET_SSO - 应与JWT_SECRET保持一致)
- * 3. 管理员令牌 (特殊权限)
- * 
+ *
+ * 支持四种令牌来源：
+ * 1. auth-service JWT (AUTH_JWT_SECRET - 统一鉴权服务)
+ * 2. 用户访问令牌 (JWT_SECRET - ADC 自签)
+ * 3. Agent SSO令牌 (JWT_SECRET_SSO - 应与JWT_SECRET保持一致)
+ * 4. 管理员令牌 (特殊权限)
+ *
  * 安全增强：
  * - 验证 issuer (签发者)
  * - 验证 audience (受众)
@@ -107,35 +108,45 @@ export const authRequired = asyncHandler(async (req: Request, _res: Response, ne
     throw new HttpError(401, '请先登录');
   }
 
-  let payload: TokenPayload;
+  let payload: TokenPayload & { source?: string; permissions?: string[]; okrRole?: string };
   let isAgentToken = false;
+  let isAuthServiceToken = false;
   let verificationError: Error | null = null;
 
-  // 第一优先级: 尝试用户JWT (JWT_SECRET)
+  // 第一优先级: 尝试 auth-service JWT (AUTH_JWT_SECRET)
   try {
-    payload = jwt.verify(token, env.JWT_SECRET, {
-      issuer: JWT_ISSUER,
-      audience: JWT_AUDIENCE
-    }) as TokenPayload;
+    payload = jwt.verify(token, env.AUTH_JWT_SECRET, {
+      issuer: env.AUTH_JWT_ISSUER,
+      audience: env.AUTH_JWT_AUDIENCE
+    }) as TokenPayload & { source?: string; permissions?: string[] };
+    isAuthServiceToken = true;
   } catch (err) {
     verificationError = err as Error;
-    
-    // 第二优先级: 尝试 Agent SSO JWT (JWT_SECRET_SSO)
+
+    // 第二优先级: 尝试用户JWT (JWT_SECRET)
     try {
-      payload = jwt.verify(token, env.JWT_SECRET_SSO, {
+      payload = jwt.verify(token, env.JWT_SECRET, {
         issuer: JWT_ISSUER,
-        audience: JWT_AUDIENCE,
-        // 允许SSO令牌跳过issuer/audience检查以兼容旧版本
-        ignoreExpiration: false
-      }) as TokenPayload & { type?: string };
-      isAgentToken = true;
-    } catch {
-      throw new HttpError(401, `登录状态已失效: ${verificationError?.message || '无效令牌'}`);
+        audience: JWT_AUDIENCE
+      }) as TokenPayload;
+    } catch (err2) {
+      // 第三优先级: 尝试 Agent SSO JWT (JWT_SECRET_SSO)
+      try {
+        payload = jwt.verify(token, env.JWT_SECRET_SSO, {
+          issuer: JWT_ISSUER,
+          audience: JWT_AUDIENCE,
+          // 允许SSO令牌跳过issuer/audience检查以兼容旧版本
+          ignoreExpiration: false
+        }) as TokenPayload & { type?: string };
+        isAgentToken = true;
+      } catch {
+        throw new HttpError(401, `登录状态已失效: ${verificationError?.message || '无效令牌'}`);
+      }
     }
   }
 
-  // 验证令牌类型（如果不是SSO令牌）
-  if (!isAgentToken && payload.type !== 'access' && payload.type !== undefined) {
+  // 验证令牌类型（如果不是SSO或auth-service令牌）
+  if (!isAgentToken && !isAuthServiceToken && payload.type !== 'access' && payload.type !== undefined) {
     throw new HttpError(401, '令牌类型错误，请使用访问令牌');
   }
 
@@ -152,6 +163,16 @@ export const authRequired = asyncHandler(async (req: Request, _res: Response, ne
     });
     if (!user) {
       throw new HttpError(401, 'Agent 不存在或已被禁用');
+    }
+    req.user = user as Express.AuthUser;
+  } else if (isAuthServiceToken) {
+    // auth-service JWT: sub 是 UUID, source 可能是 'email' 或 'agent-token'
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, permissions: true }
+    });
+    if (!user) {
+      throw new HttpError(401, '用户不存在或已被禁用');
     }
     req.user = user as Express.AuthUser;
   } else {
