@@ -52,6 +52,9 @@ Page({
       wx.setStorageSync('token', token)
       wx.setStorageSync('userInfo', res.user)
 
+      // 启动未读通知轮询
+      app.startUnreadPolling()
+
       wx.reLaunch({ url: '/pages/requirements/index' })
     } catch (err) {
       this.setData({

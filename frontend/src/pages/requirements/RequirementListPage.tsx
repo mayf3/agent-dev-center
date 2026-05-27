@@ -1,12 +1,14 @@
 import { CheckOutlined, CloseOutlined, EyeOutlined, ProjectOutlined, ReloadOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
 import {
   App as AntApp,
+  Badge,
   Button,
   Card,
   Checkbox,
   Form,
   Input,
   Modal,
+  Progress,
   Select,
   Space,
   Table,
@@ -38,6 +40,36 @@ interface FilterValues {
   priority?: RequirementPriority;
   assignee?: string;
   department?: string;
+}
+
+function taskProgress(requirement: Requirement) {
+  const tasks = requirement.tasks ?? [];
+  const done = tasks.filter((task) => task.status === 'done').length;
+  const total = tasks.length;
+  return {
+    done,
+    total,
+    percent: total > 0 ? Math.round((done / total) * 100) : 0
+  };
+}
+
+function dueDateLabel(requirement: Requirement) {
+  return requirement.dueDate ? dayjs(requirement.dueDate).format('YYYY-MM-DD') : '未设置截止时间';
+}
+
+const MOBILE_CARD_SKELETON_KEYS = ['mobile-card-skeleton-1', 'mobile-card-skeleton-2', 'mobile-card-skeleton-3'];
+
+function MobileCardSkeleton() {
+  return (
+    <div className="mobile-req-card mobile-req-card-skeleton" aria-hidden="true">
+      <div className="mobile-card-skeleton-line mobile-card-skeleton-title" />
+      <div className="mobile-card-skeleton-meta">
+        <span className="mobile-card-skeleton-pill" />
+        <span className="mobile-card-skeleton-pill" />
+        <span className="mobile-card-skeleton-line mobile-card-skeleton-short" />
+      </div>
+    </div>
+  );
 }
 
 export function RequirementListPage() {
@@ -128,6 +160,12 @@ export function RequirementListPage() {
     void fetchRequirements(1, 10);
   }, [tabValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const submittedCount = useMemo(() => {
+    if (!user) return 0;
+    if (tabValue === 'mine') return requirements.length;
+    return requirements.filter((requirement) => requirement.requester === user.name).length;
+  }, [requirements, tabValue, user]);
+
   // Batch operations
   const handleBatchStatus = (status: RequirementStatus) => {
     modal.confirm({
@@ -182,16 +220,61 @@ export function RequirementListPage() {
         />
       ),
     }] : []),
-    { title: '需求标题', dataIndex: 'title', render: (_, record) => <Link to={`/requirements/${record.id}`}>{record.title}</Link> },
+    {
+      title: '需求标题',
+      dataIndex: 'title',
+      width: 420,
+      render: (_, record) => {
+        const progress = taskProgress(record);
+        return (
+          <Tooltip
+            title={
+              <Space direction="vertical" size={0}>
+                <span>截止：{dueDateLabel(record)}</span>
+                <span>任务完成：{progress.done}/{progress.total}</span>
+              </Space>
+            }
+          >
+            <Link className="requirement-title-link" to={`/requirements/${record.id}`}>
+              {record.title}
+            </Link>
+          </Tooltip>
+        );
+      }
+    },
     { title: '优先级', dataIndex: 'priority', width: 100, render: (p) => <PriorityTag priority={p} /> },
     { title: '状态', dataIndex: 'status', width: 100, render: (s) => <StatusTag status={s} /> },
-    { title: '业务线', dataIndex: 'department', width: 130 },
+    {
+      title: '进度',
+      key: 'progress',
+      width: 150,
+      render: (_, record) => {
+        const progress = taskProgress(record);
+        if (progress.total === 0) {
+          return <Typography.Text type="secondary">暂无任务</Typography.Text>;
+        }
+        return (
+          <Tooltip title={`已完成 ${progress.done}/${progress.total} 个任务`}>
+            <div className="requirement-progress-cell">
+              <Progress
+                percent={progress.percent}
+                showInfo={false}
+                size="small"
+                status={progress.percent === 100 ? 'success' : 'active'}
+              />
+              <Typography.Text type="secondary" className="requirement-progress-meta">
+                {progress.percent}%
+              </Typography.Text>
+            </div>
+          </Tooltip>
+        );
+      }
+    },
     { title: '提交者', dataIndex: 'requester', width: 130 },
     {
       title: '负责人', dataIndex: 'assignee', width: 140,
       render: (a) => a ? <Tag icon={<UserOutlined />} color="default">{a}</Tag> : <Typography.Text type="secondary">未分配</Typography.Text>
     },
-    { title: '截止', dataIndex: 'dueDate', width: 90, render: (v) => v ? dayjs(v).format('MM-DD') : '-' },
     {
       title: '操作', key: 'action', fixed: 'right', width: 80,
       render: (_, record) => (
@@ -222,7 +305,7 @@ export function RequirementListPage() {
       <div className="page-heading">
         <div>
           <Typography.Title level={3} style={{ margin: 0 }}>
-            {tabValue === 'mine' ? '我提交的需求' : tabValue === 'my' ? '我的任务' : '需求列表'}
+            {tabValue === 'mine' ? '我提交的需求' : tabValue === 'my' ? '分配给我的需求' : '需求列表'}
           </Typography.Title>
           <Typography.Text type="secondary" style={{ marginTop: 4, display: 'block' }}>
             {tabValue === 'mine' ? '查看我提交的所有需求及状态' : tabValue === 'my' ? '仅显示分配给我的需求和任务' : '按状态、优先级、负责人和关键词筛选需求'}
@@ -250,8 +333,17 @@ export function RequirementListPage() {
           }}
           items={[
             { key: 'all', label: '📋 所有需求' },
-            { key: 'mine', label: <><UserOutlined /> 我提交的</> },
-            { key: 'my', label: <><UserOutlined /> 我的任务</> },
+            {
+              key: 'mine',
+              label: (
+                <Space size={6}>
+                  <UserOutlined />
+                  <span>我提交的</span>
+                  <Badge count={submittedCount} overflowCount={99} size="small" showZero />
+                </Space>
+              )
+            },
+            { key: 'my', label: <><UserOutlined /> 分配给我</> },
           ]}
           size={isMobile ? 'small' : 'middle'}
         />
@@ -326,7 +418,8 @@ export function RequirementListPage() {
       <Card className="desktop-table-view">
         <Table
           rowKey="id" columns={columns} dataSource={requirements} loading={loading}
-          pagination={pagination} scroll={{ x: 1000 }} size="middle"
+          className="requirement-table"
+          pagination={pagination} scroll={{ x: 960 }} size="middle"
           onChange={(p) => fetchRequirements(p.current, p.pageSize)}
         />
       </Card>
@@ -334,7 +427,7 @@ export function RequirementListPage() {
       {/* Mobile: Card list */}
       <div className="mobile-card-list">
         {loading ? (
-          <Card loading style={{ minHeight: 200 }} />
+          MOBILE_CARD_SKELETON_KEYS.map((key) => <MobileCardSkeleton key={key} />)
         ) : (
           requirements.map((item) => <MobileCard key={item.id} item={item} />)
         )}

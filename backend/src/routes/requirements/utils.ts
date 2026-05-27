@@ -63,7 +63,7 @@ export function canEditRequirement(user: Express.AuthUser, requirement: {
 
 /** 基于角色过滤查询条件（使用 user.id） */
 export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.RequirementWhereInput {
-  if (user.role === 'admin' || user.role === 'cto_agent') {
+  if (user.role === 'admin' || user.role === 'cto_agent' || user.internalRole === 'pm') {
     return {};
   }
 

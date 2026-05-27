@@ -2,6 +2,7 @@
   "pages": [
     "pages/requirements/index",
     "pages/my-tasks/index",
+    "pages/notifications/index",
     "pages/requirement-detail/index",
     "pages/requirement-submit/index",
     "pages/login/index",
@@ -25,6 +26,12 @@
         "text": "我的任务",
         "iconPath": "assets/icons/task.png",
         "selectedIconPath": "assets/icons/task-active.png"
+      },
+      {
+        "pagePath": "pages/notifications/index",
+        "text": "通知",
+        "iconPath": "assets/icons/notif.png",
+        "selectedIconPath": "assets/icons/notif-active.png"
       }
     ]
   },
