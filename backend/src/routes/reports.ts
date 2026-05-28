@@ -239,7 +239,7 @@ reportsRouter.patch(
 // CTO 最终审批（或直接审批非 QA 流程的报告）
 reportsRouter.patch(
   '/:reportId',
-  requireRoles('admin'),
+  requireRoles('admin', 'cto_agent'),
   asyncHandler(async (req, res) => {
     const { params, body } = reviewReportSchema.parse({
       params: req.params,
