@@ -44,6 +44,7 @@ router.post(
     const requirement = await prisma.requirement.create({
       data: {
         title: body.title, description: body.description, priority: body.priority,
+        type: body.type, tags: body.tags,
         requester: body.requester ?? actor.name, requesterId: actor.id,
         department: body.department,
         assignee: (actor.role === 'admin' || actor.role === 'cto_agent') ? body.assignee : null,
@@ -212,6 +213,12 @@ router.get(
     if (query.priority) {
       where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { priority: query.priority }];
     }
+    if (query.type) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { type: query.type }];
+    }
+    if (query.tags && query.tags.length > 0) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { tags: { hasEvery: query.tags } }];
+    }
     if (query.search) {
       where.AND = [
         ...(Array.isArray(where.AND) ? where.AND : []),
@@ -314,6 +321,7 @@ router.put(
       where: { id: params.id },
       data: {
         title: body.title, description: body.description, priority: body.priority,
+        type: body.type, tags: body.tags,
         requester: body.requester, department: body.department,
         assignee: body.assignee, assigneeId, dueDate: body.dueDate, attachment: body.attachment,
         notes: body.notes

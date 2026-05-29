@@ -44,6 +44,14 @@ enum RequirementStatus {
   done
 }
 
+enum RequirementType {
+  FEATURE
+  BUGFIX
+  POSTMORTEM
+  INFRA
+  SECURITY
+}
+
 enum TaskStatus {
   todo
   in_progress @map("in-progress")
@@ -120,6 +128,8 @@ model Requirement {
   attachment    String?
   rejectReason  String?               @db.Text
   notes         String?               @db.Text
+  type          RequirementType       @default(FEATURE)
+  tags          String[]              @default([])
   gitHash       String?
   deployVersion String?
   createdAt     DateTime              @default(now())
@@ -135,6 +145,7 @@ model Requirement {
 
   @@index([status])
   @@index([priority])
+  @@index([type])
   @@index([requester])
   @@index([requesterId])
   @@index([assignee])

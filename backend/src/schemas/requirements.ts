@@ -22,6 +22,8 @@ export const createRequirementSchema = z.object({
     title: z.string().trim().min(2).max(120),
     description: z.string().trim().min(5),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).default('P2'),
+    type: z.enum(['FEATURE', 'BUGFIX', 'POSTMORTEM', 'INFRA', 'SECURITY']).default('FEATURE'),
+    tags: z.array(z.string().trim().max(50)).max(10).default([]),
     requester: z.string().trim().min(2).max(60).optional(),
     department: z.string().trim().min(2).max(80),
     assignee: nullableString,
@@ -36,6 +38,11 @@ export const listRequirementsSchema = z.object({
     pageSize: z.coerce.number().int().positive().max(100).default(10),
     status: z.enum(requirementStatusValues).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
+    type: z.enum(['FEATURE', 'BUGFIX', 'POSTMORTEM', 'INFRA', 'SECURITY']).optional(),
+    tags: z.preprocess(
+      (v) => (typeof v === 'string' ? v.split(',').map((s: string) => s.trim()).filter(Boolean) : v),
+      z.array(z.string()).optional()
+    ),
     search: z.string().trim().max(100).optional()
   })
 });
@@ -66,6 +73,8 @@ export const updateRequirementSchema = requirementIdSchema.extend({
       title: z.string().trim().min(2).max(120).optional(),
       description: z.string().trim().min(5).optional(),
       priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
+      type: z.enum(['FEATURE', 'BUGFIX', 'POSTMORTEM', 'INFRA', 'SECURITY']).optional(),
+      tags: z.array(z.string().trim().max(50)).max(10).optional(),
       requester: z.string().trim().min(2).max(60).optional(),
       department: z.string().trim().min(2).max(80).optional(),
       assignee: nullableString,
