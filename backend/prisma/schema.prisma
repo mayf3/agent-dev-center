@@ -106,6 +106,7 @@ model User {
   requirementRevisions  RequirementRevision[] @relation("RequirementRevisionOperator")
   submittedReports      RequirementReport[]   @relation("ReportSubmitter")
   marketplaceAgents     MarketplaceAgent[]    @relation("MarketplaceAgentOwner")
+  linkedAgent           MarketplaceAgent?     @relation("AgentUserLink")
   marketplaceTasks      MarketplaceTask[]     @relation("MarketplaceRequester")
 
   @@map("users")
@@ -284,6 +285,9 @@ model MarketplaceAgent {
   agentToken        String?           @unique
   ownerId      String?                @db.Uuid
   owner        User?                  @relation("MarketplaceAgentOwner", fields: [ownerId], references: [id])
+  // Direct user link — for /agents/me lookup. Same as ownerId but explicit & indexed.
+  userId       String?                @db.Uuid @unique @map("user_id")
+  user         User?                  @relation("AgentUserLink", fields: [userId], references: [id])
   // SSO dedup: track which OpenClaw agent this maps to
   openclawAgentId   String?           // e.g. "education-agent" — the OpenClaw agentId
   registrationSource String?          // "seed" | "sso" | "manual"
@@ -299,6 +303,8 @@ model MarketplaceAgent {
   weeklyReports WeeklyReport[]
 
   @@index([status])
+  @@index([ownerId])
+  @@index([userId])
   @@map("marketplace_agents")
 }
 
