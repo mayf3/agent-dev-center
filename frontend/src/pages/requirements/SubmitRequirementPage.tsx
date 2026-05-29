@@ -16,7 +16,7 @@ import type { Dayjs } from 'dayjs';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
-import type { Requirement, RequirementPriority } from '../../api/types';
+import type { Requirement, RequirementPriority, RequirementType } from '../../api/types';
 import {
   ACCEPTED_FILE_TYPES,
   MAX_FILE_COUNT,
@@ -24,7 +24,7 @@ import {
   formatFileSize,
   isAllowedFile
 } from '../../components/requirements/fileUtils';
-import { agentOptions, departmentOptions, priorityLabels } from '../../constants/options';
+import { agentOptions, departmentOptions, priorityLabels, typeLabels } from '../../constants/options';
 
 const { TextArea } = Input;
 
@@ -32,6 +32,8 @@ interface RequirementFormValues {
   title: string;
   description: string;
   priority: RequirementPriority;
+  type?: RequirementType;
+  tags?: string[];
   department: string;
   dueDate?: Dayjs;
   attachment?: string;
@@ -42,6 +44,8 @@ function toPayload(values: RequirementFormValues) {
     title: values.title.trim(),
     description: values.description.trim(),
     priority: values.priority,
+    type: values.type,
+    tags: values.tags,
     department: values.department,
     dueDate: values.dueDate?.toISOString(),
     attachment: values.attachment?.trim() || undefined
@@ -181,6 +185,21 @@ export function SubmitRequirementPage() {
                 value: priority
               }))}
             />
+          </Form.Item>
+
+          <Form.Item label="需求类型" name="type">
+            <Select
+              allowClear
+              placeholder="选择需求类型（可选）"
+              options={(Object.keys(typeLabels) as RequirementType[]).map((t) => ({
+                label: typeLabels[t],
+                value: t
+              }))}
+            />
+          </Form.Item>
+
+          <Form.Item label="标签" name="tags">
+            <Select mode="tags" placeholder="输入标签后回车，如：前端、优化、P0修复" tokenSeparators={[',', '，']} />
           </Form.Item>
 
           <Form.Item

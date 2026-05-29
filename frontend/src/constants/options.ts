@@ -3,7 +3,7 @@ import type {
   MarketplacePriority,
   MarketplaceTaskStatus
 } from '../api/marketplace-types';
-import type { InternalRole, OkrRole, ReportStatus, ReportType, RequirementPriority, RequirementStatus, TaskStatus, UserRole } from '../api/types';
+import type { InternalRole, OkrRole, ReportStatus, ReportType, RequirementPriority, RequirementStatus, RequirementType, TaskStatus, UserRole } from '../api/types';
 
 export const roleLabels: Record<UserRole, string> = {
   admin: 'CTO',
@@ -60,6 +60,22 @@ export const priorityLabels: Record<RequirementPriority, string> = {
   P1: 'P1 高',
   P2: 'P2 中',
   P3: 'P3 低'
+};
+
+export const typeLabels: Record<RequirementType, string> = {
+  FEATURE: '✨ 功能',
+  BUGFIX: '🐛 修复',
+  POSTMORTEM: '📋 复盘',
+  INFRA: '🔧 基础设施',
+  SECURITY: '🔒 安全',
+};
+
+export const typeColors: Record<RequirementType, string> = {
+  FEATURE: 'blue',
+  BUGFIX: 'red',
+  POSTMORTEM: 'purple',
+  INFRA: 'cyan',
+  SECURITY: 'volcano',
 };
 
 export const priorityColors: Record<RequirementPriority, string> = {

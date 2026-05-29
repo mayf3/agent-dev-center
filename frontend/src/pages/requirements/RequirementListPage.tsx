@@ -27,17 +27,20 @@ import type {
   Requirement,
   RequirementPriority,
   RequirementStatus,
+  RequirementType,
   User
 } from '../../api/types';
 import { PriorityTag } from '../../components/PriorityTag';
 import { StatusTag } from '../../components/StatusTag';
-import { priorityLabels, statusLabels } from '../../constants/options';
+import { TypeTag } from '../../components/TypeTag';
+import { priorityLabels, statusLabels, typeLabels } from '../../constants/options';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface FilterValues {
   search?: string;
   status?: RequirementStatus;
   priority?: RequirementPriority;
+  type?: RequirementType;
   assignee?: string;
   department?: string;
 }
@@ -128,6 +131,7 @@ export function RequirementListPage() {
         search: filters.search,
         status: filters.status,
         priority: filters.priority,
+        type: filters.type,
         assignee: filters.assignee,
         department: filters.department,
       };
@@ -235,14 +239,24 @@ export function RequirementListPage() {
               </Space>
             }
           >
-            <Link className="requirement-title-link" to={`/requirements/${record.id}`}>
-              {record.title}
-            </Link>
+            <span>
+              <Link className="requirement-title-link" to={`/requirements/${record.id}`}>
+                {record.title}
+              </Link>
+              {record.tags && record.tags.length > 0 && (
+                <span style={{ marginLeft: 6 }}>
+                  {record.tags.map((tag) => (
+                    <Tag key={tag} style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px' }}>{tag}</Tag>
+                  ))}
+                </span>
+              )}
+            </span>
           </Tooltip>
         );
       }
     },
     { title: '优先级', dataIndex: 'priority', width: 100, render: (p) => <PriorityTag priority={p} /> },
+    { title: '类型', dataIndex: 'type', width: 110, render: (t) => <TypeTag type={t} /> },
     { title: '状态', dataIndex: 'status', width: 100, render: (s) => <StatusTag status={s} /> },
     {
       title: '进度',
@@ -293,10 +307,18 @@ export function RequirementListPage() {
       <div className="mobile-req-card-title">{item.title}</div>
       <div className="mobile-req-card-meta">
         <PriorityTag priority={item.priority} />
+        <TypeTag type={item.type} />
         <StatusTag status={item.status} />
         {item.assignee && <Tag icon={<UserOutlined />}>{item.assignee}</Tag>}
         {item.dueDate && <span>{dayjs(item.dueDate).format('MM-DD')}</span>}
       </div>
+      {item.tags && item.tags.length > 0 && (
+        <div style={{ marginTop: 4 }}>
+          {item.tags.map((tag) => (
+            <Tag key={tag} style={{ fontSize: 11 }}>{tag}</Tag>
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -367,6 +389,12 @@ export function RequirementListPage() {
                 <Select
                   allowClear placeholder="优先级" style={{ width: 120 }}
                   options={(Object.keys(priorityLabels) as RequirementPriority[]).map((p) => ({ value: p, label: priorityLabels[p] }))}
+                />
+              </Form.Item>
+              <Form.Item name="type">
+                <Select
+                  allowClear placeholder="类型" style={{ width: 130 }}
+                  options={(Object.keys(typeLabels) as RequirementType[]).map((t) => ({ value: t, label: typeLabels[t] }))}
                 />
               </Form.Item>
               <Form.Item name="assignee">

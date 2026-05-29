@@ -19,6 +19,8 @@ import { PriorityTag } from '../../components/PriorityTag';
 import { ReportsTimeline } from '../../components/ReportsTimeline';
 import { RequirementAttachments } from '../../components/RequirementAttachments';
 import { StatusTag } from '../../components/StatusTag';
+import { TypeTag } from '../../components/TypeTag';
+import { Tag as AntTag } from 'antd';
 import { TaskTableSection } from '../../components/requirements/TaskTableSection';
 import { RevisionHistoryTab, RevisionHistoryTabLabel } from '../../components/requirements/RevisionHistoryTab';
 import { RequirementModals } from '../../components/requirements/RequirementModals';
@@ -263,9 +265,15 @@ export function RequirementDetailPage() {
             </Descriptions.Item>
             <Descriptions.Item label="标题">{requirement.title}</Descriptions.Item>
             <Descriptions.Item label="优先级"><PriorityTag priority={requirement.priority} /></Descriptions.Item>
+            <Descriptions.Item label="类型"><TypeTag type={requirement.type} /></Descriptions.Item>
             <Descriptions.Item label="状态"><StatusTag status={requirement.status} /></Descriptions.Item>
             <Descriptions.Item label="提交者">{requirement.requester}</Descriptions.Item>
             <Descriptions.Item label="业务部门">{requirement.department}</Descriptions.Item>
+            <Descriptions.Item label="标签">
+              {requirement.tags && requirement.tags.length > 0
+                ? requirement.tags.map((tag) => <AntTag key={tag}>{tag}</AntTag>)
+                : <Typography.Text type="secondary">无</Typography.Text>}
+            </Descriptions.Item>
             <Descriptions.Item label="负责人">{requirement.assignee || '未分配'}</Descriptions.Item>
             <Descriptions.Item label="截止时间">{formatDate(requirement.dueDate)}</Descriptions.Item>
             <Descriptions.Item label="附件">
