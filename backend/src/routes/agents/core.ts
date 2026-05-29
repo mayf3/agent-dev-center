@@ -89,10 +89,11 @@ router.get(
   asyncHandler(async (req, res) => {
     const userId = req.user!.id;
 
-    // Match by ownerId (primary) or by id (if user.id happens to be agent.id)
+    // Match by userId (direct link), ownerId (legacy), or by id (if user.id happens to be agent.id)
     const agent = await prisma.marketplaceAgent.findFirst({
       where: {
         OR: [
+          { userId },
           { ownerId: userId },
           { id: userId },
         ],

@@ -197,7 +197,7 @@ router.post(
         data: {
           name: body.agentId, displayName: body.name,
           description: `Auto-registered via SSO (${body.category ?? 'uncategorized'})`,
-          capabilities: body.capabilities, ownerId: user.id,
+          capabilities: body.capabilities, ownerId: user.id, userId: user.id,
           openclawAgentId: body.agentId, registrationSource: 'sso',
           registrationGroup: body.registrationGroup,
         },
@@ -205,7 +205,7 @@ router.post(
     } else {
       await prisma.marketplaceAgent.update({
         where: { id: marketplaceAgent.id },
-        data: { ownerId: user.id, openclawAgentId: body.agentId, registrationSource: 'sso', registrationGroup: body.registrationGroup },
+        data: { ownerId: user.id, userId: user.id, openclawAgentId: body.agentId, registrationSource: 'sso', registrationGroup: body.registrationGroup },
       });
     }
 
