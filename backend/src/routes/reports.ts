@@ -294,7 +294,7 @@ reportsRouter.patch(
     // 通知相关方
     const reqInfo = await prisma.requirement.findUnique({
       where: { id: params.id },
-      select: { title: true, requesterId: true, assigneeId: true },
+      select: { title: true, requesterId: true, assigneeId: true, assignee: true, status: true },
     });
     const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
     void notifyEvent(reportEvent as any, {
@@ -303,6 +303,100 @@ reportsRouter.patch(
       reportType: report.reportType,
       actor: req.user!.name,
     });
+
+    // ─── 报告打回自动回退需求状态 + assignee ───
+    // TEST_REPORT/SECURITY_REVIEW 打回 → in-progress（开发重做）
+    // CTO_REVIEW 打回 → testing（重测）
+    // DEPLOY_CONFIRM 打回 → review（重审）
+    // DEV_SELF_CHECK 打回 → in-progress（开发重做）
+    // approved 状态不变
+    if (body.status === 'rejected' && reqInfo) {
+      const reportType = report.reportType as string;
+      let targetStatus: string | null = null;
+
+      switch (reportType) {
+        case 'DEV_SELF_CHECK':
+        case 'TEST_REPORT':
+        case 'SECURITY_REVIEW':
+          targetStatus = 'in_progress';
+          break;
+        case 'CTO_REVIEW':
+          targetStatus = 'testing';
+          break;
+        case 'DEPLOY_CONFIRM':
+          targetStatus = 'review';
+          break;
+        default:
+          break;
+      }
+
+      if (targetStatus) {
+        // 找回上一个 assignee（从 revisions 历史中找）
+        // 对于 DEV_SELF_CHECK/TEST_REPORT/SECURITY_REVIEW 打回，找 assignee 对应的开发者
+        const lastRevision = await prisma.requirementRevision.findFirst({
+          where: {
+            requirementId: params.id,
+            assignee: { not: null },
+            status: { in: ['in_progress', 'testing'] },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { assignee: true },
+        });
+
+        const rollbackAssignee = lastRevision?.assignee ?? reqInfo.assignee;
+
+        // 查找 assignee 对应的用户 ID
+        let rollbackAssigneeId = reqInfo.assigneeId;
+        if (rollbackAssignee && rollbackAssignee !== reqInfo.assignee) {
+          const assigneeUser = await prisma.user.findFirst({
+            where: { OR: [{ name: rollbackAssignee }, { email: rollbackAssignee }] },
+            select: { id: true },
+          });
+          rollbackAssigneeId = assigneeUser?.id ?? null;
+        }
+
+        // 检查状态是否需要回退（当前状态比目标状态更靠后时才回退）
+        const currentStatus = reqInfo.status;
+        const statusOrder = ['pending', 'clarifying', 'approved', 'rejected', 'in_progress', 'testing', 'review', 'deploying', 'done'];
+        const currentIndex = statusOrder.indexOf(currentStatus);
+        const targetIndex = statusOrder.indexOf(targetStatus);
+
+        if (targetIndex < currentIndex) {
+          await prisma.requirement.update({
+            where: { id: params.id },
+            data: {
+              status: targetStatus as any,
+              assignee: rollbackAssignee,
+              assigneeId: rollbackAssigneeId,
+            },
+          });
+
+          // 生成 revision 记录
+          await prisma.requirementRevision.create({
+            data: {
+              requirementId: params.id,
+              title: reqInfo.title ?? '',
+              description: '',
+              priority: 'P2',
+              status: currentStatus,
+              requester: '',
+              department: '',
+              assignee: rollbackAssignee,
+              revisionNote: `${reportType} 报告被打回，自动回退状态 ${currentStatus} → ${targetStatus}，assignee 回退为 ${rollbackAssignee ?? '原开发者'}`,
+              operatorId: req.user!.id,
+            },
+          });
+
+          void notifyEvent('requirement.status_changed' as any, {
+            id: params.id,
+            title: reqInfo.title ?? '',
+            status: targetStatus,
+            actor: req.user!.name,
+            assignee: rollbackAssignee,
+          });
+        }
+      }
+    }
 
     res.json({ success: true, data: updated });
   }),

@@ -159,7 +159,7 @@ export const authRequired = asyncHandler(async (req: Request, _res: Response, ne
     // Agent JWT: sub 是 agentId，查 User 表 by agentId
     const user = await prisma.user.findFirst({
       where: { agentId: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, permissions: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, permissions: true, mustChangePassword: true }
     });
     if (!user) {
       throw new HttpError(401, 'Agent 不存在或已被禁用');
@@ -169,7 +169,7 @@ export const authRequired = asyncHandler(async (req: Request, _res: Response, ne
     // auth-service JWT: sub 是 UUID, source 可能是 'email' 或 'agent-token'
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, permissions: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, permissions: true, mustChangePassword: true }
     });
     if (!user) {
       throw new HttpError(401, '用户不存在或已被禁用');
@@ -179,7 +179,7 @@ export const authRequired = asyncHandler(async (req: Request, _res: Response, ne
     // 用户 JWT: sub 是 UUID
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, permissions: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, permissions: true, mustChangePassword: true }
     });
     if (!user) {
       throw new HttpError(401, '用户不存在或已被禁用');

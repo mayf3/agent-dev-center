@@ -29,6 +29,7 @@ import { identitiesRouter } from './routes/identities.js';
 import { healthRecordsRouter } from './routes/health-records.js';
 import { familyRouter } from './routes/family.js';
 import { adminUsersRouter } from './routes/admin-users.js';
+import { mustChangePasswordGuard } from './middleware/must-change-password.js';
 
 export const app = express();
 
@@ -88,6 +89,8 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth/sso', authLimiter, ssoRouter);
 app.use('/api/auth/agent', agentSsoRouter);
 app.use('/api/auth', authLimiter, authRouter);
+// mustChangePassword 拦截：认证后检查是否需要强制改密码
+app.use('/api', mustChangePasswordGuard);
 app.use('/api/requirements', requirementsRouter);
 app.use('/api/requirements/:id/reports', reportsRouter);
 app.use('/api/reports', reportsRouter);
