@@ -6,6 +6,7 @@ import { registerStatusRoutes } from './status.js';
 import { registerReviewRoutes } from './review.js';
 import { registerPipelineRoutes } from './pipeline.js';
 import { registerDecomposeRoutes } from './decompose.js';
+import { registerWorkflowRoutes } from './workflow.js';
 
 export const requirementsRouter = Router();
 
@@ -19,3 +20,4 @@ registerStatusRoutes(requirementsRouter);
 registerReviewRoutes(requirementsRouter);
 registerPipelineRoutes(requirementsRouter);
 registerDecomposeRoutes(requirementsRouter);
+registerWorkflowRoutes(requirementsRouter);
