@@ -13,6 +13,24 @@ import { HttpError } from '../../utils/http-error.js';
 
 export const marketplaceAgentsRouter = Router();
 
+// GET /me — must be before /:id to avoid "me" being treated as UUID
+marketplaceAgentsRouter.get(
+  '/me',
+  authRequired,
+  asyncHandler(async (req, res) => {
+    const userId = req.user!.id;
+    const agents = await prisma.marketplaceAgent.findMany({
+      where: { ownerId: userId },
+      orderBy: [{ displayName: 'asc' }, { createdAt: 'desc' }],
+      include: {
+        owner: { select: { id: true, name: true, email: true } }
+      }
+    });
+
+    res.json({ data: agents });
+  })
+);
+
 marketplaceAgentsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
