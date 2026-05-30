@@ -140,6 +140,12 @@ model Requirement {
   reports       RequirementReport[]
   serviceLinks  ServiceRequirement[]
   postmortems   Postmortem[]
+  workflowTransitions WorkflowTransition[]
+
+  // Workflow engine fields
+  workflowId    String?             @db.Uuid
+  workflow      WorkflowTemplate?   @relation(fields: [workflowId], references: [id])
+  currentStep   String?
 
   requesterUser User? @relation("RequesterRequirements", fields: [requesterId], references: [id])
   assigneeUser  User? @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
@@ -653,4 +659,42 @@ model PipelineEvent {
   @@index([taskId])
   @@index([toStatus, actor])
   @@map("pipeline_events")
+}
+
+// ─── Workflow Engine ──────────────────────────────────────
+
+model WorkflowTemplate {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique                  // "backend-dev", "frontend-dev", "ops-deploy", "hotfix"
+  displayName String                              // "后端开发", "前端开发", "运维部署", "紧急修复"
+  description String   @db.Text
+  steps       Json     // JSONB: [{name, displayName, role, requiredReports[], autoAdvance}]
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requirements Requirement[]
+
+  @@index([isActive])
+  @@map("workflow_templates")
+}
+
+model WorkflowTransition {
+  id             String   @id @default(uuid()) @db.Uuid
+  requirementId  String   @db.Uuid
+  requirement    Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  fromStep       String                    // step name
+  toStep         String                    // step name
+  action         String                    // "advance" | "reject" | "assign-workflow"
+  actorId        String?  @db.Uuid
+  actorName      String
+  actorRole      String
+  comment        String?  @db.Text
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([requirementId])
+  @@index([fromStep])
+  @@index([createdAt])
+  @@map("workflow_transitions")
 }

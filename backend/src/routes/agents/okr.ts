@@ -14,7 +14,53 @@ function canApproveOkrs(okrRole: OkrRole | null | undefined): boolean {
 
 export function registerOkrRoutes(router: import('express').Router): void {
 
-// PATCH /goals/summary - OKR 汇总
+// GET /goals/mine — Agent 读取自己的 OKR
+router.get(
+  '/goals/mine',
+  authRequired,
+  asyncHandler(async (req, res) => {
+    const okrRole = (req.user as any)?.okrRole;
+    // okr_member 及以上权限可用
+    if (!okrRole) throw new HttpError(403, '需要 OKR 相关角色权限');
+
+    const userId = (req.user as any)?.sub || (req.user as any)?.id;
+    if (!userId) throw new HttpError(401, '无法识别用户身份');
+
+    // 通过 userId（即 marketplace_agents.id = users.id）查找对应的 Agent
+    const agent = await prisma.marketplaceAgent.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, displayName: true },
+    });
+
+    // 如果按 id 找不到，尝试通过 ownerId 查找
+    const targetAgent = agent || await prisma.marketplaceAgent.findFirst({
+      where: { ownerId: userId },
+      select: { id: true, name: true, displayName: true },
+    });
+
+    if (!targetAgent) throw new HttpError(404, '未找到关联的 Agent 记录');
+
+    const goalCard = await prisma.agentGoalCard.findUnique({
+      where: { agentId: targetAgent.id },
+      include: { agent: { select: { id: true, name: true, displayName: true } } },
+    });
+
+    if (!goalCard) throw new HttpError(404, '目标卡不存在');
+
+    res.json({
+      data: {
+        agentId: goalCard.agentId,
+        agentName: (goalCard.agent as any).displayName || (goalCard.agent as any).name,
+        pipeline: goalCard.pipeline,
+        layer: (goalCard as any).layer || 'mainline',
+        longTermDirection: goalCard.longTermDirection,
+        monthlyGoals: goalCard.monthlyGoals,
+      },
+    });
+  })
+);
+
+// GET /goals/summary - OKR 汇总
 router.get(
   '/goals/summary',
   authRequired,
