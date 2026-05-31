@@ -148,24 +148,33 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       const steps = parseSteps(template.steps);
       if (steps.length === 0) throw new HttpError(400, '工作流模板无有效步骤');
 
-      const firstStep = steps[0];
+      // 支持可选的 startStep 参数，用于迁移现有数据
+      let targetStep;
+      if (body.startStep) {
+        targetStep = steps.find(s => s.name === body.startStep);
+        if (!targetStep) {
+          throw new HttpError(400, `工作流中不存在步骤「${body.startStep}」，可用步骤：${steps.map(s => s.name).join(', ')}`);
+        }
+      } else {
+        targetStep = steps[0];
+      }
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: {
           workflowId: template.id,
-          currentStep: firstStep.name,
+          currentStep: targetStep.name,
         },
       });
 
       await logTransition({
         requirementId: params.id,
         fromStep: 'approved',
-        toStep: firstStep.name,
+        toStep: targetStep.name,
         action: 'assign-workflow',
         actorId: req.user!.id,
         actorName: req.user!.name,
         actorRole: req.user!.role,
-        metadata: { workflowName: template.name, templateId: template.id },
+        metadata: { workflowName: template.name, templateId: template.id, startStep: body.startStep },
       });
 
       res.json({
@@ -175,8 +184,8 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           workflowId: template.id,
           workflowName: template.name,
           workflowDisplayName: template.displayName,
-          currentStep: firstStep.name,
-          currentStepDisplayName: firstStep.displayName,
+          currentStep: targetStep.name,
+          currentStepDisplayName: targetStep.displayName,
           steps: steps.map(s => ({
             name: s.name,
             displayName: s.displayName,

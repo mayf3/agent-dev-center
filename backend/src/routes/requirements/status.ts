@@ -28,9 +28,20 @@ router.patch(
 
     const existing = await prisma.requirement.findUnique({
       where: { id: params.id },
-      include: { tasks: true }
+      select: {
+        id: true, title: true, description: true, priority: true, status: true,
+        requester: true, requesterId: true, department: true, assignee: true,
+        assigneeId: true, dueDate: true, pmApprovedAt: true, attachment: true,
+        workflowId: true, currentStep: true,
+        tasks: { select: { id: true, title: true } },
+      },
     });
     if (!existing) throw new HttpError(404, '需求不存在');
+
+    // 如果已分配工作流，拒绝旧版状态流转
+    if (existing.workflowId && body.status) {
+      throw new HttpError(400, '该需求已启用工作流模式，请使用 /workflow/advance 接口推进，不再支持旧版状态直接修改');
+    }
 
     // 非管理员/CTO 权限检查
     if (req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
