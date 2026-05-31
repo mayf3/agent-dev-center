@@ -269,9 +269,22 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         }
       }
 
+      // 同步旧 status 字段
+      const stepToStatus: Record<string, string> = {
+        dev_self_check: 'in_progress',
+        testing: 'testing',
+        security_review: 'review',
+        cto_review: 'review',
+        deploying: 'deploying',
+        done: 'done',
+      };
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
-        data: { currentStep: targetStep.name },
+        data: {
+          currentStep: targetStep.name,
+          ...(stepToStatus[targetStep.name] ? { status: stepToStatus[targetStep.name] as any } : {}),
+        },
       });
 
       await logTransition({
