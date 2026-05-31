@@ -60,7 +60,11 @@ router.post(
         });
       }
       createAssigneeId = assigneeUser?.id ?? null;
-      createAssigneeName = assigneeUser?.name ?? body.assignee;
+      createAssigneeName = assigneeUser?.name ?? null;
+      // 如果指定了 assignee 但找不到用户，拒绝创建（不允许存垃圾数据）
+      if (body.assignee && !assigneeUser) {
+        throw new HttpError(400, `找不到用户「${body.assignee}」，请使用有效的用户名、邮箱或 UUID`);
+      }
     }
 
     const requirement = await prisma.requirement.create({
@@ -343,15 +347,16 @@ router.put(
             select: { id: true, name: true }
           });
         }
-        assigneeId = assigneeUser?.id ?? null;
-        assigneeName = assigneeUser?.name ?? body.assignee;
+        if (!assigneeUser) {
+          throw new HttpError(400, `找不到用户「${body.assignee}」，请使用有效的用户名、邮箱或 UUID`);
+        }
+        assigneeId = assigneeUser.id;
+        assigneeName = assigneeUser.name;
 
         // 角色校验：如果有工作流，assigneeId 必须匹配当前步骤的角色
-        if (assigneeId) {
-          const roleCheck = await validateAssigneeRoleMatch(params.id, assigneeId);
-          if (!roleCheck.ok) {
-            throw new HttpError(400, roleCheck.message);
-          }
+        const roleCheck = await validateAssigneeRoleMatch(params.id, assigneeId);
+        if (!roleCheck.ok) {
+          throw new HttpError(400, roleCheck.message);
         }
       } else {
         assigneeId = null;
