@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const assignWorkflowSchema = z.object({
   body: z.object({
     workflowName: z.string().min(1, '工作流名称不能为空'),
+    startStep: z.string().optional(),
   }),
 });
 
