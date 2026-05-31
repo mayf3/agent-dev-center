@@ -158,9 +158,10 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       } else {
         targetStep = steps[0];
       }
-      // startStep 迁移时同步旧 status 字段
+      // startStep 迁移时同步旧 status 字段（一次性迁移代码，新需求不需要）
+      // 映射关系：workflow step name → DB requirement.status
       const stepToStatus: Record<string, string> = {
-        dev_self_check: requirement.status, // 保持原有状态
+        dev_self_check: requirement.status,
         testing: 'testing',
         security_review: 'review',
         cto_review: 'review',
@@ -292,7 +293,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           fromStep: requirement.currentStep,
           toStep: targetStep.name,
           toStepDisplayName: targetStep.displayName,
-          isDone: targetStep.name === 'done',
+          isDone: targetStep.name === steps[steps.length - 1]?.name,
         },
       });
     }),
@@ -326,7 +327,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       }
 
       const prevStep = getPreviousStep(steps, requirement.currentStep);
-      const targetStep = prevStep ? prevStep.name : 'approved';
+      const targetStep = prevStep ? prevStep.name : steps[0]?.name ?? 'dev_self_check';
 
       const updated = await prisma.requirement.update({
         where: { id: params.id },
