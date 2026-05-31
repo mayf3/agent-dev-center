@@ -23,7 +23,7 @@ async function main() {
       currentStep: 'dev_self_check',
       workflowId: { not: null },
     },
-    data: { status: 'in-progress' },
+    data: { status: 'in_progress' },
   });
   console.log(`✅ Fix 1: ${fix1.count} 个 approved+dev_self_check → in-progress`);
 
@@ -54,7 +54,7 @@ async function main() {
   const remaining = await prisma.requirement.findMany({
     where: {
       workflowId: { not: null },
-      status: { notIn: ['done', 'rejected', 'cancelled'] },
+      status: { notIn: ['done', 'rejected'] },
     },
     select: { id: true, status: true, currentStep: true, assigneeId: true },
   });
