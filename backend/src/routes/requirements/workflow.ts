@@ -16,6 +16,7 @@ import {
   rejectStepSchema,
 } from '../../schemas/workflow.js';
 import { canReadRequirement } from './utils.js';
+import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
 
 // ── Types ────────────────────────────────────────────────
 
@@ -279,13 +280,19 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         done: 'done',
       };
 
+      // 自动解析下一步骤的 assigneeId
+      const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: {
           currentStep: targetStep.name,
+          assigneeId: newAssigneeId,
           ...(stepToStatus[targetStep.name] ? { status: stepToStatus[targetStep.name] as any } : {}),
         },
       });
+
+      const newAssigneeName = await getAssigneeName(newAssigneeId);
 
       await logTransition({
         requirementId: params.id,
@@ -306,6 +313,8 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           fromStep: requirement.currentStep,
           toStep: targetStep.name,
           toStepDisplayName: targetStep.displayName,
+          newAssigneeId,
+          newAssigneeName,
           isDone: targetStep.name === steps[steps.length - 1]?.name,
         },
       });
@@ -341,6 +350,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
 
       const prevStep = getPreviousStep(steps, requirement.currentStep);
       const targetStep = prevStep ? prevStep.name : steps[0]?.name ?? 'dev_self_check';
+      const targetStepDef = prevStep ?? steps[0];
 
       // 同步旧 status 字段：workflow step → DB status
       const stepToStatus: Record<string, string> = {
@@ -352,13 +362,21 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         done: 'done',
       };
 
+      // 自动解析回退步骤的 assigneeId
+      const newAssigneeId = targetStepDef
+        ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
+        : requirement.assigneeId;
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: {
           currentStep: targetStep,
+          assigneeId: newAssigneeId,
           ...(stepToStatus[targetStep] ? { status: stepToStatus[targetStep] as any } : {}),
         },
       });
+
+      const newAssigneeName = await getAssigneeName(newAssigneeId);
 
       await logTransition({
         requirementId: params.id,
@@ -377,6 +395,8 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           requirementId: updated.id,
           fromStep: requirement.currentStep,
           toStep: targetStep,
+          newAssigneeId,
+          newAssigneeName,
           comment: body.comment,
         },
       });
