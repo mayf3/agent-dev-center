@@ -14,10 +14,10 @@ export const requirementsRouter = Router();
 requirementsRouter.use(authRequired);
 
 // 注册各模块路由
+registerWorkflowRoutes(requirementsRouter);
 registerCoreRoutes(requirementsRouter);
 registerAttachmentRoutes(requirementsRouter);
 registerStatusRoutes(requirementsRouter);
 registerReviewRoutes(requirementsRouter);
 registerPipelineRoutes(requirementsRouter);
 registerDecomposeRoutes(requirementsRouter);
-registerWorkflowRoutes(requirementsRouter);
