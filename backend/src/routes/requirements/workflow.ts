@@ -333,6 +333,40 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
   );
 
   /**
+   * GET /workflow-templates — 列出所有可用工作流模板
+   * 任何已登录用户可查看（方便前端展示和 CTO 分配）
+   */
+  router.get(
+    '/workflow-templates',
+    asyncHandler(async (_req, res) => {
+      const templates = await prisma.workflowTemplate.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          name: true,
+          displayName: true,
+          description: true,
+          steps: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      res.json({
+        success: true,
+        data: templates.map(t => ({
+          id: t.id,
+          name: t.name,
+          displayName: t.displayName,
+          description: t.description,
+          stepCount: (t.steps as any[]).length,
+          steps: t.steps,
+        })),
+      });
+    }),
+  );
+
+  /**
    * GET /:id/workflow/myStep — 查看当前用户在该需求的工作流状态
    */
   router.get(
