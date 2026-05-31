@@ -23,9 +23,9 @@ export function canReadRequirement(user: Express.AuthUser, requirement: { reques
            requirement.requester === user.email;
   }
 
+  // 主要按 assigneeId 判断；assignee 文本仅做 fallback 兼容旧数据
   return requirement.assigneeId === user.id ||
-         requirement.assignee === user.name ||
-         requirement.assignee === user.email;
+         (requirement.assignee === user.name || requirement.assignee === user.email);
 }
 
 /** 权限判断：是否可编辑该需求（基于 user.id） */

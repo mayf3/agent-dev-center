@@ -62,8 +62,9 @@ export type SerializedTask = Omit<Task, 'status'> & {
   status: TaskStatusApi;
 };
 
-export type SerializedRequirement = Omit<Requirement, 'status'> & {
+export type SerializedRequirement = Omit<Requirement, 'status' | 'assignee'> & {
   status: RequirementStatusApi;
+  assignee?: string | null;  // resolved from assigneeUser.name
   tasks?: SerializedTask[];
 };
 
@@ -75,11 +76,12 @@ export function serializeTask(task: Task): SerializedTask {
 }
 
 export function serializeRequirement(
-  requirement: Requirement & { tasks?: Task[] }
+  requirement: (Requirement & { tasks?: Task[]; assigneeUser?: { name: string } | null })
 ): SerializedRequirement {
   return {
     ...requirement,
     status: apiRequirementStatus[requirement.status],
+    assignee: requirement.assigneeUser?.name ?? requirement.assignee,
     tasks: requirement.tasks?.map(serializeTask)
   };
 }
