@@ -46,10 +46,19 @@ router.post(
     let createAssigneeId: string | null = null;
     let createAssigneeName: string | null = null;
     if (body.assignee && (actor.role === 'admin' || actor.role === 'cto_agent')) {
-      const assigneeUser = await prisma.user.findFirst({
-        where: { OR: [{ name: body.assignee }, { email: body.assignee }, { id: body.assignee }] },
-        select: { id: true, name: true }
-      });
+      // assignee 可以是 name/email/UUID，分条件查找避免 Prisma UUID 解析错误
+      let assigneeUser;
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.assignee)) {
+        assigneeUser = await prisma.user.findUnique({
+          where: { id: body.assignee },
+          select: { id: true, name: true }
+        });
+      } else {
+        assigneeUser = await prisma.user.findFirst({
+          where: { OR: [{ name: body.assignee }, { email: body.assignee }] },
+          select: { id: true, name: true }
+        });
+      }
       createAssigneeId = assigneeUser?.id ?? null;
       createAssigneeName = assigneeUser?.name ?? body.assignee;
     }
@@ -321,10 +330,19 @@ router.put(
     let assigneeName: string | null = existing.assignee;
     if (body.assignee !== undefined) {
       if (body.assignee) {
-        const assigneeUser = await prisma.user.findFirst({
-          where: { OR: [{ name: body.assignee }, { email: body.assignee }, { id: body.assignee }] },
-          select: { id: true, name: true }
-        });
+        // assignee 可以是 name/email/UUID，分条件查找避免 Prisma UUID 解析错误
+        let assigneeUser;
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.assignee)) {
+          assigneeUser = await prisma.user.findUnique({
+            where: { id: body.assignee },
+            select: { id: true, name: true }
+          });
+        } else {
+          assigneeUser = await prisma.user.findFirst({
+            where: { OR: [{ name: body.assignee }, { email: body.assignee }] },
+            select: { id: true, name: true }
+          });
+        }
         assigneeId = assigneeUser?.id ?? null;
         assigneeName = assigneeUser?.name ?? body.assignee;
 
