@@ -11,6 +11,7 @@ import {
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { apiRequirementStatus, serializeRequirement } from '../../utils/status.js';
+import { validateAssigneeRoleMatch } from '../../lib/assignee-resolver.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
 import { findOverdueRequirements, runOverdueCheck } from '../../utils/overdue-check.js';
@@ -326,6 +327,14 @@ router.put(
         });
         assigneeId = assigneeUser?.id ?? null;
         assigneeName = assigneeUser?.name ?? body.assignee;
+
+        // 角色校验：如果有工作流，assigneeId 必须匹配当前步骤的角色
+        if (assigneeId) {
+          const roleCheck = await validateAssigneeRoleMatch(params.id, assigneeId);
+          if (!roleCheck.ok) {
+            throw new HttpError(400, roleCheck.message);
+          }
+        }
       } else {
         assigneeId = null;
         assigneeName = null;

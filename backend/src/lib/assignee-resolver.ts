@@ -67,19 +67,52 @@ export async function getAssigneeName(assigneeId: string | null): Promise<string
 }
 
 /**
- * 通过名字或邮箱查找 assigneeId（API 输入兼容）
- * 支持 name / email / userId 三种输入
+ * 验证 assigneeId 是否匹配需求当前工作流步骤的角色
+ * 如果需求有工作流，assigneeId 指向的用户必须拥有该步骤所需的 internalRole
+ * 
+ * @returns { ok: true } 或 { ok: false, message: string }
  */
-export async function resolveAssigneeId(input: string): Promise<string | null> {
-  const user = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { name: input },
-        { email: input },
-        { id: input },
-      ],
-    },
-    select: { id: true },
+export async function validateAssigneeRoleMatch(
+  requirementId: string,
+  assigneeUserId: string | null,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (!assigneeUserId) return { ok: true };
+
+  const requirement = await prisma.requirement.findUnique({
+    where: { id: requirementId },
+    select: { workflowId: true, currentStep: true },
   });
-  return user?.id ?? null;
+  if (!requirement?.workflowId || !requirement.currentStep) return { ok: true };
+
+  // 获取模板获取当前步骤 role
+  const template = await prisma.workflowTemplate.findFirst({
+    where: { id: requirement.workflowId, isActive: true },
+    select: { steps: true },
+  });
+  if (!template) return { ok: true };
+
+  const steps = template.steps as Array<{ name: string; role: string; displayName: string }>;
+  const currentStepDef = steps.find(s => s.name === requirement.currentStep);
+  if (!currentStepDef) return { ok: true };
+
+  const stepRole = currentStepDef.role;
+  const expectedInternalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
+  if (!expectedInternalRole) return { ok: true };
+
+  // 检查被分配用户的 internalRole
+  const assigneeUser = await prisma.user.findUnique({
+    where: { id: assigneeUserId },
+    select: { name: true, internalRole: true },
+  });
+  if (!assigneeUser) return { ok: false, message: `用户 ${assigneeUserId} 不存在` };
+
+  if (assigneeUser.internalRole !== expectedInternalRole) {
+    return {
+      ok: false,
+      message: `当前需求处于步骤「${currentStepDef.displayName}」（需要 ${stepRole} 角色），`
+        + `但被分配用户「${assigneeUser.name}」的 internalRole 是 ${assigneeUser.internalRole ?? '(未设置)'}，不匹配需求当前步骤的角色要求`,
+    };
+  }
+
+  return { ok: true };
 }
