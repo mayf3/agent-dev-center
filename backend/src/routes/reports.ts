@@ -303,32 +303,21 @@ reportsRouter.patch(
       throw new HttpError(403, '审核者和提交者不能为同一人，报告不能自己审自己');
     }
 
-    // 工作流模式下跳过旧的 QA 审查机制
-    const reqWithWorkflow = await prisma.requirement.findUnique({
-      where: { id: params.id },
-      select: { workflowId: true, currentStep: true },
-    });
-    const isWorkflowMode = !!reqWithWorkflow?.workflowId;
+    // TEST_REPORT 和 SECURITY_REVIEW 必须先经 QA 审查
+    const requiresQaReview = report.reportType === ReportType.TEST_REPORT || report.reportType === ReportType.SECURITY_REVIEW;
+    const shouldBypassQa = requiresQaReview && body.qa_bypass === true;
     const reviewedAt = new Date();
-    let shouldBypassQa = false;
 
-    if (isWorkflowMode) {
-      // 工作流模式：不需要 QA 审查，TEST_REPORT 由 security 在 security_review 步骤审批
-      // SECURITY_REVIEW 由 cto 在 cto_review 步骤审批
-    } else {
-      // 旧版非工作流模式：TEST_REPORT 和 SECURITY_REVIEW 需要 QA 审查
-      const requiresQaReview = report.reportType === ReportType.TEST_REPORT || report.reportType === ReportType.SECURITY_REVIEW;
-      shouldBypassQa = requiresQaReview && body.qa_bypass === true;
+    if (shouldBypassQa) {
+      if (report.status !== 'pending') throw new HttpError(400, '该报告已审核，不能执行 QA Bypass');
+      if (!body.qa_bypass_reason) throw new HttpError(400, 'qa_bypass=true 时必须提供 qa_bypass_reason');
 
-      if (shouldBypassQa) {
-        if (report.status !== 'pending') throw new HttpError(400, '该报告已审核，不能执行 QA Bypass');
-        if (!body.qa_bypass_reason) throw new HttpError(400, 'qa_bypass=true 时必须提供 qa_bypass_reason');
-        if (reviewedAt.getTime() - report.createdAt.getTime() < QA_BYPASS_MIN_WAIT_MS) {
-          throw new HttpError(403, '报告提交未满 2 小时，不能执行 QA Bypass');
-        }
-      } else if (requiresQaReview && !report.qaReviewedAt) {
-        throw new HttpError(403, '测试报告和安全审查必须先经 QA 审查，再由 CTO 最终审批');
+      const elapsedMs = reviewedAt.getTime() - report.createdAt.getTime();
+      if (elapsedMs < QA_BYPASS_MIN_WAIT_MS) {
+        throw new HttpError(403, '报告提交未满 2 小时，不能执行 QA Bypass');
       }
+    } else if (requiresQaReview && !report.qaReviewedAt) {
+      throw new HttpError(403, '测试报告和安全审查必须先经 QA 审查，再由 CTO 最终审批');
     }
 
     if (report.status !== 'pending') throw new HttpError(400, '该报告已审核');
@@ -338,7 +327,7 @@ reportsRouter.patch(
       data: {
         status: body.status,
         reviewComment: body.reviewComment,
-        reviewedAt: new Date(),
+        reviewedAt,
         ...(shouldBypassQa ? {
           qaBypass: true,
           qaBypassReason: body.qa_bypass_reason,
