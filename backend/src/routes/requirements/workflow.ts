@@ -158,12 +158,27 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       } else {
         targetStep = steps[0];
       }
+      // startStep 迁移时同步旧 status 字段
+      const stepToStatus: Record<string, string> = {
+        dev_self_check: requirement.status, // 保持原有状态
+        testing: 'testing',
+        security_review: 'review',
+        cto_review: 'review',
+        deploying: 'deploying',
+        done: 'done',
+      };
+
+      const updateData: any = {
+        workflowId: template.id,
+        currentStep: targetStep.name,
+      };
+      if (body.startStep && stepToStatus[body.startStep]) {
+        updateData.status = stepToStatus[body.startStep];
+      }
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
-        data: {
-          workflowId: template.id,
-          currentStep: targetStep.name,
-        },
+        data: updateData,
       });
 
       await logTransition({
