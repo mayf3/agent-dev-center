@@ -23,14 +23,111 @@ interface TemplateDef {
 
 const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
-    name: 'standard-dev',
-    displayName: '标准开发流程',
-    description:
-      '完整的开发→测试→安全→CTO验收→部署工作流，所有角色必须按步骤推进，报告审批为强制约束',
+    name: 'frontend-dev',
+    displayName: '前端开发流程',
+    description: '前端需求专用：前端开发→测试→安全→CTO→部署',
     steps: [
       {
         name: 'dev_self_check',
-        displayName: '开发自检',
+        displayName: '前端开发自检',
+        role: 'developer',
+        requiredReports: ['DEV_SELF_CHECK'],
+        autoAdvance: false,
+      },
+      {
+        name: 'testing',
+        displayName: '测试验证',
+        role: 'tester',
+        requiredReports: ['TEST_REPORT'],
+        autoAdvance: false,
+      },
+      {
+        name: 'security_review',
+        displayName: '安全审查',
+        role: 'security',
+        requiredReports: ['SECURITY_REVIEW'],
+        autoAdvance: false,
+      },
+      {
+        name: 'cto_review',
+        displayName: 'CTO验收',
+        role: 'cto',
+        requiredReports: ['CTO_REVIEW'],
+        autoAdvance: false,
+      },
+      {
+        name: 'deploying',
+        displayName: '部署上线',
+        role: 'ops',
+        requiredReports: ['DEPLOY_CONFIRM'],
+        autoAdvance: false,
+      },
+      {
+        name: 'done',
+        displayName: '已完成',
+        role: 'cto',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+    ],
+  },
+  {
+    name: 'backend-dev',
+    displayName: '后端开发流程',
+    description: '后端需求专用：后端开发→测试→安全→CTO→部署',
+    steps: [
+      {
+        name: 'dev_self_check',
+        displayName: '后端开发自检',
+        role: 'developer',
+        requiredReports: ['DEV_SELF_CHECK'],
+        autoAdvance: false,
+      },
+      {
+        name: 'testing',
+        displayName: '测试验证',
+        role: 'tester',
+        requiredReports: ['TEST_REPORT'],
+        autoAdvance: false,
+      },
+      {
+        name: 'security_review',
+        displayName: '安全审查',
+        role: 'security',
+        requiredReports: ['SECURITY_REVIEW'],
+        autoAdvance: false,
+      },
+      {
+        name: 'cto_review',
+        displayName: 'CTO验收',
+        role: 'cto',
+        requiredReports: ['CTO_REVIEW'],
+        autoAdvance: false,
+      },
+      {
+        name: 'deploying',
+        displayName: '部署上线',
+        role: 'ops',
+        requiredReports: ['DEPLOY_CONFIRM'],
+        autoAdvance: false,
+      },
+      {
+        name: 'done',
+        displayName: '已完成',
+        role: 'cto',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+    ],
+  },
+  {
+    name: 'fullstack-dev',
+    displayName: '全栈开发流程',
+    description: '前后端都涉及的需求：开发（含前后端）→测试→安全→CTO→部署',
+    steps: [
+      {
+        name: 'dev_self_check',
+        displayName: '开发自检（前后端）',
         role: 'developer',
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
@@ -75,11 +172,11 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'security-fix',
     displayName: '安全修复流程',
-    description: '安全漏洞修复专用流程：修复→安全验证→CTO验收→部署',
+    description: '安全漏洞修复专用：修复→安全验证→CTO→部署',
     steps: [
       {
         name: 'dev_self_check',
-        displayName: '开发自检',
+        displayName: '修复自检',
         role: 'developer',
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
