@@ -16,7 +16,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 const TEST_ENGINEER_ID = '2af1e38f-5cb8-4bb0-ac9c-ce8b98b5b10e';
-const SECURITY_AGENT_ID = '1547db33-8814-4897-a00f-fde5b26e09b2';
+const SECURITY_AGENT_ID = '60a35a43-a4ed-4e54-9070-c22a3312ef2e';
 
 // Prisma RequirementStatus enum 用下划线
 const stepToStatus: Record<string, string> = {
