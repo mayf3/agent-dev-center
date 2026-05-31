@@ -239,7 +239,53 @@ reportsRouter.patch(
 // CTO 最终审批（或直接审批非 QA 流程的报告）
 reportsRouter.patch(
   '/:reportId',
-  requireRoles('admin', 'cto_agent'),
+  asyncHandler(async (req, res, next) => {
+    // 权限检查：admin/cto_agent 直接通过，否则检查工作流步骤角色
+    const isAdminOrCto = req.user!.role === 'admin' || req.user!.role === 'cto_agent';
+    if (isAdminOrCto) return next();
+
+    // 工作流角色审批：检查报告是否属于当前用户负责的工作流步骤
+    const { params } = reportIdSchema.parse({ params: req.params });
+    const report = await prisma.requirementReport.findUnique({ where: { id: params.reportId } });
+    if (!report) throw new HttpError(404, '报告不存在');
+
+    // 查需求的工作流当前步骤
+    const requirement = await prisma.requirement.findUnique({
+      where: { id: report.requirementId },
+      include: { workflow: true },
+    });
+    if (!requirement?.workflow?.steps || !requirement.currentStep) {
+      throw new HttpError(403, '只有 CTO 可以审批报告');
+    }
+
+    const steps = requirement.workflow.steps as Array<{ name: string; role: string; requiredReports?: string[] }>;
+    const currentStep = steps.find(s => s.name === requirement.currentStep);
+    if (!currentStep?.requiredReports?.includes(report.reportType)) {
+      throw new HttpError(403, '只有 CTO 可以审批该报告（报告类型不在当前工作流步骤的待审批列表中）');
+    }
+
+    // 角色匹配
+    const roleMap: Record<string, string[]> = {
+      cto: ['cto', 'admin'],
+      developer: ['developer'],
+      tester: ['tester'],
+      security: ['security'],
+      ops: ['ops'],
+      pm: ['pm', 'requester'],
+    };
+    const allowedRoles = roleMap[currentStep.role] ?? [];
+    const userRole = req.user!.internalRole ?? req.user!.role;
+    if (!allowedRoles.includes(userRole)) {
+      throw new HttpError(403, `当前步骤需要「${currentStep.role}」角色，你的角色是「${userRole}」`);
+    }
+
+    // 不能审自己提交的
+    if (report.submittedById === req.user!.id) {
+      throw new HttpError(403, '审核者和提交者不能为同一人');
+    }
+
+    next();
+  }),
   asyncHandler(async (req, res) => {
     const { params, body } = reviewReportSchema.parse({
       params: req.params,

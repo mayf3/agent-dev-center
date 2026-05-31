@@ -329,9 +329,22 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       const prevStep = getPreviousStep(steps, requirement.currentStep);
       const targetStep = prevStep ? prevStep.name : steps[0]?.name ?? 'dev_self_check';
 
+      // 同步旧 status 字段：workflow step → DB status
+      const stepToStatus: Record<string, string> = {
+        dev_self_check: 'in_progress',
+        testing: 'testing',
+        security_review: 'review',
+        cto_review: 'review',
+        deploying: 'deploying',
+        done: 'done',
+      };
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
-        data: { currentStep: targetStep },
+        data: {
+          currentStep: targetStep,
+          ...(stepToStatus[targetStep] ? { status: stepToStatus[targetStep] as any } : {}),
+        },
       });
 
       await logTransition({
