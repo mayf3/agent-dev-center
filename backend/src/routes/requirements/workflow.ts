@@ -348,9 +348,29 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色才能回退`);
       }
 
-      const prevStep = getPreviousStep(steps, requirement.currentStep);
-      const targetStep = prevStep ? prevStep.name : steps[0]?.name ?? 'dev_self_check';
-      const targetStepDef = prevStep ?? steps[0];
+      // 确定回退目标步骤
+      let targetStepName: string;
+      let targetStepDef: WorkflowStep | undefined;
+
+      if (body.targetStep) {
+        // 方案A：支持指定回退到任意前序步骤
+        const target = steps.find(s => s.name === body.targetStep);
+        if (!target) {
+          throw new HttpError(400, `步骤「${body.targetStep}」在工作流中不存在`);
+        }
+        const currentIndex = steps.findIndex(s => s.name === requirement.currentStep);
+        const targetIndex = steps.findIndex(s => s.name === body.targetStep);
+        if (targetIndex >= currentIndex) {
+          throw new HttpError(400, `回退目标步骤「${target.displayName}」必须在当前步骤「${currentStep.displayName}」之前`);
+        }
+        targetStepName = target.name;
+        targetStepDef = target;
+      } else {
+        // 默认：回退一步
+        const prevStep = getPreviousStep(steps, requirement.currentStep);
+        targetStepName = prevStep ? prevStep.name : steps[0]?.name ?? 'dev_self_check';
+        targetStepDef = prevStep ?? steps[0];
+      }
 
       // 同步旧 status 字段：workflow step → DB status
       const stepToStatus: Record<string, string> = {
@@ -370,9 +390,9 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: {
-          currentStep: targetStep,
+          currentStep: targetStepName,
           assigneeId: newAssigneeId,
-          ...(stepToStatus[targetStep] ? { status: stepToStatus[targetStep] as any } : {}),
+          ...(stepToStatus[targetStepName] ? { status: stepToStatus[targetStepName] as any } : {}),
         },
       });
 
@@ -381,7 +401,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       await logTransition({
         requirementId: params.id,
         fromStep: requirement.currentStep,
-        toStep: targetStep,
+        toStep: targetStepName,
         action: 'reject',
         actorId: req.user!.id,
         actorName: req.user!.name,
@@ -394,7 +414,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         data: {
           requirementId: updated.id,
           fromStep: requirement.currentStep,
-          toStep: targetStep,
+          toStep: targetStepName,
           newAssigneeId,
           newAssigneeName,
           comment: body.comment,
