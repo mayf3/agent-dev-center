@@ -208,9 +208,9 @@ reportsRouter.patch(
     if (!report) throw new HttpError(404, '报告不存在');
     if (report.status !== 'pending') throw new HttpError(400, '该报告已审核');
 
-    // TEST_REPORT 和 SECURITY_REVIEW 才需要 QA 审批
-    if (report.reportType !== ReportType.TEST_REPORT && report.reportType !== ReportType.SECURITY_REVIEW) {
-      throw new HttpError(400, '只有测试报告和安全审查需要 QA 审批');
+    // DEV_SELF_CHECK / TEST_REPORT / SECURITY_REVIEW 需要 QA 审批
+    if (report.reportType !== ReportType.DEV_SELF_CHECK && report.reportType !== ReportType.TEST_REPORT && report.reportType !== ReportType.SECURITY_REVIEW) {
+      throw new HttpError(400, '只有开发自检、测试报告和安全审查需要 QA 审批');
     }
 
     if (report.submittedById === req.user!.id) {
@@ -304,8 +304,8 @@ reportsRouter.patch(
       throw new HttpError(403, '审核者和提交者不能为同一人，报告不能自己审自己');
     }
 
-    // TEST_REPORT 和 SECURITY_REVIEW 必须先经 QA 审查
-    const requiresQaReview = report.reportType === ReportType.TEST_REPORT || report.reportType === ReportType.SECURITY_REVIEW;
+    // DEV_SELF_CHECK / TEST_REPORT / SECURITY_REVIEW 必须先经 QA 审查
+    const requiresQaReview = report.reportType === ReportType.DEV_SELF_CHECK || report.reportType === ReportType.TEST_REPORT || report.reportType === ReportType.SECURITY_REVIEW;
     const shouldBypassQa = requiresQaReview && body.qa_bypass === true;
     const reviewedAt = new Date();
 
