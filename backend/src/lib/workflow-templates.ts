@@ -35,6 +35,13 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         autoAdvance: false,
       },
       {
+        name: 'test_env_deploy',
+        displayName: '部署测试环境',
+        role: 'ops',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
         name: 'testing',
         displayName: '测试验证',
         role: 'tester',
@@ -74,12 +81,19 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'standard-dev',
     displayName: '标准开发流程',
-    description: '通用开发流程：开发→测试→安全→CTO→部署（默认模板）',
+    description: '标准流程：开发自检→部署测试环境→测试→安全→CTO→部署→完成',
     steps: [
       {
         name: 'dev_self_check',
         displayName: '开发自检',
         role: 'developer',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'test_env_deploy',
+        displayName: '部署测试环境',
+        role: 'ops',
         requiredReports: [],
         autoAdvance: false,
       },
@@ -123,12 +137,19 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'backend-dev',
     displayName: '后端开发流程',
-    description: '后端需求专用：后端开发→测试→安全→CTO→部署',
+    description: '后端需求：后端开发→部署测试环境→测试→安全→CTO→部署→完成',
     steps: [
       {
         name: 'dev_self_check',
         displayName: '后端开发自检',
         role: 'developer',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'test_env_deploy',
+        displayName: '部署测试环境',
+        role: 'ops',
         requiredReports: [],
         autoAdvance: false,
       },
@@ -172,12 +193,19 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'fullstack-dev',
     displayName: '全栈开发流程',
-    description: '前后端都涉及的需求：开发（含前后端）→测试→安全→CTO→部署',
+    description: '全栈需求：开发→部署测试环境→测试→安全→CTO→部署→完成',
     steps: [
       {
         name: 'dev_self_check',
         displayName: '开发自检（前后端）',
         role: 'developer',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'test_env_deploy',
+        displayName: '部署测试环境',
+        role: 'ops',
         requiredReports: [],
         autoAdvance: false,
       },
