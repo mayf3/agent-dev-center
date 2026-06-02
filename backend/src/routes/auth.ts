@@ -96,8 +96,9 @@ authRouter.post(
         throw new HttpError(403, '邀请码无效，无法注册');
       }
     }
-    // Auto-generate random 24-char password (d3ae001f: password isolation)
-    const plainPassword = generatePassword();
+    // Auto-generate random 24-char password only if not provided
+    // bf651cbc: Respect caller-provided password (e.g. agent .env)
+    const plainPassword = body.password || generatePassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
     const user = await prisma.user.create({
@@ -106,7 +107,7 @@ authRouter.post(
         email: body.email,
         password: hashedPassword,
         role: body.role,
-        mustChangePassword: true
+        mustChangePassword: body.password ? false : true  // 自选密码不需要强制改密
       },
       select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true }
     });
@@ -119,7 +120,7 @@ authRouter.post(
       accessToken,
       refreshToken,
       user: { ...toSafeUser(safeUser), mustChangePassword },
-      generatedPassword: plainPassword  // Only returned once at registration
+      generatedPassword: body.password ? undefined : plainPassword  // 自选密码不返回
     });
   })
 );
@@ -263,7 +264,8 @@ authRouter.post(
 
     for (const agent of agents) {
       try {
-        const plainPassword = generatePassword();
+        // bf651cbc: Respect caller-provided password (e.g. agent .env)
+        const plainPassword = agent.password || generatePassword();
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
         await prisma.user.create({
@@ -272,7 +274,7 @@ authRouter.post(
             email: agent.email,
             password: hashedPassword,
             role: agent.role,
-            mustChangePassword: true,  // 新注册 Agent 必须首次改密码
+            mustChangePassword: agent.password ? false : true,  // 自选密码不强制改密
             ...(agent.internalRole ? { internalRole: agent.internalRole } : {})
           }
         });
