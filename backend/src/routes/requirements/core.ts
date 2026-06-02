@@ -6,11 +6,12 @@ import {
   createRequirementSchema,
   listRequirementsSchema,
   requirementIdSchema,
-  updateRequirementSchema
+  updateRequirementSchema,
+  patchRequirementSchema,
 } from '../../schemas/requirements.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
-import { apiRequirementStatus, serializeRequirement } from '../../utils/status.js';
+import { apiRequirementStatus, prismaRequirementStatus, serializeRequirement } from '../../utils/status.js';
 import { validateAssigneeRoleMatch } from '../../lib/assignee-resolver.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
@@ -383,6 +384,78 @@ router.put(
         department: existing.department, assignee: existing.assignee, dueDate: existing.dueDate,
         attachment: existing.attachment, revisionNote: '内容已编辑更新', operatorId: req.user!.id,
       }
+    });
+
+    void notifyEvent('requirement.updated', {
+      id: updated.id, title: updated.title, actor: req.user!.name, assignee: assigneeName
+    });
+
+    res.json(serializeRequirement(updated));
+  })
+);
+
+// PATCH /:id - 部分更新（状态变更、分配、gitHash、deployVersion）
+router.patch(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const { params, body } = patchRequirementSchema.parse({ params: req.params, body: req.body });
+    const existing = await prisma.requirement.findUnique({ where: { id: params.id } });
+    if (!existing) throw new HttpError(404, '需求不存在');
+    if (!canEditRequirement(req.user!, existing)) throw new HttpError(403, '无权编辑该需求');
+
+    let assigneeId = existing.assigneeId;
+    let assigneeName: string | null = existing.assignee;
+
+    // 处理 assignee 变更（强制校验）
+    if (body.assignee !== undefined) {
+      if (body.assignee) {
+        // 严格校验：只接受 name/email，不再接受 UUID（内部用 assigneeId）
+        // 检测是否是 UUID 格式（历史悬空数据）
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.assignee)) {
+          throw new HttpError(400, `assignee 不接受 UUID 格式，请使用有效的用户名或邮箱`);
+        }
+
+        // 按 name/email 查找用户
+        const assigneeUser = await prisma.user.findFirst({
+          where: { OR: [{ name: body.assignee }, { email: body.assignee }] },
+          select: { id: true, name: true }
+        });
+
+        if (!assigneeUser) {
+          throw new HttpError(400, `找不到用户「${body.assignee}」，请使用有效的用户名或邮箱`);
+        }
+
+        assigneeId = assigneeUser.id;
+        assigneeName = assigneeUser.name;
+
+        // 角色校验：如果有工作流，assigneeId 必须匹配当前步骤的角色
+        const roleCheck = await validateAssigneeRoleMatch(params.id, assigneeId);
+        if (!roleCheck.ok) {
+          throw new HttpError(400, roleCheck.message);
+        }
+      } else {
+        assigneeId = null;
+        assigneeName = null;
+      }
+    }
+
+    // 处理状态变更（API status → DB status）
+    let newStatus = existing.status;
+    if (body.status !== undefined) {
+      newStatus = prismaRequirementStatus[body.status] ?? body.status;
+    }
+
+    const updated = await prisma.requirement.update({
+      where: { id: params.id },
+      data: {
+        status: newStatus,
+        assignee: assigneeName,
+        assigneeId,
+        rejectReason: body.rejectReason,
+        gitHash: body.gitHash,
+        deployVersion: body.deployVersion,
+      },
+      include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
 
     void notifyEvent('requirement.updated', {
