@@ -32,7 +32,7 @@ router.post(
     if (!approved) {
       const updated = await prisma.requirement.update({
         where: { id },
-        data: { status: 'rejected', rejectReason: comment || 'PM 审批未通过' }
+        data: { currentStep: 'rejected', rejectReason: comment || 'PM 审批未通过' }
       });
       void notifyEvent('requirement.updated' as any, {
         id: updated.id, title: updated.title, pm: req.user!.name, comment: (comment || '') as string,
