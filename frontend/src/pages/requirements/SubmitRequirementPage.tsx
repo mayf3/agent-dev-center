@@ -1,4 +1,4 @@
-import { SaveOutlined } from '@ant-design/icons';
+import { PaperClipOutlined, SaveOutlined } from '@ant-design/icons';
 import {
   App as AntApp,
   Button,
@@ -8,14 +8,23 @@ import {
   Input,
   Select,
   Space,
-  Typography
+  Typography,
+  Upload
 } from 'antd';
+import type { UploadFile, UploadProps } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
-import type { Requirement, RequirementPriority } from '../../api/types';
-import { agentOptions, departmentOptions, priorityLabels } from '../../constants/options';
+import type { Requirement, RequirementPriority, RequirementType } from '../../api/types';
+import {
+  ACCEPTED_FILE_TYPES,
+  MAX_FILE_COUNT,
+  MAX_FILE_SIZE,
+  formatFileSize,
+  isAllowedFile
+} from '../../components/requirements/fileUtils';
+import { agentOptions, departmentOptions, priorityLabels, typeLabels } from '../../constants/options';
 
 const { TextArea } = Input;
 
@@ -23,8 +32,9 @@ interface RequirementFormValues {
   title: string;
   description: string;
   priority: RequirementPriority;
+  type?: RequirementType;
+  tags?: string[];
   department: string;
-  assignee?: string;
   dueDate?: Dayjs;
   attachment?: string;
 }
@@ -34,8 +44,9 @@ function toPayload(values: RequirementFormValues) {
     title: values.title.trim(),
     description: values.description.trim(),
     priority: values.priority,
+    type: values.type,
+    tags: values.tags,
     department: values.department,
-    assignee: values.assignee || undefined,
     dueDate: values.dueDate?.toISOString(),
     attachment: values.attachment?.trim() || undefined
   };
@@ -55,12 +66,54 @@ export function SubmitRequirementPage() {
   const navigate = useNavigate();
   const [form] = Form.useForm<RequirementFormValues>();
   const [submitting, setSubmitting] = useState(false);
+  const [attachmentFiles, setAttachmentFiles] = useState<UploadFile[]>([]);
+
+  const beforeAttachmentUpload: UploadProps['beforeUpload'] = (file, fileList) => {
+    const incomingIndex = fileList.findIndex((item) => item.uid === file.uid);
+    if (attachmentFiles.length + incomingIndex >= MAX_FILE_COUNT) {
+      message.warning(`最多上传 ${MAX_FILE_COUNT} 个附件`);
+      return Upload.LIST_IGNORE;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      message.error(`${file.name} 超过 ${formatFileSize(MAX_FILE_SIZE)}，无法上传`);
+      return Upload.LIST_IGNORE;
+    }
+    if (!isAllowedFile(file)) {
+      message.error(`${file.name} 文件类型不支持`);
+      return Upload.LIST_IGNORE;
+    }
+    return false;
+  };
+
+  const handleAttachmentChange: UploadProps['onChange'] = ({ fileList }) => {
+    setAttachmentFiles(fileList.slice(0, MAX_FILE_COUNT));
+  };
 
   const handleSubmit = async (values: RequirementFormValues) => {
     setSubmitting(true);
     try {
       const { data } = await api.post<Requirement>('/requirements', toPayload(values));
-      message.success('需求已提交');
+      const files = attachmentFiles
+        .map((file) => file.originFileObj)
+        .filter((file): file is NonNullable<UploadFile['originFileObj']> => Boolean(file));
+      let attachmentUploadFailed = false;
+
+      if (files.length > 0) {
+        const formData = new FormData();
+        files.forEach((file) => formData.append('files', file));
+        try {
+          await api.post(`/requirements/${data.id}/attachments`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        } catch (uploadError) {
+          attachmentUploadFailed = true;
+          message.warning(errorMessage(uploadError, '需求已提交，但附件上传失败，可在详情页补传'));
+        }
+      }
+
+      if (!attachmentUploadFailed) {
+        message.success(files.length > 0 ? '需求已提交，附件已上传' : '需求已提交');
+      }
       navigate(`/requirements/${data.id}`, { replace: true });
     } catch (error) {
       message.error(errorMessage(error, '需求提交失败'));
@@ -94,7 +147,11 @@ export function SubmitRequirementPage() {
               { min: 2, max: 120, message: '标题长度需为 2-120 个字符' }
             ]}
           >
-            <Input showCount maxLength={120} placeholder="例如：搭建需求评审自动化流程" />
+            <Input
+              showCount
+              maxLength={120}
+              placeholder="用一句话说明业务结果，例如：自动汇总需求评审结论"
+            />
           </Form.Item>
 
           <Form.Item
@@ -108,7 +165,11 @@ export function SubmitRequirementPage() {
             <TextArea
               rows={8}
               showCount
-              placeholder="支持 Markdown。请写明背景、目标、验收标准和约束。"
+              placeholder={`建议包含：
+1. 背景或当前痛点
+2. 期望达成的业务结果
+3. 验收标准或成功指标
+4. 相关系统、数据范围和限制条件`}
             />
           </Form.Item>
 
@@ -118,11 +179,27 @@ export function SubmitRequirementPage() {
             rules={[{ required: true, message: '请选择优先级' }]}
           >
             <Select
+              placeholder="选择影响程度和紧急程度"
               options={(Object.keys(priorityLabels) as RequirementPriority[]).map((priority) => ({
                 label: priorityLabels[priority],
                 value: priority
               }))}
             />
+          </Form.Item>
+
+          <Form.Item label="需求类型" name="type">
+            <Select
+              allowClear
+              placeholder="选择需求类型（可选）"
+              options={(Object.keys(typeLabels) as RequirementType[]).map((t) => ({
+                label: typeLabels[t],
+                value: t
+              }))}
+            />
+          </Form.Item>
+
+          <Form.Item label="标签" name="tags">
+            <Select mode="tags" placeholder="输入标签后回车，如：前端、优化、P0修复" tokenSeparators={[',', '，']} />
           </Form.Item>
 
           <Form.Item
@@ -132,6 +209,7 @@ export function SubmitRequirementPage() {
           >
             <Select
               showSearch
+              placeholder="选择提出需求的业务部门"
               options={departmentOptions.map((department) => ({
                 label: department,
                 value: department
@@ -139,21 +217,28 @@ export function SubmitRequirementPage() {
             />
           </Form.Item>
 
-          <Form.Item label="开发负责人" name="assignee">
-            <Select
-              allowClear
-              showSearch
-              placeholder="可选，CTO 后续也可分配"
-              options={agentOptions.map((agent) => ({ label: agent, value: agent }))}
-            />
-          </Form.Item>
-
           <Form.Item label="期望截止时间" name="dueDate">
-            <DatePicker style={{ width: '100%' }} />
+            <DatePicker placeholder="选择期望完成日期（可选）" style={{ width: '100%' }} />
           </Form.Item>
 
-          <Form.Item label="附件链接" name="attachment" rules={[{ type: 'url', message: '请输入有效 URL' }]}>
-            <Input placeholder="https://example.com/spec.pdf" />
+          <Form.Item label="附件（支持上传文件或粘贴链接）">
+            <Space direction="vertical" size="small" className="requirement-attachment-field">
+              <Form.Item name="attachment" noStyle rules={[{ type: 'url', message: '请输入有效 URL' }]}>
+                <Input placeholder="粘贴 PRD、原型、数据样例或网盘链接，例如 https://example.com/spec.pdf" />
+              </Form.Item>
+              <Upload
+                accept={ACCEPTED_FILE_TYPES}
+                beforeUpload={beforeAttachmentUpload}
+                fileList={attachmentFiles}
+                multiple
+                onChange={handleAttachmentChange}
+              >
+                <Button icon={<PaperClipOutlined />}>选择文件</Button>
+              </Upload>
+              <Typography.Text type="secondary">
+                支持图片、PDF、Office、压缩包和文本文件，单个文件不超过 {formatFileSize(MAX_FILE_SIZE)}
+              </Typography.Text>
+            </Space>
           </Form.Item>
 
           <Form.Item>

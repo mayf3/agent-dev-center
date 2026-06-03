@@ -3,19 +3,79 @@ import type {
   MarketplacePriority,
   MarketplaceTaskStatus
 } from '../api/marketplace-types';
-import type { ReportStatus, ReportType, RequirementPriority, RequirementStatus, TaskStatus, UserRole } from '../api/types';
+import type { InternalRole, OkrRole, ReportStatus, ReportType, RequirementPriority, RequirementStatus, RequirementType, TaskStatus, UserRole } from '../api/types';
 
 export const roleLabels: Record<UserRole, string> = {
   admin: 'CTO',
   requester: '需求提交者',
-  developer: '开发Agent'
+  developer: '开发Agent',
+  agent: 'Agent',
+  cto_agent: 'CTO Agent'
 };
+
+export const okrRoleLabels: Record<OkrRole, string> = {
+  okr_admin: 'OKR Admin',
+  okr_reviewer: 'OKR Reviewer',
+  okr_member: 'OKR Member',
+  okr_owner: 'OKR Owner'
+};
+
+export const internalRoleLabels: Record<InternalRole, string> = {
+  cto: 'CTO',
+  pm: 'PM',
+  developer: 'Developer',
+  tester: 'Tester',
+  security: 'Security',
+  ops: 'Ops',
+  qa: 'QA'
+};
+
+export const userRoleOptions: { value: UserRole; label: string }[] = [
+  { value: 'admin', label: 'CTO' },
+  { value: 'requester', label: '需求提交者' },
+  { value: 'developer', label: '开发Agent' },
+  { value: 'agent', label: 'Agent' },
+  { value: 'cto_agent', label: 'CTO Agent' },
+];
+
+export const okrRoleOptions: { value: OkrRole; label: string }[] = [
+  { value: 'okr_admin', label: 'OKR Admin' },
+  { value: 'okr_reviewer', label: 'OKR Reviewer' },
+  { value: 'okr_member', label: 'OKR Member' },
+  { value: 'okr_owner', label: 'OKR Owner' },
+];
+
+export const internalRoleOptions: { value: InternalRole; label: string }[] = [
+  { value: 'cto', label: 'CTO' },
+  { value: 'pm', label: 'PM' },
+  { value: 'developer', label: 'Developer' },
+  { value: 'tester', label: 'Tester' },
+  { value: 'security', label: 'Security' },
+  { value: 'ops', label: 'Ops' },
+  { value: 'qa', label: 'QA' },
+];
 
 export const priorityLabels: Record<RequirementPriority, string> = {
   P0: 'P0 紧急',
   P1: 'P1 高',
   P2: 'P2 中',
   P3: 'P3 低'
+};
+
+export const typeLabels: Record<RequirementType, string> = {
+  FEATURE: '✨ 功能',
+  BUGFIX: '🐛 修复',
+  POSTMORTEM: '📋 复盘',
+  INFRA: '🔧 基础设施',
+  SECURITY: '🔒 安全',
+};
+
+export const typeColors: Record<RequirementType, string> = {
+  FEATURE: 'blue',
+  BUGFIX: 'red',
+  POSTMORTEM: 'purple',
+  INFRA: 'cyan',
+  SECURITY: 'volcano',
 };
 
 export const priorityColors: Record<RequirementPriority, string> = {

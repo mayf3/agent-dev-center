@@ -6,16 +6,18 @@ import {
   createRequirementSchema,
   listRequirementsSchema,
   requirementIdSchema,
-  updateRequirementSchema
+  updateRequirementSchema,
+  patchRequirementSchema,
 } from '../../schemas/requirements.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
-import { apiRequirementStatus, serializeRequirement } from '../../utils/status.js';
+import { serializeRequirement } from '../../utils/status.js';
+import { validateAssigneeRoleMatch } from '../../lib/assignee-resolver.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
 import { findOverdueRequirements, runOverdueCheck } from '../../utils/overdue-check.js';
 import { listRevisionsSchema } from '../../schemas/revision.js';
-import { canReadRequirement, canEditRequirement, roleAwareRequirementWhere, buildStatusData } from './utils.js';
+import { canReadRequirement, canEditRequirement, roleAwareRequirementWhere } from './utils.js';
 
 export function registerCoreRoutes(router: import('express').Router): void {
 
@@ -27,33 +29,59 @@ router.post(
     const actor = req.user!;
 
     const allRequirements = await prisma.requirement.findMany({
-      select: { id: true, title: true, status: true },
+      select: { id: true, title: true, currentStep: true },
     });
     const normalizedNew = normalizeTitle(body.title);
     const similarItems = allRequirements
       .map(r => ({
         id: r.id,
         title: r.title,
-        status: r.status,
+        currentStep: r.currentStep,
         score: similarity(normalizedNew, normalizeTitle(r.title)),
       }))
       .filter(r => r.score >= DEFAULT_SIMILARITY_THRESHOLD && r.title !== body.title)
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
 
+    // 解析 assignee：支持 name/email/userId 输入，自动查找 ID
+    let createAssigneeId: string | null = null;
+    let createAssigneeName: string | null = null;
+    if (body.assignee && (actor.role === 'admin' || actor.role === 'cto_agent')) {
+      // assignee 可以是 name/email/UUID，分条件查找避免 Prisma UUID 解析错误
+      let assigneeUser;
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.assignee)) {
+        assigneeUser = await prisma.user.findUnique({
+          where: { id: body.assignee },
+          select: { id: true, name: true }
+        });
+      } else {
+        assigneeUser = await prisma.user.findFirst({
+          where: { OR: [{ name: body.assignee }, { email: body.assignee }] },
+          select: { id: true, name: true }
+        });
+      }
+      createAssigneeId = assigneeUser?.id ?? null;
+      createAssigneeName = assigneeUser?.name ?? null;
+      // 如果指定了 assignee 但找不到用户，拒绝创建（不允许存垃圾数据）
+      if (body.assignee && !assigneeUser) {
+        throw new HttpError(400, `找不到用户「${body.assignee}」，请使用有效的用户名、邮箱或 UUID`);
+      }
+    }
+
     const requirement = await prisma.requirement.create({
       data: {
         title: body.title, description: body.description, priority: body.priority,
+        type: body.type, tags: body.tags,
         requester: body.requester ?? actor.name, requesterId: actor.id,
         department: body.department,
-        assignee: (actor.role === 'admin' || actor.role === 'cto_agent') ? body.assignee : null,
+        assignee: createAssigneeName, assigneeId: createAssigneeId,
         dueDate: body.dueDate, attachment: body.attachment
       },
-      include: { tasks: true }
+      include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
 
     void notifyEvent('requirement.submitted', {
-      id: requirement.id, title: requirement.title, actor: actor.name, assignee: requirement.assignee
+      id: requirement.id, title: requirement.title, actor: actor.name, assignee: createAssigneeName
     });
 
     const response: Record<string, unknown> = serializeRequirement(requirement);
@@ -78,12 +106,12 @@ router.get(
     const normalizedInput = normalizeTitle(title);
 
     const allRequirements = await prisma.requirement.findMany({
-      select: { id: true, title: true, status: true, priority: true, createdAt: true },
+      select: { id: true, title: true, currentStep: true, priority: true, createdAt: true },
     });
 
     const similar = allRequirements
       .map(r => ({
-        id: r.id, title: r.title, status: r.status, priority: r.priority, createdAt: r.createdAt,
+        id: r.id, title: r.title, currentStep: r.currentStep, priority: r.priority, createdAt: r.createdAt,
         score: similarity(normalizedInput, normalizeTitle(r.title)),
       }))
       .filter(r => r.score >= threshold)
@@ -123,27 +151,75 @@ router.get(
 
     const requirements = await prisma.requirement.findMany({
       where,
-      include: { tasks: true },
+      include: { tasks: true, assigneeUser: { select: { name: true } } },
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
     });
 
-    const grouped: Record<string, typeof requirements> = {
-      pending: [], clarifying: [], 'in-progress': [], testing: [],
-      review: [], deploying: [], done: [], rejected: [],
-    };
-
+    // Group by currentStep
+    const grouped: Record<string, typeof requirements> = {};
     for (const r of requirements) {
-      const status = apiRequirementStatus[r.status as keyof typeof apiRequirementStatus] || r.status;
-      if (!grouped[status]) grouped[status] = [];
-      grouped[status].push(r);
+      const step = r.currentStep || 'pending';
+      if (!grouped[step]) grouped[step] = [];
+      grouped[step].push(r);
     }
 
     const serialized: Record<string, unknown[]> = {};
-    for (const [status, items] of Object.entries(grouped)) {
-      serialized[status] = items.map(serializeRequirement);
+    for (const [step, items] of Object.entries(grouped)) {
+      serialized[step] = items.map(serializeRequirement);
     }
 
     res.json({ data: serialized, meta: { total: requirements.length } });
+  })
+);
+
+// GET /summary - 轻量摘要接口 (47ce94b8: 6字段 + status过滤, 目标<200ms)
+router.get(
+  '/summary',
+  asyncHandler(async (req, res) => {
+    const actor = req.user!;
+    const stepFilter = req.query.step as string | undefined;
+    const statusFilter = req.query.status as string | undefined;
+    const where: Prisma.RequirementWhereInput = roleAwareRequirementWhere(actor);
+
+    // Filter by currentStep (step param preferred, status param as fallback)
+    const filterValue = stepFilter || statusFilter;
+    if (filterValue && filterValue !== 'all') {
+      if (filterValue === 'active') {
+        where.AND = [
+          ...(Array.isArray(where.AND) ? where.AND : []),
+          { currentStep: { not: 'done' } },
+        ];
+      } else {
+        where.AND = [
+          ...(Array.isArray(where.AND) ? where.AND : []),
+          { currentStep: filterValue } as Prisma.RequirementWhereInput
+        ];
+      }
+    }
+
+    const requirements = await prisma.requirement.findMany({
+      where,
+      select: {
+        id: true,
+        title: true,
+        currentStep: true,
+        priority: true,
+        assignee: true,
+        assigneeId: true,
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+
+    const data = requirements.map(r => ({
+      id: r.id,
+      title: r.title,
+      currentStep: r.currentStep,
+      priority: r.priority,
+      assigneeName: r.assignee,
+      assignee: r.assigneeId,
+    }));
+
+    res.json({ success: true, data, meta: { total: data.length } });
   })
 );
 
@@ -155,11 +231,19 @@ router.get(
     const actor = req.user!;
     const where: Prisma.RequirementWhereInput = { AND: [roleAwareRequirementWhere(actor)] };
 
-    if (query.status) {
-      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { status: buildStatusData(query.status) }];
+    if (query.currentStep) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { currentStep: query.currentStep }];
+    } else if (query.status) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { currentStep: query.status }];
     }
     if (query.priority) {
       where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { priority: query.priority }];
+    }
+    if (query.type) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { type: query.type }];
+    }
+    if (query.tags && query.tags.length > 0) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { tags: { hasEvery: query.tags } }];
     }
     if (query.search) {
       where.AND = [
@@ -179,7 +263,7 @@ router.get(
     const skip = (query.page - 1) * query.pageSize;
     const [requirements, total] = await prisma.$transaction([
       prisma.requirement.findMany({
-        where, include: { tasks: true },
+        where, include: { tasks: true, assigneeUser: { select: { name: true } } },
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
         skip, take: query.pageSize
       }),
@@ -200,7 +284,7 @@ router.get(
     const { params } = requirementIdSchema.parse({ params: req.params });
     const requirement = await prisma.requirement.findUnique({
       where: { id: params.id },
-      include: { tasks: true }
+      include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
 
     if (!requirement) throw new HttpError(404, '需求不存在');
@@ -247,15 +331,36 @@ router.put(
     if (!canEditRequirement(req.user!, existing)) throw new HttpError(403, '无权编辑该需求');
 
     let assigneeId = existing.assigneeId;
+    let assigneeName: string | null = existing.assignee;
     if (body.assignee !== undefined) {
       if (body.assignee) {
-        const assigneeUser = await prisma.user.findFirst({
-          where: { OR: [{ name: body.assignee }, { email: body.assignee }] },
-          select: { id: true }
-        });
-        assigneeId = assigneeUser?.id ?? null;
+        // assignee 可以是 name/email/UUID，分条件查找避免 Prisma UUID 解析错误
+        let assigneeUser;
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.assignee)) {
+          assigneeUser = await prisma.user.findUnique({
+            where: { id: body.assignee },
+            select: { id: true, name: true }
+          });
+        } else {
+          assigneeUser = await prisma.user.findFirst({
+            where: { OR: [{ name: body.assignee }, { email: body.assignee }] },
+            select: { id: true, name: true }
+          });
+        }
+        if (!assigneeUser) {
+          throw new HttpError(400, `找不到用户「${body.assignee}」，请使用有效的用户名、邮箱或 UUID`);
+        }
+        assigneeId = assigneeUser.id;
+        assigneeName = assigneeUser.name;
+
+        // 角色校验：如果有工作流，assigneeId 必须匹配当前步骤的角色
+        const roleCheck = await validateAssigneeRoleMatch(params.id, assigneeId);
+        if (!roleCheck.ok) {
+          throw new HttpError(400, roleCheck.message);
+        }
       } else {
         assigneeId = null;
+        assigneeName = null;
       }
     }
 
@@ -263,24 +368,99 @@ router.put(
       where: { id: params.id },
       data: {
         title: body.title, description: body.description, priority: body.priority,
+        type: body.type, tags: body.tags,
         requester: body.requester, department: body.department,
-        assignee: body.assignee, assigneeId, dueDate: body.dueDate, attachment: body.attachment,
+        assignee: assigneeName, assigneeId, dueDate: body.dueDate, attachment: body.attachment,
         notes: body.notes
       },
-      include: { tasks: true }
+      include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
 
     await prisma.requirementRevision.create({
       data: {
         requirementId: params.id, title: existing.title, description: existing.description,
-        priority: existing.priority, status: existing.status, requester: existing.requester,
+        priority: existing.priority, status: 'pending', requester: existing.requester,
         department: existing.department, assignee: existing.assignee, dueDate: existing.dueDate,
         attachment: existing.attachment, revisionNote: '内容已编辑更新', operatorId: req.user!.id,
       }
     });
 
     void notifyEvent('requirement.updated', {
-      id: updated.id, title: updated.title, actor: req.user!.name, assignee: updated.assignee
+      id: updated.id, title: updated.title, actor: req.user!.name, assignee: assigneeName
+    });
+
+    res.json(serializeRequirement(updated));
+  })
+);
+
+// PATCH /:id - 部分更新（状态变更、分配、gitHash、deployVersion）
+router.patch(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const { params, body } = patchRequirementSchema.parse({ params: req.params, body: req.body });
+    const existing = await prisma.requirement.findUnique({ where: { id: params.id } });
+    if (!existing) throw new HttpError(404, '需求不存在');
+    if (!canEditRequirement(req.user!, existing)) throw new HttpError(403, '无权编辑该需求');
+
+    let assigneeId = existing.assigneeId;
+    let assigneeName: string | null = existing.assignee;
+
+    // 处理 assignee 变更（强制校验）
+    if (body.assignee !== undefined) {
+      if (body.assignee) {
+        // 严格校验：只接受 name/email，不再接受 UUID（内部用 assigneeId）
+        // 检测是否是 UUID 格式（历史悬空数据）
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.assignee)) {
+          throw new HttpError(400, `assignee 不接受 UUID 格式，请使用有效的用户名或邮箱`);
+        }
+
+        // 按 name/email 查找用户
+        const assigneeUser = await prisma.user.findFirst({
+          where: { OR: [{ name: body.assignee }, { email: body.assignee }] },
+          select: { id: true, name: true }
+        });
+
+        if (!assigneeUser) {
+          throw new HttpError(400, `找不到用户「${body.assignee}」，请使用有效的用户名或邮箱`);
+        }
+
+        assigneeId = assigneeUser.id;
+        assigneeName = assigneeUser.name;
+
+        // 角色校验：如果有工作流，assigneeId 必须匹配当前步骤的角色
+        const roleCheck = await validateAssigneeRoleMatch(params.id, assigneeId);
+        if (!roleCheck.ok) {
+          throw new HttpError(400, roleCheck.message);
+        }
+      } else {
+        assigneeId = null;
+        assigneeName = null;
+      }
+    }
+
+    // 处理步骤变更
+    let newStep = existing.currentStep;
+    if (body.currentStep !== undefined) {
+      newStep = body.currentStep;
+    } else if (body.status !== undefined) {
+      newStep = body.status;
+    }
+
+    const updated = await prisma.requirement.update({
+      where: { id: params.id },
+      data: {
+        currentStep: newStep,
+        assignee: assigneeName,
+        assigneeId,
+        rejectReason: body.rejectReason,
+        gitHash: body.gitHash,
+        deployVersion: body.deployVersion,
+      },
+      include: { tasks: true, assigneeUser: { select: { name: true } } }
+    });
+
+    void notifyEvent('requirement.updated', {
+      id: updated.id, title: updated.title, actor: req.user!.name, assignee: assigneeName
     });
 
     res.json(serializeRequirement(updated));

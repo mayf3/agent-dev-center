@@ -73,14 +73,14 @@ authRouter.get(
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true, enabled: true }
     });
 
-    if (!user) {
+    if (!user || !user.enabled) {
       throw new HttpError(401, '用户不存在或已被禁用');
     }
 
-    const { mustChangePassword, ...safeUser } = user;
+    const { mustChangePassword, enabled: _enabled, ...safeUser } = user;
     res.json({ ...toSafeUser(safeUser), mustChangePassword });
   })
 );
@@ -96,8 +96,9 @@ authRouter.post(
         throw new HttpError(403, '邀请码无效，无法注册');
       }
     }
-    // Auto-generate random 24-char password (d3ae001f: password isolation)
-    const plainPassword = generatePassword();
+    // Auto-generate random 24-char password only if not provided
+    // bf651cbc: Respect caller-provided password (e.g. agent .env)
+    const plainPassword = body.password || generatePassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
     const user = await prisma.user.create({
@@ -106,7 +107,7 @@ authRouter.post(
         email: body.email,
         password: hashedPassword,
         role: body.role,
-        mustChangePassword: true
+        mustChangePassword: body.password ? false : true  // 自选密码不需要强制改密
       },
       select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true }
     });
@@ -119,7 +120,7 @@ authRouter.post(
       accessToken,
       refreshToken,
       user: { ...toSafeUser(safeUser), mustChangePassword },
-      generatedPassword: plainPassword  // Only returned once at registration
+      generatedPassword: body.password ? undefined : plainPassword  // 自选密码不返回
     });
   })
 );
@@ -140,6 +141,9 @@ authRouter.post(
     if (!passwordMatches) {
       throw new HttpError(401, '邮箱或密码不正确');
     }
+    if (!user.enabled) {
+      throw new HttpError(401, '用户不存在或已被禁用');
+    }
 
     const safeUser = toSafeUser({
       id: user.id,
@@ -157,11 +161,25 @@ authRouter.post(
     const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
     recordIpLogin(clientIp, body.email);
 
+    // Check password expiry from policy
+    let mustChangePassword = user.mustChangePassword;
+    const policy = await prisma.passwordPolicy.findFirst({ where: { isDefault: true } });
+    if (policy?.expiresInDays && user.passwordChangedAt) {
+      const daysSinceChange = (Date.now() - user.passwordChangedAt.getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSinceChange > policy.expiresInDays) {
+        mustChangePassword = true;
+        await prisma.user.update({ where: { id: user.id }, data: { mustChangePassword: true } });
+      }
+    }
+
+    // Update lastLoginAt (non-blocking)
+    prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }).catch(() => {});
+
     // 71252d4b: 返回 mustChangePassword 标记，前端据此强制跳转改密码页
     res.json({
       accessToken,
       refreshToken,
-      user: { ...safeUser, mustChangePassword: user.mustChangePassword }
+      user: { ...safeUser, mustChangePassword }
     });
   })
 );
@@ -189,7 +207,7 @@ authRouter.post(
     const hashedPassword = await bcrypt.hash(body.newPassword, 10);
     await prisma.user.update({
       where: { id: userId },
-      data: { password: hashedPassword }
+      data: { password: hashedPassword, passwordChangedAt: new Date() }
     });
 
     res.json({ message: '密码修改成功' });
@@ -219,7 +237,8 @@ authRouter.post(
       where: { id: userId },
       data: {
         password: hashedPassword,
-        mustChangePassword: false
+        mustChangePassword: false,
+        passwordChangedAt: new Date(),
       }
     });
 
@@ -245,7 +264,8 @@ authRouter.post(
 
     for (const agent of agents) {
       try {
-        const plainPassword = generatePassword();
+        // bf651cbc: Respect caller-provided password (e.g. agent .env)
+        const plainPassword = agent.password || generatePassword();
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
         await prisma.user.create({
@@ -254,7 +274,7 @@ authRouter.post(
             email: agent.email,
             password: hashedPassword,
             role: agent.role,
-            mustChangePassword: true,  // 新注册 Agent 必须首次改密码
+            mustChangePassword: agent.password ? false : true,  // 自选密码不强制改密
             ...(agent.internalRole ? { internalRole: agent.internalRole } : {})
           }
         });
@@ -296,14 +316,14 @@ authRouter.post(
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true, enabled: true }
     });
 
-    if (!user) {
+    if (!user || !user.enabled) {
       throw new HttpError(401, '用户不存在或已被禁用');
     }
 
-    const { mustChangePassword, ...safeUser } = user;
+    const { mustChangePassword, enabled: _enabled, ...safeUser } = user;
     const accessToken = signAccessToken(safeUser as Express.AuthUser);
     const newRefreshToken = signRefreshToken(safeUser as Express.AuthUser);
 
@@ -336,13 +356,29 @@ authRouter.post(
     // Auto-generate random password (d3ae001f: admin cannot set/view custom passwords)
     const plainPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        mustChangePassword: true  // 71252d4b: admin 重置后强制改密码
-      }
-    });
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          password: hashedPassword,
+          mustChangePassword: true  // 71252d4b: admin 重置后强制改密码
+        }
+      }),
+      prisma.auditLog.create({
+        data: {
+          action: 'PASSWORD_RESET',
+          targetType: 'user',
+          targetId: user.id,
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          details: {
+            targetEmail: user.email,
+            targetName: user.name,
+            source: 'auth-admin-reset-password'
+          }
+        }
+      })
+    ]);
 
     res.json({ email, generatedPassword: plainPassword, message: `${email} 密码已重置，请妥善保管` });
   })
@@ -362,10 +398,27 @@ authRouter.post(
 
     const plainPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
-    await prisma.user.update({
-      where: { id: userId },
-      data: { password: hashedPassword }
-    });
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: { password: hashedPassword }
+      }),
+      prisma.auditLog.create({
+        data: {
+          action: 'PASSWORD_RESET',
+          targetType: 'user',
+          targetId: user.id,
+          actorId: user.id,
+          actorName: user.name,
+          details: {
+            targetEmail: user.email,
+            targetName: user.name,
+            selfService: true,
+            source: 'auth-reset-password'
+          }
+        }
+      })
+    ]);
 
     res.json({ generatedPassword: plainPassword, message: '新密码已生成，请妥善保管' });
   })

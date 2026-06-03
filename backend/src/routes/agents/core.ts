@@ -79,12 +79,89 @@ router.get(
   })
 );
 
+// UUID validation regex
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// GET /me - 获取当前用户关联的 Agent 详情
+router.get(
+  '/me',
+  authRequired,
+  asyncHandler(async (req, res) => {
+    const userId = req.user!.id;
+
+    // Match by userId (direct link), ownerId (legacy), or by id (if user.id happens to be agent.id)
+    const agent = await prisma.marketplaceAgent.findFirst({
+      where: {
+        OR: [
+          { userId },
+          { ownerId: userId },
+          { id: userId },
+        ],
+      },
+      include: {
+        goalCard: {
+          include: { revisions: { orderBy: { createdAt: 'desc' }, take: 20 } },
+        },
+        accessTokens: { take: 5, orderBy: { createdAt: 'desc' } },
+      },
+    });
+
+    if (!agent) throw new HttpError(404, '当前用户未关联 Agent');
+
+    const taskStats = await prisma.marketplaceTask.groupBy({
+      by: ['status'],
+      where: { agentId: agent.id },
+      _count: { _all: true },
+    });
+
+    const taskCounts = {
+      pending: taskStats.find((t) => t.status === 'pending')?._count._all ?? 0,
+      processing: taskStats.find((t) => t.status === 'processing')?._count._all ?? 0,
+      completed: taskStats.find((t) => t.status === 'completed')?._count._all ?? 0,
+      failed: taskStats.find((t) => t.status === 'failed')?._count._all ?? 0,
+    };
+
+    const goalCard = agent.goalCard;
+    const monthlyGoals: MonthlyGoalGroup[] = (goalCard?.monthlyGoals as any) || [];
+    const totalGoals = monthlyGoals.reduce((sum, g) => sum + g.goals.length, 0);
+    const doneGoals = monthlyGoals.reduce((sum, g) => sum + g.goals.filter((goal) => goal.status === 'done').length, 0);
+
+    res.json({
+      data: {
+        id: agent.id, name: agent.name, displayName: agent.displayName,
+        description: agent.description, avatar: agent.avatar,
+        capabilities: agent.capabilities, apiEndpoint: agent.apiEndpoint,
+        status: agent.status, tags: agent.tags,
+        notificationType: agent.notificationType, feishuWebhookUrl: agent.feishuWebhookUrl,
+        lastHeartbeatAt: agent.lastHeartbeatAt, createdAt: agent.createdAt, updatedAt: agent.updatedAt,
+        ownerId: agent.ownerId,
+        taskStats: taskCounts,
+        goalCard: goalCard ? {
+          id: goalCard.id, pipeline: goalCard.pipeline,
+          longTermDirection: goalCard.longTermDirection, monthlyGoals: goalCard.monthlyGoals,
+          selfCheckCriteria: goalCard.selfCheckCriteria, pushedMonths: goalCard.pushedMonths,
+          status: goalCard.status, lastReviewedAt: goalCard.lastReviewedAt,
+          lastReviewedBy: goalCard.lastReviewedBy,
+          upstreamAgentIds: goalCard.upstreamAgentIds, downstreamAgentIds: goalCard.downstreamAgentIds,
+          revisions: goalCard.revisions,
+          stats: { total: totalGoals, done: doneGoals },
+        } : null,
+      },
+    });
+  })
+);
+
 // GET /:agentId - 获取单个 Agent 详情
 router.get(
   '/:agentId',
   authRequired,
   asyncHandler(async (req, res) => {
     const agentId = String(req.params.agentId);
+
+    // UUID format validation — non-UUID strings get a clear 404
+    if (!UUID_REGEX.test(agentId)) {
+      throw new HttpError(404, `Agent 不存在: "${agentId}" (无效 ID 格式)`);
+    }
 
     const agent = await prisma.marketplaceAgent.findUnique({
       where: { id: agentId },

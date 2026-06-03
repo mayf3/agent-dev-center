@@ -1,0 +1,49 @@
+<!-- pages/notifications/index.wxml -->
+<view class="page">
+  <!-- 全部已读按钮 -->
+  <view class="header-actions" wx:if="{{notifications.length > 0 && unreadCount > 0}}">
+    <button class="btn-read-all" bindtap="markAllRead">全部已读</button>
+  </view>
+
+  <!-- 通知列表 -->
+  <view class="list" wx:if="{{!loading}}">
+    <view
+      class="notification-item {{!item.isRead ? 'unread' : ''}}"
+      wx:for="{{notifications}}"
+      wx:key="id"
+      bindtap="onTapNotification"
+      data-id="{{item.id}}"
+      data-related="{{item.relatedReqId}}"
+    >
+      <!-- 未读圆点 -->
+      <view class="unread-dot" wx:if="{{!item.isRead}}"></view>
+      
+      <!-- 类型标签 -->
+      <view class="type-badge type-{{item.typeClass}}">{{item.typeLabel}}</view>
+      
+      <!-- 内容区域 -->
+      <view class="content">
+        <view class="title">{{item.title}}</view>
+        <view class="desc" wx:if="{{item.hasSummary}}">{{item.summaryText}}</view>
+        <view class="time">{{item.timeAgo}}</view>
+      </view>
+
+      <!-- 操作按钮 -->
+      <view class="actions">
+        <button class="btn-mark-read" wx:if="{{!item.isRead}}" bindtap="markRead" data-id="{{item.id}}" data-stop="true">标记已读</button>
+      </view>
+    </view>
+
+    <!-- 空状态 -->
+    <view class="empty" wx:if="{{notifications.length === 0}}">
+      <view class="empty-icon">🔔</view>
+      <view class="empty-text">暂无通知</view>
+    </view>
+  </view>
+
+  <!-- 加载中 -->
+  <view class="loading" wx:if="{{loading}}">
+    <view class="loading-spinner"></view>
+    <text>加载中...</text>
+  </view>
+</view>

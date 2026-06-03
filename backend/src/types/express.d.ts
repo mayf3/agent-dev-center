@@ -9,6 +9,8 @@ declare global {
       role: UserRole;
       internalRole?: InternalRole | null | undefined;
       okrRole?: string | null | undefined;
+      mustChangePassword?: boolean | null | undefined;
+      enabled?: boolean | null | undefined;
       bio?: string | null;
       phone?: string | null;
       avatar?: string | null;

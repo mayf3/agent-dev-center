@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { InternalRole, RequirementPriority, RequirementStatus, ReportType, ReportStatus } from '@prisma/client';
+import { InternalRole, RequirementPriority, ReportType, ReportStatus } from '@prisma/client';
 import { HttpError } from '../utils/http-error.js';
 import { prisma } from '../lib/prisma.js';
 
@@ -96,7 +96,7 @@ export async function checkWipLimit(req: Request, _res: Response, next: NextFunc
   const inProgressCount = await prisma.requirement.count({
     where: {
       assigneeId,
-      status: RequirementStatus.in_progress,
+      currentStep: { not: 'done' },
     },
   });
 
@@ -167,7 +167,7 @@ export async function getWipCount(userId: string): Promise<number> {
   return await prisma.requirement.count({
     where: {
       assigneeId: userId,
-      status: RequirementStatus.in_progress,
+      currentStep: { not: 'done' },
     },
   });
 }

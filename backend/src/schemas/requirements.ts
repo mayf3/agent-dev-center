@@ -10,8 +10,13 @@ const optionalDate = z.preprocess((value) => {
 }, z.date().optional());
 
 const nullableString = z.preprocess((value) => {
-  if (value === undefined || value === null || value === '') {
+  if (value === undefined || value === null) {
     return undefined;
+  }
+
+  // 空字符串表示主动清空（如清空 assignee），保留为 null
+  if (value === '') {
+    return null;
   }
 
   return String(value).trim();
@@ -22,6 +27,8 @@ export const createRequirementSchema = z.object({
     title: z.string().trim().min(2).max(120),
     description: z.string().trim().min(5),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).default('P2'),
+    type: z.enum(['FEATURE', 'BUGFIX', 'POSTMORTEM', 'INFRA', 'SECURITY']).default('FEATURE'),
+    tags: z.array(z.string().trim().max(50)).max(10).default([]),
     requester: z.string().trim().min(2).max(60).optional(),
     department: z.string().trim().min(2).max(80),
     assignee: nullableString,
@@ -34,8 +41,14 @@ export const listRequirementsSchema = z.object({
   query: z.object({
     page: z.coerce.number().int().positive().default(1),
     pageSize: z.coerce.number().int().positive().max(100).default(10),
+    currentStep: z.string().trim().min(1).max(80).optional(),
     status: z.enum(requirementStatusValues).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
+    type: z.enum(['FEATURE', 'BUGFIX', 'POSTMORTEM', 'INFRA', 'SECURITY']).optional(),
+    tags: z.preprocess(
+      (v) => (typeof v === 'string' ? v.split(',').map((s: string) => s.trim()).filter(Boolean) : v),
+      z.array(z.string()).optional()
+    ),
     search: z.string().trim().max(100).optional()
   })
 });
@@ -49,6 +62,7 @@ export const requirementIdSchema = z.object({
 export const patchRequirementSchema = requirementIdSchema.extend({
   body: z
     .object({
+      currentStep: z.string().trim().min(1).max(80).optional(),
       status: z.enum(requirementStatusValues).optional(),
       assignee: nullableString,
       rejectReason: nullableString,
@@ -66,6 +80,8 @@ export const updateRequirementSchema = requirementIdSchema.extend({
       title: z.string().trim().min(2).max(120).optional(),
       description: z.string().trim().min(5).optional(),
       priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
+      type: z.enum(['FEATURE', 'BUGFIX', 'POSTMORTEM', 'INFRA', 'SECURITY']).optional(),
+      tags: z.array(z.string().trim().max(50)).max(10).optional(),
       requester: z.string().trim().min(2).max(60).optional(),
       department: z.string().trim().min(2).max(80).optional(),
       assignee: nullableString,

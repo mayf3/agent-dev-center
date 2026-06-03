@@ -4,6 +4,7 @@ export const registerSchema = z.object({
   body: z.object({
     name: z.string().trim().min(2, '姓名至少需要 2 个字符'),
     email: z.string().trim().email('邮箱格式不正确').transform((email) => email.toLowerCase()),
+    password: z.string().min(6, '密码至少需要 6 个字符').optional(),  // bf651cbc: optional, auto-gen if omitted
     role: z.enum(['requester', 'developer', 'cto-agent']).default('requester').transform(r => r === 'cto-agent' ? 'cto_agent' : r),
     inviteCode: z.string().optional().default('')
   })
@@ -34,6 +35,7 @@ export const batchRegisterSchema = z.object({
     agents: z.array(z.object({
       name: z.string().trim().min(2, '姓名至少需要 2 个字符'),
       email: z.string().trim().email('邮箱格式不正确').transform((email) => email.toLowerCase()),
+      password: z.string().min(6, '密码至少需要 6 个字符').optional(),  // bf651cbc: optional, auto-gen if omitted
       role: z.enum(['requester', 'developer', 'agent', 'cto-agent']).default('agent').transform(r => r === 'cto-agent' ? 'cto_agent' : r),
       internalRole: z.enum(['cto', 'pm', 'developer', 'tester', 'security', 'ops', 'qa']).optional()
     })).min(1, '至少需要注册 1 个 Agent').max(100, '单次最多注册 100 个 Agent')
