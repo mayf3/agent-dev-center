@@ -8,6 +8,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { KanbanBoardPage } from './pages/KanbanBoardPage';
 import { LoginPage } from './pages/LoginPage';
 import { AgentTeamBoard } from './pages/agents/AgentTeamBoard';
+import { GameDashboardPage } from './pages/gamified/GameDashboardPage';
 import { AgentDetailPage } from './pages/agents/AgentDetailPage';
 import { RequirementDetailPage } from './pages/requirements/RequirementDetailPage';
 import { RequirementListPage } from './pages/requirements/RequirementListPage';
@@ -25,6 +26,7 @@ import { ServiceDetailPage } from './pages/ServiceDetailPage';
 import { SsoPortalPage } from './pages/SsoPortalPage';
 import AgentSsoPage from './pages/AgentSsoPage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
+import { UsersPage } from './pages/admin/UsersPage';
 import { lazy, Suspense } from 'react';
 import { Spin } from 'antd';
 
@@ -58,6 +60,8 @@ const router = createBrowserRouter([
             { path: 'portal', element: <SsoPortalPage /> },
             { path: 'team', element: <AgentTeamBoard /> },
             { path: 'team/agents/:agentId', element: <AgentDetailPage /> },
+            { path: 'agents', element: <AgentTeamBoard /> },
+            { path: 'agents/:agentId', element: <AgentDetailPage /> },
             { path: 'tasks', element: <TaskListPage /> },
             { path: 'tasks/kanban', element: <TaskKanbanPage /> },
             { path: 'goals', element: <GoalDashboardPage /> },
@@ -69,7 +73,8 @@ const router = createBrowserRouter([
             // 301 redirects from old routes
             { path: 'team', element: <Navigate to="/identity?type=agent" replace /> },
             { path: 'goals', element: <Navigate to="/identity?type=human" replace /> },
-            { path: 'marketplace', element: <Suspense fallback={<Spin className="page-spin" />}><MarketplacePage /></Suspense> }
+            { path: 'marketplace', element: <Suspense fallback={<Spin className="page-spin" />}><MarketplacePage /></Suspense> },
+            { path: 'game-dashboard', element: <GameDashboardPage /> }
           ]
         }
       ]
@@ -168,6 +173,14 @@ const router = createBrowserRouter([
           {
             path: 'change-password',
             element: <ChangePasswordPage />
+          },
+          {
+            path: 'admin/users',
+            element: <UsersPage />
+          },
+          {
+            path: 'game-dashboard',
+            element: <GameDashboardPage />
           }
         ]
       }

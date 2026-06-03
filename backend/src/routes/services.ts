@@ -299,12 +299,12 @@ servicesRouter.get(
       orderBy: { createdAt: 'desc' },
     });
 
-    // group by status
+    // group by currentStep
     const grouped: Record<string, typeof relations> = {};
     for (const rel of relations) {
-      const status = rel.requirement.status;
-      if (!grouped[status]) grouped[status] = [];
-      grouped[status].push(rel);
+      const step = rel.requirement.currentStep || 'unknown';
+      if (!grouped[step]) grouped[step] = [];
+      grouped[step].push(rel);
     }
 
     res.json({ data: relations, grouped, total: relations.length });

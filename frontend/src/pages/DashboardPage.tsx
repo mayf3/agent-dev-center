@@ -10,6 +10,12 @@ import { PriorityTag } from '../components/PriorityTag';
 import { StatusTag } from '../components/StatusTag';
 
 const VERSION_HISTORY = [
+  {
+    version: 'v1.2.0',
+    date: '2026-05-25',
+    current: true,
+    changes: ['移动端详情体验优化', '附件上传视觉优化', '筛选栏与加载态优化']
+  },
   { version: 'v1.1.0', date: '2026-05-10', changes: ['需求详情页', '验收报告模块', '开发看板拖拽', 'APP图标更新'] },
   { version: 'v1.0.0', date: '2026-04-20', changes: ['初始版本', '需求管理CRUD', '任务分配', '用户认证'] },
 ];
@@ -69,10 +75,15 @@ export function DashboardPage() {
   const VersionCard = () => (
     <Card title={<Space><HistoryOutlined /> 版本历史</Space>} size="small" style={{ marginTop: 16 }}>
       {VERSION_HISTORY.map((v, idx) => (
-        <div key={v.version} style={{ marginBottom: idx < VERSION_HISTORY.length - 1 ? 12 : 0 }}>
+        <div
+          key={v.version}
+          className={v.current ? 'version-history-item version-history-item-current' : 'version-history-item'}
+          style={{ marginBottom: idx < VERSION_HISTORY.length - 1 ? 12 : 0 }}
+        >
           <Space>
-            <Badge status={idx === 0 ? 'processing' : 'default'} />
-            <Typography.Text strong={idx === 0}>{v.version}</Typography.Text>
+            <Badge status={v.current ? 'processing' : 'default'} />
+            <Typography.Text strong={v.current}>{v.version}</Typography.Text>
+            {v.current && <Badge className="version-current-badge" count="当前版本" />}
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>{v.date}</Typography.Text>
           </Space>
           <ul style={{ margin: '4px 0 0', paddingLeft: 20, fontSize: 13, color: '#666' }}>
@@ -89,7 +100,7 @@ export function DashboardPage() {
       <Space direction="vertical" size="middle" className="page-stack">
         <div>
           <Typography.Title level={4}>仪表盘</Typography.Title>
-          <Typography.Text type="secondary">实时概览</Typography.Text>
+          <Typography.Text type="secondary" className="page-heading-subtitle">实时概览</Typography.Text>
         </div>
 
         <div className="mobile-stats-grid">
@@ -147,7 +158,7 @@ export function DashboardPage() {
     <Space direction="vertical" size="large" className="page-stack">
       <div>
         <Typography.Title level={3}>仪表盘</Typography.Title>
-        <Typography.Text type="secondary">从需求提交、审核、开发到交付的实时概览</Typography.Text>
+        <Typography.Text type="secondary" className="page-heading-subtitle">从需求提交、审核、开发到交付的实时概览</Typography.Text>
       </div>
 
       <Row gutter={[16, 16]}>

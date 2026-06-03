@@ -40,7 +40,7 @@ export async function findOverdueRequirements(): Promise<{
   // 获取所有 approved 和 in-progress 需求
   const requirements = await prisma.requirement.findMany({
     where: {
-      status: { in: ['approved', 'in_progress'] },
+      currentStep: { in: ['dev_self_check', 'test_env_deploy', 'testing', 'security_review', 'cto_review', 'deploying'] },
     },
     include: {
       reports: {
@@ -73,27 +73,28 @@ export async function findOverdueRequirements(): Promise<{
     const stalledMs = now.getTime() - lastActivityAt.getTime();
     const stalledHours = Math.round(stalledMs / (60 * 60 * 1000));
 
-    if (req.status === 'approved') {
-      // approved 超 12h 未开始
-      if (stalledMs > TWELVE_HOURS) {
+    const step = req.currentStep || 'unknown';
+    if (step === 'dev_self_check' || step === 'test_env_deploy') {
+      // 开发步骤超 48h 无活动
+      if (stalledMs > FORTY_EIGHT_HOURS) {
         notStarted.push({
           id: req.id,
           title: req.title,
-          status: req.status,
+          status: step,
           assignee: req.assignee,
           assigneeId: req.assigneeId,
-          approvedAt,
+          approvedAt: null,
           lastActivityAt,
           stalledHours,
         });
       }
-    } else if (req.status === 'in_progress') {
+    } else if (step === 'testing' || step === 'security_review') {
       // in-progress 超 48h 无活动
       if (stalledMs > FORTY_EIGHT_HOURS) {
         stalled.push({
           id: req.id,
           title: req.title,
-          status: req.status,
+          status: step,
           assignee: req.assignee,
           assigneeId: req.assigneeId,
           approvedAt,

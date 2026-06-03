@@ -14,7 +14,9 @@ import {
   AimOutlined,
   BugOutlined,
   TeamOutlined,
-  KeyOutlined
+  KeyOutlined,
+  RocketOutlined,
+  SettingOutlined
 } from '@ant-design/icons';
 import { Button, Drawer, Layout, Menu, Space, Tag, Typography, Popover } from 'antd';
 import type { MenuProps } from 'antd';
@@ -56,25 +58,27 @@ export function AppLayout() {
   const selectedKey =
     location.pathname === '/'
       ? '/'
-      : location.pathname.startsWith('/team')
-        ? '/team'
-        : location.pathname.startsWith('/requirements/new')
-        ? '/requirements/new'
-        : location.pathname.startsWith('/requirements')
-          ? searchParamsHasMy()
-            ? '/requirements?my=1'
-            : '/requirements'
-          : location.pathname.startsWith('/kanban')
-            ? '/kanban'
-            : location.pathname.startsWith('/marketplace')
-              ? '/marketplace'
-              : location.pathname.startsWith('/services')
-                ? '/services'
-                : location.pathname.startsWith('/tasks/kanban')
-                  ? '/tasks/kanban'
-                  : location.pathname.startsWith('/tasks')
-                    ? '/tasks'
-                    : '/';
+      : location.pathname.startsWith('/admin/users')
+        ? '/admin/users'
+        : location.pathname.startsWith('/team')
+          ? '/team'
+          : location.pathname.startsWith('/requirements/new')
+            ? '/requirements/new'
+            : location.pathname.startsWith('/requirements')
+              ? searchParamsHasMy()
+                ? '/requirements?my=1'
+                : '/requirements'
+              : location.pathname.startsWith('/kanban')
+                ? '/kanban'
+                : location.pathname.startsWith('/marketplace')
+                  ? '/marketplace'
+                  : location.pathname.startsWith('/services')
+                    ? '/services'
+                    : location.pathname.startsWith('/tasks/kanban')
+                      ? '/tasks/kanban'
+                      : location.pathname.startsWith('/tasks')
+                        ? '/tasks'
+                        : '/';
 
   const handleMenuClick = ({ key }: { key: string }) => {
     navigate(key);
@@ -100,6 +104,10 @@ export function AppLayout() {
     { key: '/postmortems', icon: <BugOutlined />, label: '验尸报告' },
     { key: '/marketplace', icon: <AppstoreOutlined />, label: '能力集市' },
     { key: '/services', icon: <CloudServerOutlined />, label: '服务监控' },
+    ...(user?.role === 'admin' || user?.internalRole === 'cto'
+      ? [{ type: 'divider' as const }, { key: '/admin/users', icon: <SettingOutlined />, label: '用户管理' }]
+      : []),
+    { key: '/game-dashboard', icon: <RocketOutlined />, label: '进展之城 🏙️' },
   ];
 
   // Bottom tab bar items for mobile (4 key items)

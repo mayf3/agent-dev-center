@@ -37,6 +37,9 @@ router.post(
     if (!user) {
       throw new HttpError(404, `Agent "${body.agentId}" 未注册，请先调用 /sso/agent/register`);
     }
+    if (!user.enabled) {
+      throw new HttpError(401, 'Agent 不存在或已被禁用');
+    }
 
     let tokenValid = false;
     const accessToken = await prisma.agentAccessToken.findFirst({
@@ -197,7 +200,7 @@ router.post(
         data: {
           name: body.agentId, displayName: body.name,
           description: `Auto-registered via SSO (${body.category ?? 'uncategorized'})`,
-          capabilities: body.capabilities, ownerId: user.id,
+          capabilities: body.capabilities, ownerId: user.id, userId: user.id,
           openclawAgentId: body.agentId, registrationSource: 'sso',
           registrationGroup: body.registrationGroup,
         },
@@ -205,7 +208,7 @@ router.post(
     } else {
       await prisma.marketplaceAgent.update({
         where: { id: marketplaceAgent.id },
-        data: { ownerId: user.id, openclawAgentId: body.agentId, registrationSource: 'sso', registrationGroup: body.registrationGroup },
+        data: { ownerId: user.id, userId: user.id, openclawAgentId: body.agentId, registrationSource: 'sso', registrationGroup: body.registrationGroup },
       });
     }
 
@@ -234,11 +237,20 @@ router.get(
 
     try {
       const payload = jwt.verify(token, env.JWT_SECRET) as AgentTokenPayload;
+      const user = await prisma.user.findFirst({
+        where: { agentId: payload.sub },
+        select: { id: true, enabled: true },
+      });
+      if (!user || !user.enabled) {
+        throw new HttpError(401, 'Agent 不存在或已被禁用');
+      }
+
       res.json({
         valid: true,
         agent: { agentId: payload.sub, name: payload.name, role: payload.role, permissions: payload.permissions },
       });
-    } catch {
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
       throw new HttpError(401, 'Token 无效或已过期');
     }
   })

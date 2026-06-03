@@ -1,0 +1,194 @@
+/* pages/notifications/index.wxss */
+.page {
+  min-height: 100vh;
+  background: #f5f5f5;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* 头部操作栏 */
+.header-actions {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-read-all {
+  font-size: 13px;
+  color: #1677ff;
+  background: none;
+  border: none;
+  padding: 4px 12px;
+  line-height: 1.4;
+}
+
+.btn-read-all::after {
+  border: none;
+}
+
+/* 通知列表 */
+.list {
+  padding: 0 12px;
+}
+
+/* 通知项 */
+.notification-item {
+  position: relative;
+  background: #fff;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  transition: all 0.2s;
+}
+
+.notification-item:active {
+  opacity: 0.8;
+}
+
+.notification-item.unread {
+  background: #f0f7ff;
+  border-left: 3px solid #1677ff;
+}
+
+/* 未读圆点 */
+.unread-dot {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4d4f;
+}
+
+/* 类型标签 */
+.type-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  align-self: flex-start;
+}
+
+/* 通知类型配色 */
+.type-requirement_submitted,
+.type-requirement_updated,
+.type-requirement_status_changed,
+.type-requirement_comment_added {
+  background: #e6f7ff;
+  color: #1677ff;
+}
+
+.type-task_created,
+.type-task_assigned,
+.type-task_status_changed {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.type-report_submitted,
+.type-report_approved,
+.type-report_rejected {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+
+.type-requirement_decomposed {
+  background: #f9f0ff;
+  color: #722ed1;
+}
+
+/* 内容区域 */
+.content {
+  flex: 1;
+}
+
+.title {
+  font-size: 15px;
+  color: #333;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.notification-item.unread .title {
+  font-weight: 600;
+  color: #111;
+}
+
+.desc {
+  font-size: 13px;
+  color: #888;
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+
+.time {
+  font-size: 12px;
+  color: #bbb;
+}
+
+/* 操作按钮 */
+.actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-mark-read {
+  font-size: 12px;
+  color: #1677ff;
+  background: #f0f5ff;
+  border-radius: 4px;
+  padding: 2px 10px;
+  line-height: 1.8;
+  border: none;
+}
+
+.btn-mark-read::after {
+  border: none;
+}
+
+/* 空状态 */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 120px;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.4;
+}
+
+.empty-text {
+  font-size: 15px;
+  color: #999;
+}
+
+/* 加载 */
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 120px;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e8e8e8;
+  border-top: 3px solid #1677ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 12px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

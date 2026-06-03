@@ -7,8 +7,8 @@ import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { useCallback, useState } from 'react';
 import { api } from '../../api/client';
-import type { Requirement, RequirementPriority } from '../../api/types';
-import { agentOptions, departmentOptions, priorityLabels } from '../../constants/options';
+import type { Requirement, RequirementPriority, RequirementType } from '../../api/types';
+import { agentOptions, departmentOptions, priorityLabels, typeLabels } from '../../constants/options';
 import { getErrorMessage } from './utils';
 
 const { TextArea } = Input;
@@ -19,6 +19,8 @@ interface EditValues {
   title: string;
   description: string;
   priority: RequirementPriority;
+  type?: RequirementType;
+  tags?: string[];
   department: string;
   assignee?: string;
   dueDate?: Dayjs;
@@ -96,6 +98,8 @@ export function RequirementModals({ requirement, onUpdate }: RequirementModalsPr
       title: requirement.title,
       description: requirement.description,
       priority: requirement.priority,
+      type: requirement.type ?? undefined,
+      tags: requirement.tags ?? [],
       department: requirement.department,
       assignee: requirement.assignee ?? undefined,
       dueDate: requirement.dueDate ? dayjs(requirement.dueDate) : undefined,
@@ -111,6 +115,8 @@ export function RequirementModals({ requirement, onUpdate }: RequirementModalsPr
         title: values.title.trim(),
         description: values.description.trim(),
         priority: values.priority,
+        type: values.type,
+        tags: values.tags,
         department: values.department,
         assignee: values.assignee || undefined,
         dueDate: values.dueDate?.toISOString(),
@@ -203,6 +209,12 @@ export function RequirementModals({ requirement, onUpdate }: RequirementModalsPr
           </Form.Item>
           <Form.Item label="优先级" name="priority" rules={[{ required: true, message: '请选择优先级' }]}>
             <Select options={(Object.keys(priorityLabels) as RequirementPriority[]).map(p => ({ label: priorityLabels[p], value: p }))} />
+          </Form.Item>
+          <Form.Item label="需求类型" name="type">
+            <Select allowClear placeholder="选择类型" options={(Object.keys(typeLabels) as RequirementType[]).map(t => ({ label: typeLabels[t], value: t }))} />
+          </Form.Item>
+          <Form.Item label="标签" name="tags">
+            <Select mode="tags" placeholder="输入标签后回车" tokenSeparators={[',', '，']} />
           </Form.Item>
           <Form.Item label="业务部门" name="department" rules={[{ required: true, message: '请选择业务部门' }]}>
             <Select showSearch options={departmentOptions.map(d => ({ label: d, value: d }))} />

@@ -1,19 +1,14 @@
-import { createReadStream, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
-import path from 'node:path';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { HttpError } from '../../utils/http-error.js';
-import {
-  apiRequirementStatus,
-  prismaRequirementStatus,
-  type RequirementStatusApi
-} from '../../utils/status.js';
 import {
   getRequirementUploadMimeType,
   getRequirementUploadPath,
   getRequirementUploadUrl,
   isAllowedRequirementUploadFilename
 } from '../../lib/multer.js';
+import { createReadStream, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
+import path from 'node:path';
 
 /** 权限判断：是否可查看该需求（基于 user.id） */
 export function canReadRequirement(user: Express.AuthUser, requirement: { requesterId: string | null; requester: string; assigneeId: string | null; assignee: string | null }) {
@@ -27,9 +22,9 @@ export function canReadRequirement(user: Express.AuthUser, requirement: { reques
            requirement.requester === user.email;
   }
 
+  // 主要按 assigneeId 判断；assignee 文本仅做 fallback 兼容旧数据
   return requirement.assigneeId === user.id ||
-         requirement.assignee === user.name ||
-         requirement.assignee === user.email;
+         (requirement.assignee === user.name || requirement.assignee === user.email);
 }
 
 /** 权限判断：是否可编辑该需求（基于 user.id） */
@@ -38,23 +33,22 @@ export function canEditRequirement(user: Express.AuthUser, requirement: {
   requester: string;
   assigneeId: string | null;
   assignee: string | null;
-  status: unknown;
+  currentStep: string | null;
 }) {
   if (user.role === 'admin' || user.role === 'cto_agent') {
     return true;
   }
 
-  // requester 可在 pending/rejected 状态下编辑
   const isRequester = requirement.requesterId === user.id || requirement.requester === user.name;
-  if (isRequester && ['pending', 'rejected'].includes(String(requirement.status))) {
+  const currentStep = requirement.currentStep ?? 'pending';
+  if (isRequester && ['pending', 'rejected'].includes(currentStep)) {
     return true;
   }
 
-  // assignee 可在非终态下编辑
   const isAssignee = requirement.assigneeId === user.id ||
     requirement.assignee === user.name ||
     requirement.assignee === user.email;
-  if (isAssignee && !['done', 'cancelled'].includes(String(requirement.status))) {
+  if (isAssignee && !['done', 'cancelled'].includes(currentStep)) {
     return true;
   }
 
@@ -63,7 +57,7 @@ export function canEditRequirement(user: Express.AuthUser, requirement: {
 
 /** 基于角色过滤查询条件（使用 user.id） */
 export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.RequirementWhereInput {
-  if (user.role === 'admin' || user.role === 'cto_agent') {
+  if (user.role === 'admin' || user.role === 'cto_agent' || user.internalRole === 'pm') {
     return {};
   }
 
@@ -76,76 +70,6 @@ export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.Requir
   return {
     OR: [{ assigneeId: user.id }, { assignee: user.name }, { assignee: user.email }]
   };
-}
-
-export function buildStatusData(status?: RequirementStatusApi) {
-  return status ? prismaRequirementStatus[status] : undefined;
-}
-
-/**
- * 状态流转规则（必须逐步流转，不可跳步）：
- *   pending → approved → in-progress → testing → review → deploying → done
- *                                      ↓           ↓          ↓         ↓
- *                                 DEV_SELF   TEST_RPT    CTO_REVIEW  DEPLOY_CONFIRM
- *                                            SECURITY
- */
-export const VALID_TRANSITIONS: Record<string, string[]> = {
-  'pending':     ['clarifying', 'approved', 'rejected'],
-  'clarifying':  ['approved', 'pending', 'rejected'],
-  'approved':    ['in-progress', 'rejected'],
-  'in-progress': ['testing', 'rejected'],
-  'testing':     ['review', 'in-progress', 'rejected'],
-  'review':      ['deploying', 'testing', 'in-progress', 'rejected'],
-  'deploying':   ['done', 'review', 'rejected'],
-  'done':        [],
-  'rejected':    ['pending'],
-};
-
-const REQUIRED_REPORTS_FOR_TESTING: Array<import('@prisma/client').ReportType> = ['DEV_SELF_CHECK'];
-const REQUIRED_REPORTS_FOR_REVIEW: Array<import('@prisma/client').ReportType> = ['DEV_SELF_CHECK', 'TEST_REPORT'];
-const REQUIRED_REPORTS_FOR_DEPLOYING: Array<import('@prisma/client').ReportType> = ['DEV_SELF_CHECK', 'SECURITY_REVIEW', 'TEST_REPORT', 'CTO_REVIEW'];
-const REQUIRED_REPORTS_FOR_DONE: Array<import('@prisma/client').ReportType> = ['DEV_SELF_CHECK', 'SECURITY_REVIEW', 'TEST_REPORT', 'CTO_REVIEW', 'DEPLOY_CONFIRM'];
-
-/** 检查状态流转是否合法（逐步流转） */
-export function isValidTransition(from: string, to: string): boolean {
-  const allowed = VALID_TRANSITIONS[from];
-  return allowed ? allowed.includes(to) : false;
-}
-
-/** 获取目标状态需要的报告列表 */
-export function getRequiredReports(targetStatus: RequirementStatusApi): Array<import('@prisma/client').ReportType> {
-  switch (targetStatus) {
-    case 'testing':    return REQUIRED_REPORTS_FOR_TESTING;
-    case 'review':     return REQUIRED_REPORTS_FOR_REVIEW;
-    case 'deploying':  return REQUIRED_REPORTS_FOR_DEPLOYING;
-    case 'done':       return REQUIRED_REPORTS_FOR_DONE;
-    default:           return [];
-  }
-}
-
-export async function checkAcceptanceReports(
-  requirementId: string,
-  targetStatus: RequirementStatusApi,
-  allowPending: boolean = false,
-): Promise<{ ok: boolean; missing: string[] }> {
-  const required = getRequiredReports(targetStatus);
-
-  if (required.length === 0) return { ok: true, missing: [] };
-
-  const validStatuses = allowPending ? ['approved', 'pending'] : ['approved'];
-  const submittedReports = await prisma.requirementReport.findMany({
-    where: {
-      requirementId,
-      reportType: { in: required },
-      status: { in: validStatuses },
-    } as any,
-    select: { reportType: true, status: true },
-  });
-
-  const reportedTypes = new Set(submittedReports.map((r) => r.reportType));
-  const missing = required.filter((t) => !reportedTypes.has(t));
-
-  return { ok: missing.length === 0, missing };
 }
 
 export async function ensureReadableRequirement(requirementId: string, user: Express.AuthUser) {
