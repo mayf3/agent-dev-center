@@ -10,9 +10,18 @@ import {
 import { createReadStream, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 
-/** 权限判断：是否可查看该需求（基于 user.id） */
+/** 权限判断：是否可查看该需求（基于 user.id）
+ *
+ * 2026-06-04 修复：QA/tester/security/ops 角色可查看所有需求。
+ * 这些角色是工作流的审批者/执行者，不应该被 assignee 限制。
+ */
 export function canReadRequirement(user: Express.AuthUser, requirement: { requesterId: string | null; requester: string; assigneeId: string | null; assignee: string | null }) {
   if (user.role === 'admin' || user.role === 'cto_agent') {
+    return true;
+  }
+
+  // 工作流审批角色：可查看所有需求
+  if (user.internalRole === 'qa' || user.internalRole === 'tester' || user.internalRole === 'security' || user.internalRole === 'ops') {
     return true;
   }
 
@@ -55,18 +64,38 @@ export function canEditRequirement(user: Express.AuthUser, requirement: {
   return false;
 }
 
-/** 基于角色过滤查询条件（使用 user.id） */
+/** 基于角色过滤查询条件（使用 user.id）
+ *
+ * 2026-06-04 修复：QA/tester/security/ops 角色应该能看到所有有工作流步骤的需求，
+ * 因为他们需要审查报告、审批流程。之前只看 assignee=自己的逻辑导致
+ * QA 完全看不到任何需求（工作流中从没有 QA 作为 assignee）。
+ *
+ * 新逻辑：
+ * - admin/cto/pm → 看所有
+ * - requester → 只看自己提的
+ * - QA → 看所有有 pending 报告待审的需求（跨工作流步骤）
+ * - tester/security/ops → 看所有（他们是工作流步骤的执行者，需要看到分配给自己的任务）
+ * - developer → 只看 assignee=自己的（开发者只管自己的需求）
+ */
 export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.RequirementWhereInput {
+  // 管理层：看所有
   if (user.role === 'admin' || user.role === 'cto_agent' || user.internalRole === 'pm') {
     return {};
   }
 
-  if (user.role === 'requester') {
+  // 提交者：只看自己提的
+  if (user.role === 'requester' && user.internalRole !== 'qa' && user.internalRole !== 'tester' && user.internalRole !== 'security' && user.internalRole !== 'ops') {
     return {
       OR: [{ requesterId: user.id }, { requester: user.name }, { requester: user.email }]
     };
   }
 
+  // QA/安全/测试/运维：看所有需求（他们是工作流审批者，不是需求执行者）
+  if (user.internalRole === 'qa' || user.internalRole === 'tester' || user.internalRole === 'security' || user.internalRole === 'ops') {
+    return {};
+  }
+
+  // 开发者：只看分配给自己的
   return {
     OR: [{ assigneeId: user.id }, { assignee: user.name }, { assignee: user.email }]
   };
