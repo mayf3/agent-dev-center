@@ -341,7 +341,7 @@ reportsRouter.patch(
     // 通知相关方
     const reqInfo = await prisma.requirement.findUnique({
       where: { id: params.id },
-      select: { title: true, requesterId: true, assigneeId: true, assignee: true, status: true, workflowId: true },
+      select: { title: true, requesterId: true, assigneeId: true, assignee: true, currentStep: true, workflowId: true },
     });
     const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
     void notifyEvent(reportEvent as any, {
@@ -362,25 +362,25 @@ reportsRouter.patch(
         // 工作流模式：报告打回不做状态回退，由 CTO/test-engineer 手动调 workflow reject
       } else {
         // 旧版非工作流模式保留原逻辑
-        let targetStatus: string | null = null;
+        let targetStep: string | null = null;
 
         switch (reportType) {
           case 'DEV_SELF_CHECK':
           case 'TEST_REPORT':
           case 'SECURITY_REVIEW':
-            targetStatus = 'in_progress';
+            targetStep = 'dev_self_check';
             break;
           case 'CTO_REVIEW':
-            targetStatus = 'testing';
+            targetStep = 'testing';
             break;
           case 'DEPLOY_CONFIRM':
-            targetStatus = 'review';
+            targetStep = 'cto_review';
             break;
           default:
             break;
         }
 
-        if (targetStatus) {
+        if (targetStep) {
           const lastRevision = await prisma.requirementRevision.findFirst({
             where: {
               requirementId: params.id,
@@ -393,7 +393,6 @@ reportsRouter.patch(
 
           const rollbackAssigneeName = lastRevision?.assignee ?? reqInfo.assignee;
 
-          // 通过名字找 assigneeId
           let rollbackAssigneeId: string | null = reqInfo.assigneeId;
           if (rollbackAssigneeName) {
             const assigneeUser = await prisma.user.findFirst({
@@ -403,44 +402,37 @@ reportsRouter.patch(
             rollbackAssigneeId = assigneeUser?.id ?? rollbackAssigneeId;
           }
 
-          const currentStatus = reqInfo.status;
-          const statusOrder = ['pending', 'clarifying', 'approved', 'rejected', 'in_progress', 'testing', 'review', 'deploying', 'done'];
-          const currentIndex = statusOrder.indexOf(currentStatus);
-          const targetIndex = statusOrder.indexOf(targetStatus);
-
-          if (targetIndex < currentIndex) {
-            await prisma.requirement.update({
-              where: { id: params.id },
-              data: {
-                status: targetStatus as any,
-                assignee: rollbackAssigneeName,
-                assigneeId: rollbackAssigneeId,
-              },
-            });
-
-            await prisma.requirementRevision.create({
-              data: {
-                requirementId: params.id,
-                title: reqInfo.title ?? '',
-                description: '',
-                priority: 'P2',
-                status: currentStatus,
-                requester: '',
-                department: '',
-                assignee: rollbackAssigneeName,
-                revisionNote: `${reportType} 报告被打回，自动回退状态 ${currentStatus} → ${targetStatus}，assignee 回退为 ${rollbackAssigneeName ?? '原开发者'}`,
-                operatorId: req.user!.id,
-              },
-            });
-
-            void notifyEvent('requirement.status_changed' as any, {
-              id: params.id,
-              title: reqInfo.title ?? '',
-              status: targetStatus,
-              actor: req.user!.name,
+          await prisma.requirement.update({
+            where: { id: params.id },
+            data: {
+              currentStep: targetStep,
               assignee: rollbackAssigneeName,
-            });
-          }
+              assigneeId: rollbackAssigneeId,
+            },
+          });
+
+          await prisma.requirementRevision.create({
+            data: {
+              requirementId: params.id,
+              title: reqInfo.title ?? '',
+              description: '',
+              priority: 'P2',
+              status: 'in_progress',
+              requester: '',
+              department: '',
+              assignee: rollbackAssigneeName,
+              revisionNote: `${reportType} 报告被打回，步骤回退至 ${targetStep}，assignee 回退为 ${rollbackAssigneeName ?? '原开发者'}`,
+              operatorId: req.user!.id,
+            },
+          });
+
+          void notifyEvent('requirement.step_changed' as any, {
+            id: params.id,
+            title: reqInfo.title ?? '',
+            currentStep: targetStep,
+            actor: req.user!.name,
+            assignee: rollbackAssigneeName,
+          });
         }
       }
     }
@@ -464,7 +456,7 @@ reportsRouter.get(
       where: { id: reportId },
       include: {
         submittedByUser: { select: { id: true, name: true, email: true } },
-        requirement: { select: { id: true, title: true, status: true } },
+        requirement: { select: { id: true, title: true, currentStep: true } },
       },
     });
 
