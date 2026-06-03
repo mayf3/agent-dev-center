@@ -1,7 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { HttpError } from '../../utils/http-error.js';
-import { prismaRequirementStatus, type RequirementStatusApi } from '../../utils/status.js';
 import {
   getRequirementUploadMimeType,
   getRequirementUploadPath,
@@ -34,21 +33,22 @@ export function canEditRequirement(user: Express.AuthUser, requirement: {
   requester: string;
   assigneeId: string | null;
   assignee: string | null;
-  status: unknown;
+  currentStep: string | null;
 }) {
   if (user.role === 'admin' || user.role === 'cto_agent') {
     return true;
   }
 
   const isRequester = requirement.requesterId === user.id || requirement.requester === user.name;
-  if (isRequester && ['pending', 'rejected'].includes(String(requirement.status))) {
+  const currentStep = requirement.currentStep ?? 'pending';
+  if (isRequester && ['pending', 'rejected'].includes(currentStep)) {
     return true;
   }
 
   const isAssignee = requirement.assigneeId === user.id ||
     requirement.assignee === user.name ||
     requirement.assignee === user.email;
-  if (isAssignee && !['done', 'cancelled'].includes(String(requirement.status))) {
+  if (isAssignee && !['done', 'cancelled'].includes(currentStep)) {
     return true;
   }
 
@@ -70,10 +70,6 @@ export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.Requir
   return {
     OR: [{ assigneeId: user.id }, { assignee: user.name }, { assignee: user.email }]
   };
-}
-
-export function buildStatusData(status?: RequirementStatusApi) {
-  return status ? prismaRequirementStatus[status] : undefined;
 }
 
 export async function ensureReadableRequirement(requirementId: string, user: Express.AuthUser) {

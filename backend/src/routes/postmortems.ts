@@ -57,7 +57,7 @@ postmortemsRouter.post(
         status: 'pending',
       },
       include: {
-        requirement: { select: { id: true, title: true, priority: true, status: true } },
+        requirement: { select: { id: true, title: true, priority: true, currentStep: true } },
       },
     });
 
@@ -121,7 +121,7 @@ postmortemsRouter.get(
     const postmortem = await prisma.postmortem.findUnique({
       where: { id },
       include: {
-        requirement: { select: { id: true, title: true, priority: true, status: true, description: true } },
+        requirement: { select: { id: true, title: true, priority: true, currentStep: true, description: true } },
       },
     });
 
@@ -170,7 +170,7 @@ postmortemsRouter.patch(
       where: { id },
       data: updateData,
       include: {
-        requirement: { select: { id: true, title: true, priority: true, status: true } },
+        requirement: { select: { id: true, title: true, priority: true, currentStep: true } },
       },
     });
 

@@ -41,6 +41,7 @@ export const listRequirementsSchema = z.object({
   query: z.object({
     page: z.coerce.number().int().positive().default(1),
     pageSize: z.coerce.number().int().positive().max(100).default(10),
+    currentStep: z.string().trim().min(1).max(80).optional(),
     status: z.enum(requirementStatusValues).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
     type: z.enum(['FEATURE', 'BUGFIX', 'POSTMORTEM', 'INFRA', 'SECURITY']).optional(),
@@ -61,6 +62,7 @@ export const requirementIdSchema = z.object({
 export const patchRequirementSchema = requirementIdSchema.extend({
   body: z
     .object({
+      currentStep: z.string().trim().min(1).max(80).optional(),
       status: z.enum(requirementStatusValues).optional(),
       assignee: nullableString,
       rejectReason: nullableString,

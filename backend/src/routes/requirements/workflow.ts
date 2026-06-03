@@ -159,24 +159,10 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       } else {
         targetStep = steps[0];
       }
-      // startStep 迁移时同步旧 status 字段（一次性迁移代码，新需求不需要）
-      // 映射关系：workflow step name → DB requirement.status
-      const stepToStatus: Record<string, string> = {
-        dev_self_check: requirement.status,
-        testing: 'testing',
-        security_review: 'review',
-        cto_review: 'review',
-        deploying: 'deploying',
-        done: 'done',
-      };
-
       const updateData: any = {
         workflowId: template.id,
         currentStep: targetStep.name,
       };
-      if (body.startStep && stepToStatus[body.startStep]) {
-        updateData.status = stepToStatus[body.startStep];
-      }
 
       const updated = await prisma.requirement.update({
         where: { id: params.id },
@@ -270,16 +256,6 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         }
       }
 
-      // 同步旧 status 字段
-      const stepToStatus: Record<string, string> = {
-        dev_self_check: 'in_progress',
-        testing: 'testing',
-        security_review: 'review',
-        cto_review: 'review',
-        deploying: 'deploying',
-        done: 'done',
-      };
-
       // 自动解析下一步骤的 assigneeId
       const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
 
@@ -288,7 +264,6 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         data: {
           currentStep: targetStep.name,
           assigneeId: newAssigneeId,
-          ...(stepToStatus[targetStep.name] ? { status: stepToStatus[targetStep.name] as any } : {}),
         },
       });
 
@@ -372,16 +347,6 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         targetStepDef = prevStep ?? steps[0];
       }
 
-      // 同步旧 status 字段：workflow step → DB status
-      const stepToStatus: Record<string, string> = {
-        dev_self_check: 'in_progress',
-        testing: 'testing',
-        security_review: 'review',
-        cto_review: 'review',
-        deploying: 'deploying',
-        done: 'done',
-      };
-
       // 自动解析回退步骤的 assigneeId
       const newAssigneeId = targetStepDef
         ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
@@ -392,7 +357,6 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         data: {
           currentStep: targetStepName,
           assigneeId: newAssigneeId,
-          ...(stepToStatus[targetStepName] ? { status: stepToStatus[targetStepName] as any } : {}),
         },
       });
 

@@ -11,13 +11,13 @@ import {
 } from '../../schemas/requirements.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
-import { apiRequirementStatus, prismaRequirementStatus, serializeRequirement } from '../../utils/status.js';
+import { serializeRequirement } from '../../utils/status.js';
 import { validateAssigneeRoleMatch } from '../../lib/assignee-resolver.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
 import { findOverdueRequirements, runOverdueCheck } from '../../utils/overdue-check.js';
 import { listRevisionsSchema } from '../../schemas/revision.js';
-import { canReadRequirement, canEditRequirement, roleAwareRequirementWhere, buildStatusData } from './utils.js';
+import { canReadRequirement, canEditRequirement, roleAwareRequirementWhere } from './utils.js';
 
 export function registerCoreRoutes(router: import('express').Router): void {
 
@@ -29,14 +29,14 @@ router.post(
     const actor = req.user!;
 
     const allRequirements = await prisma.requirement.findMany({
-      select: { id: true, title: true, status: true },
+      select: { id: true, title: true, currentStep: true },
     });
     const normalizedNew = normalizeTitle(body.title);
     const similarItems = allRequirements
       .map(r => ({
         id: r.id,
         title: r.title,
-        status: r.status,
+        currentStep: r.currentStep,
         score: similarity(normalizedNew, normalizeTitle(r.title)),
       }))
       .filter(r => r.score >= DEFAULT_SIMILARITY_THRESHOLD && r.title !== body.title)
@@ -106,12 +106,12 @@ router.get(
     const normalizedInput = normalizeTitle(title);
 
     const allRequirements = await prisma.requirement.findMany({
-      select: { id: true, title: true, status: true, priority: true, createdAt: true },
+      select: { id: true, title: true, currentStep: true, priority: true, createdAt: true },
     });
 
     const similar = allRequirements
       .map(r => ({
-        id: r.id, title: r.title, status: r.status, priority: r.priority, createdAt: r.createdAt,
+        id: r.id, title: r.title, currentStep: r.currentStep, priority: r.priority, createdAt: r.createdAt,
         score: similarity(normalizedInput, normalizeTitle(r.title)),
       }))
       .filter(r => r.score >= threshold)
@@ -155,20 +155,17 @@ router.get(
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
     });
 
-    const grouped: Record<string, typeof requirements> = {
-      pending: [], clarifying: [], 'in-progress': [], testing: [],
-      review: [], deploying: [], done: [], rejected: [],
-    };
-
+    // Group by currentStep
+    const grouped: Record<string, typeof requirements> = {};
     for (const r of requirements) {
-      const status = apiRequirementStatus[r.status as keyof typeof apiRequirementStatus] || r.status;
-      if (!grouped[status]) grouped[status] = [];
-      grouped[status].push(r);
+      const step = r.currentStep || 'pending';
+      if (!grouped[step]) grouped[step] = [];
+      grouped[step].push(r);
     }
 
     const serialized: Record<string, unknown[]> = {};
-    for (const [status, items] of Object.entries(grouped)) {
-      serialized[status] = items.map(serializeRequirement);
+    for (const [step, items] of Object.entries(grouped)) {
+      serialized[step] = items.map(serializeRequirement);
     }
 
     res.json({ data: serialized, meta: { total: requirements.length } });
@@ -180,22 +177,22 @@ router.get(
   '/summary',
   asyncHandler(async (req, res) => {
     const actor = req.user!;
+    const stepFilter = req.query.step as string | undefined;
     const statusFilter = req.query.status as string | undefined;
     const where: Prisma.RequirementWhereInput = roleAwareRequirementWhere(actor);
 
-    // status filter: active=pending+approved+in-progress+testing+review+deploying, pending, all
-    if (statusFilter && statusFilter !== 'all') {
-      if (statusFilter === 'active') {
+    // Filter by currentStep (step param preferred, status param as fallback)
+    const filterValue = stepFilter || statusFilter;
+    if (filterValue && filterValue !== 'all') {
+      if (filterValue === 'active') {
         where.AND = [
           ...(Array.isArray(where.AND) ? where.AND : []),
-          { status: { in: ['pending', 'approved', 'in_progress', 'testing', 'review', 'deploying'] } }
+          { currentStep: { not: 'done' } },
         ];
       } else {
-        // Map API status to DB status if needed
-        const dbStatus = (apiRequirementStatus as Record<string, string>)[statusFilter] ?? statusFilter;
         where.AND = [
           ...(Array.isArray(where.AND) ? where.AND : []),
-          { status: dbStatus } as Prisma.RequirementWhereInput
+          { currentStep: filterValue } as Prisma.RequirementWhereInput
         ];
       }
     }
@@ -205,7 +202,7 @@ router.get(
       select: {
         id: true,
         title: true,
-        status: true,
+        currentStep: true,
         priority: true,
         assignee: true,
         assigneeId: true,
@@ -216,7 +213,7 @@ router.get(
     const data = requirements.map(r => ({
       id: r.id,
       title: r.title,
-      status: r.status,
+      currentStep: r.currentStep,
       priority: r.priority,
       assigneeName: r.assignee,
       assignee: r.assigneeId,
@@ -234,8 +231,10 @@ router.get(
     const actor = req.user!;
     const where: Prisma.RequirementWhereInput = { AND: [roleAwareRequirementWhere(actor)] };
 
-    if (query.status) {
-      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { status: buildStatusData(query.status) }];
+    if (query.currentStep) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { currentStep: query.currentStep }];
+    } else if (query.status) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { currentStep: query.status }];
     }
     if (query.priority) {
       where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { priority: query.priority }];
@@ -380,7 +379,7 @@ router.put(
     await prisma.requirementRevision.create({
       data: {
         requirementId: params.id, title: existing.title, description: existing.description,
-        priority: existing.priority, status: existing.status, requester: existing.requester,
+        priority: existing.priority, status: 'pending', requester: existing.requester,
         department: existing.department, assignee: existing.assignee, dueDate: existing.dueDate,
         attachment: existing.attachment, revisionNote: '内容已编辑更新', operatorId: req.user!.id,
       }
@@ -439,16 +438,18 @@ router.patch(
       }
     }
 
-    // 处理状态变更（API status → DB status）
-    let newStatus = existing.status;
-    if (body.status !== undefined) {
-      newStatus = prismaRequirementStatus[body.status] ?? body.status;
+    // 处理步骤变更
+    let newStep = existing.currentStep;
+    if (body.currentStep !== undefined) {
+      newStep = body.currentStep;
+    } else if (body.status !== undefined) {
+      newStep = body.status;
     }
 
     const updated = await prisma.requirement.update({
       where: { id: params.id },
       data: {
-        status: newStatus,
+        currentStep: newStep,
         assignee: assigneeName,
         assigneeId,
         rejectReason: body.rejectReason,
