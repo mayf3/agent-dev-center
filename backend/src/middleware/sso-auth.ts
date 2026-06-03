@@ -32,14 +32,14 @@ export async function ssoAuth(req: Request, _res: Response, next: NextFunction) 
 
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    select: { id: true, name: true, email: true, role: true },
+    select: { id: true, name: true, email: true, role: true, enabled: true },
   });
 
-  if (!user) {
+  if (!user || !user.enabled) {
     throw new HttpError(401, '用户不存在或已被禁用');
   }
 
-  req.user = user;
+  req.user = { id: user.id, name: user.name, email: user.email, role: user.role, enabled: user.enabled };
   next();
 }
 
@@ -64,10 +64,10 @@ export async function ssoOptional(req: Request, _res: Response, next: NextFuncti
     const payload = jwt.verify(token, env.JWT_SECRET) as { sub: string };
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, email: true, role: true, enabled: true },
     });
-    if (user) {
-      req.user = user;
+    if (user?.enabled) {
+      req.user = { id: user.id, name: user.name, email: user.email, role: user.role, enabled: user.enabled };
     }
   } catch {
     // token 无效，忽略
