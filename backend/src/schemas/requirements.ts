@@ -67,7 +67,8 @@ export const patchRequirementSchema = requirementIdSchema.extend({
       assignee: nullableString,
       rejectReason: nullableString,
       gitHash: z.string().trim().optional(),
-      deployVersion: z.string().trim().optional()
+      deployVersion: z.string().trim().optional(),
+      workflowId: z.string().trim().optional()
     })
     .refine((body) => Object.keys(body).length > 0, {
       message: '至少提供一个要更新的字段'
