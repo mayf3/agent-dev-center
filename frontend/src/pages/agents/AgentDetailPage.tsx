@@ -34,8 +34,9 @@ import {
   MinusCircleOutlined,
   RocketOutlined,
 } from '@ant-design/icons';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { agentsApi, type AgentDetail } from '../../api/agents';
+import { svcOkrApi, type OkrStatus } from '../../api/svc-okr';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -58,6 +59,14 @@ const PIPELINE_CONFIG: Record<string, { label: string; color: string }> = {
   education: { label: '教育', color: 'geekblue' },
 };
 
+const OKR_STATUS_CONFIG: Record<OkrStatus, { label: string; color: string }> = {
+  draft: { label: '草稿', color: 'orange' },
+  proposed: { label: '提案中', color: 'blue' },
+  under_review: { label: '审核中', color: 'purple' },
+  approved: { label: '已批准', color: 'green' },
+  active: { label: '进行中', color: 'cyan' },
+};
+
 const GOAL_STATUS_MAP: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   not_started: { label: '未开始', color: 'default', icon: <MinusCircleOutlined /> },
   in_progress: { label: '进行中', color: 'processing', icon: <ClockCircleOutlined /> },
@@ -67,18 +76,30 @@ const GOAL_STATUS_MAP: Record<string, { label: string; color: string; icon: Reac
 export function AgentDetailPage() {
   const { agentId } = useParams<{ agentId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [agent, setAgent] = useState<AgentDetail | null>(null);
+  const [okrStatus, setOkrStatus] = useState<OkrStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [weeklyModalOpen, setWeeklyModalOpen] = useState(false);
   const [weeklyForm] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
 
+  const basePath = location.pathname.startsWith('/agents') ? '/agents' : '/team';
+
   const fetchAgent = useCallback(async () => {
     if (!agentId) return;
     setLoading(true);
     try {
-      const response = await agentsApi.get(agentId);
-      setAgent(response.data.data);
+      const [agentRes, okrRes] = await Promise.all([
+        agentsApi.get(agentId),
+        svcOkrApi.get(agentId).catch(() => null),
+      ]);
+      setAgent(agentRes.data.data);
+      if (okrRes?.data?.goalCard?.okrStatus) {
+        setOkrStatus(okrRes.data.goalCard.okrStatus);
+      } else {
+        setOkrStatus(null);
+      }
     } catch {
       message.error('加载 Agent 详情失败');
     } finally {
@@ -119,7 +140,7 @@ export function AgentDetailPage() {
     return (
       <div style={{ textAlign: 'center', padding: 100 }}>
         <Empty description="Agent 不存在" />
-        <Button type="link" onClick={() => navigate('/team')}>
+        <Button type="link" onClick={() => navigate(basePath)}>
           返回看板
         </Button>
       </div>
@@ -133,6 +154,7 @@ export function AgentDetailPage() {
   const pipelineCfg = goalCard
     ? PIPELINE_CONFIG[goalCard.pipeline] || { label: goalCard.pipeline, color: 'default' }
     : null;
+  const okrCfg = okrStatus ? OKR_STATUS_CONFIG[okrStatus] : null;
 
   return (
     <div style={{ padding: 24, maxWidth: 960 }}>
@@ -148,7 +170,7 @@ export function AgentDetailPage() {
         }}
       >
         <Space>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/team')}>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(basePath)}>
             返回
           </Button>
           <Avatar size={40} style={{ backgroundColor: '#1677ff' }} src={agent.avatar}>
@@ -220,6 +242,11 @@ export function AgentDetailPage() {
             <Space>
               <AimOutlined style={{ color: '#1677ff' }} />
               <span>OKR / 目标进度</span>
+              {okrCfg && (
+                <Tag color={okrCfg.color} style={{ marginLeft: 8 }}>
+                  {okrCfg.label}
+                </Tag>
+              )}
             </Space>
           }
           extra={

@@ -11,6 +11,8 @@
     "dev": "npm run dev --workspaces",
     "build": "npm run build --workspaces",
     "typecheck": "npm run typecheck --workspaces",
+    "start": "npm --workspace @agent-dev-center/backend run start",
+    "start:migrate": "npm --workspace @agent-dev-center/backend run start:migrate",
     "prisma:generate": "npm --workspace backend run prisma:generate",
     "prisma:migrate": "npm --workspace backend run prisma:migrate",
     "seed": "npm --workspace backend run seed"

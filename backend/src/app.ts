@@ -28,6 +28,9 @@ import { roadmapRouter } from './routes/roadmap.js';
 import { identitiesRouter } from './routes/identities.js';
 import { healthRecordsRouter } from './routes/health-records.js';
 import { familyRouter } from './routes/family.js';
+import { adminUsersRouter } from './routes/admin-users.js';
+import { dailyLogsRouter } from './routes/daily-logs.js';
+import { mustChangePasswordGuard } from './middleware/must-change-password.js';
 
 export const app = express();
 
@@ -44,10 +47,15 @@ app.use((req, res, next) => {
   next();
 });
 
+// d7e0a85d: 生产环境禁止 localhost CORS，需显式配置 FRONTEND_ORIGIN
+const corsOrigin = env.FRONTEND_ORIGIN === '*' ? true : env.FRONTEND_ORIGIN;
+if (!corsOrigin && env.NODE_ENV === 'production') {
+  console.warn('[CORS] FRONTEND_ORIGIN not set in production — CORS disabled, only same-origin allowed');
+}
 app.use(
   cors({
-    origin: env.FRONTEND_ORIGIN === '*' ? true : env.FRONTEND_ORIGIN,
-    credentials: true
+    origin: corsOrigin || false,
+    credentials: !!env.FRONTEND_ORIGIN && env.FRONTEND_ORIGIN !== ''
   })
 );
 if (env.NODE_ENV === 'production') {
@@ -87,6 +95,8 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth/sso', authLimiter, ssoRouter);
 app.use('/api/auth/agent', agentSsoRouter);
 app.use('/api/auth', authLimiter, authRouter);
+// mustChangePassword 拦截：认证后检查是否需要强制改密码
+app.use('/api', mustChangePasswordGuard);
 app.use('/api/requirements', requirementsRouter);
 app.use('/api/requirements/:id/reports', reportsRouter);
 app.use('/api/reports', reportsRouter);
@@ -107,6 +117,8 @@ app.use('/api/roadmap', roadmapRouter);
 app.use('/api/health-records', healthRecordsRouter);
 app.use('/api/family', familyRouter);
 app.use('/api/identities', identitiesRouter);
+app.use('/api/admin/users', adminUsersRouter);
+app.use('/api/daily-logs', dailyLogsRouter);
 
 app.use((_req, _res, next) => {
   next(new HttpError(404, '接口不存在'));

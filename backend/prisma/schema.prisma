@@ -15,7 +15,6 @@ enum UserRole {
   cto_agent
 }
 
-
 enum InternalRole {
   cto
   pm
@@ -25,6 +24,7 @@ enum InternalRole {
   ops
   qa
 }
+
 enum RequirementPriority {
   P0
   P1
@@ -34,7 +34,7 @@ enum RequirementPriority {
 
 enum RequirementStatus {
   pending
-  clarifying  @map("clarifying")   // PM 跟需求方澄清中
+  clarifying  @map("clarifying") // PM 跟需求方澄清中
   approved
   rejected
   in_progress @map("in-progress")
@@ -42,6 +42,14 @@ enum RequirementStatus {
   review
   deploying
   done
+}
+
+enum RequirementType {
+  FEATURE
+  BUGFIX
+  POSTMORTEM
+  INFRA
+  SECURITY
 }
 
 enum TaskStatus {
@@ -67,29 +75,33 @@ enum ReportStatus {
 }
 
 model User {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  email     String   @unique
-  password  String
-  role          UserRole    @default(requester)
-  internalRole  InternalRole?  @map("internal_role")
-  okrRole       OkrRole       @default(okr_member) @map("okr_role")
+  id                 String        @id @default(uuid()) @db.Uuid
+  name               String
+  email              String        @unique
+  password           String
+  role               UserRole      @default(requester)
+  internalRole       InternalRole? @map("internal_role")
+  okrRole            OkrRole       @default(okr_member) @map("okr_role")
   // SSO Agent fields
-  agentId     String?  @unique
-  permissions Json     @default("[]")
+  agentId            String?       @unique
+  permissions        Json          @default("[]")
   // Profile fields
-  bio        String?
-  phone       String?
-  avatar      String?
-  department  String?
-  title       String?   // job title, e.g. "高级工程师"
+  bio                String?
+  phone              String?
+  avatar             String?
+  department         String?
+  title              String? // job title, e.g. "高级工程师"
   // HR management fields
-  employeeNo      String?    @unique
-  onboardingDate  DateTime?
-  managerId       String?    @db.Uuid
-  mustChangePassword Boolean @default(true) @map("must_change_password")
-  manager         User?      @relation("UserManager", fields: [managerId], references: [id])
-  directReports    User[]     @relation("UserManager")
+  employeeNo         String?       @unique
+  onboardingDate     DateTime?
+  managerId          String?       @db.Uuid
+  mustChangePassword Boolean       @default(true) @map("must_change_password")
+  enabled            Boolean       @default(true)
+  // Password tracking
+  passwordChangedAt  DateTime?     @map("password_changed_at")
+  lastLoginAt        DateTime?     @map("last_login_at")
+  manager            User?         @relation("UserManager", fields: [managerId], references: [id])
+  directReports      User[]        @relation("UserManager")
 
   createdAt DateTime @default(now())
 
@@ -98,43 +110,86 @@ model User {
   requirementRevisions  RequirementRevision[] @relation("RequirementRevisionOperator")
   submittedReports      RequirementReport[]   @relation("ReportSubmitter")
   marketplaceAgents     MarketplaceAgent[]    @relation("MarketplaceAgentOwner")
+  linkedAgent           MarketplaceAgent?     @relation("AgentUserLink")
   marketplaceTasks      MarketplaceTask[]     @relation("MarketplaceRequester")
 
+  @@index([lastLoginAt])
   @@map("users")
 }
 
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  action     String
+  targetType String
+  targetId   String   @db.Uuid
+  actorId    String   @db.Uuid
+  actorName  String
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+  @@index([actorId])
+  @@map("audit_logs")
+}
+
+model PasswordPolicy {
+  id                   String   @id @default(uuid()) @db.Uuid
+  name                 String   @unique @default("default")
+  minLength            Int      @default(8)
+  requireUppercase     Boolean  @default(true) @map("require_uppercase")
+  requireLowercase     Boolean  @default(true) @map("require_lowercase")
+  requireNumber        Boolean  @default(true) @map("require_number")
+  requireSpecial       Boolean  @default(false) @map("require_special")
+  expiresInDays        Int?     @map("expires_in_days") // null = never expire
+  forceChangeCycleDays Int?     @map("force_change_cycle_days") // null = no forced change cycle
+  isDefault            Boolean  @default(true) @map("is_default")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("password_policies")
+}
+
 model Requirement {
-  id            String                @id @default(uuid()) @db.Uuid
-  title         String
-  description   String                @db.Text
-  priority      RequirementPriority   @default(P2)
-  status        RequirementStatus     @default(pending)
-  requester     String
-  requesterId   String?               @db.Uuid
-  department    String
-  assignee      String?
-  assigneeId    String?               @db.Uuid
-  pmApprovedAt  DateTime?  @map("pm_approved_at")
-  pmApprovedBy  String?  @map("pm_approved_by")
-  dueDate       DateTime?
-  attachment    String?
-  rejectReason  String?               @db.Text
-  notes         String?               @db.Text
-  gitHash       String?
-  deployVersion String?
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
-  tasks         Task[]
-  revisions     RequirementRevision[]
-  reports       RequirementReport[]
-  serviceLinks  ServiceRequirement[]
-  postmortems   Postmortem[]
+  id                  String                @id @default(uuid()) @db.Uuid
+  title               String
+  description         String                @db.Text
+  priority            RequirementPriority   @default(P2)
+  requester           String
+  requesterId         String?               @db.Uuid
+  department          String
+  assignee            String?
+  assigneeId          String?               @db.Uuid
+  pmApprovedAt        DateTime?             @map("pm_approved_at")
+  pmApprovedBy        String?               @map("pm_approved_by")
+  dueDate             DateTime?
+  attachment          String?
+  rejectReason        String?               @db.Text
+  notes               String?               @db.Text
+  type                RequirementType       @default(FEATURE)
+  tags                String[]              @default([])
+  gitHash             String?
+  deployVersion       String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  tasks               Task[]
+  revisions           RequirementRevision[]
+  reports             RequirementReport[]
+  serviceLinks        ServiceRequirement[]
+  postmortems         Postmortem[]
+  workflowTransitions WorkflowTransition[]
+
+  // Workflow engine fields
+  workflowId  String?           @db.Uuid
+  workflow    WorkflowTemplate? @relation(fields: [workflowId], references: [id])
+  currentStep String?
 
   requesterUser User? @relation("RequesterRequirements", fields: [requesterId], references: [id])
   assigneeUser  User? @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
 
-  @@index([status])
+  @@index([currentStep])
   @@index([priority])
+  @@index([type])
   @@index([requester])
   @@index([requesterId])
   @@index([assignee])
@@ -192,8 +247,8 @@ model RequirementReport {
   submittedById   String?      @db.Uuid
   submittedByUser User?        @relation("ReportSubmitter", fields: [submittedById], references: [id])
   status          ReportStatus @default(pending)
-  qaReviewedAt    DateTime?  @map("qa_reviewed_at")
-  qaReviewedBy    String?  @map("qa_reviewed_by")
+  qaReviewedAt    DateTime?    @map("qa_reviewed_at")
+  qaReviewedBy    String?      @map("qa_reviewed_by")
   qaBypass        Boolean      @default(false) @map("qa_bypass")
   qaBypassReason  String?      @map("qa_bypass_reason") @db.Text
   qaBypassAt      DateTime?    @map("qa_bypass_at")
@@ -257,62 +312,68 @@ enum DeliverableType {
 }
 
 model MarketplaceAgent {
-  id           String                 @id @default(uuid()) @db.Uuid
-  name         String                 @unique
-  displayName  String
-  description  String                 @db.Text
-  avatar       String?
-  capabilities Json                   @default("[]")
-  apiEndpoint  String?
-  status       MarketplaceAgentStatus @default(active)
+  id                 String                 @id @default(uuid()) @db.Uuid
+  name               String                 @unique
+  displayName        String
+  description        String                 @db.Text
+  avatar             String?
+  capabilities       Json                   @default("[]")
+  apiEndpoint        String?
+  status             MarketplaceAgentStatus @default(active)
   // Automation fields
-  notificationType  String            @default("polling")
-  feishuWebhookUrl  String?
-  tags              String[]          @default([])
-  lastHeartbeatAt   DateTime?
-  agentToken        String?           @unique
-  ownerId      String?                @db.Uuid
-  owner        User?                  @relation("MarketplaceAgentOwner", fields: [ownerId], references: [id])
+  notificationType   String                 @default("polling")
+  feishuWebhookUrl   String?
+  tags               String[]               @default([])
+  lastHeartbeatAt    DateTime?
+  agentToken         String?                @unique
+  ownerId            String?                @db.Uuid
+  owner              User?                  @relation("MarketplaceAgentOwner", fields: [ownerId], references: [id])
+  // Direct user link — for /agents/me lookup. Same as ownerId but explicit & indexed.
+  userId             String?                @unique @map("user_id") @db.Uuid
+  user               User?                  @relation("AgentUserLink", fields: [userId], references: [id])
   // SSO dedup: track which OpenClaw agent this maps to
-  openclawAgentId   String?           // e.g. "education-agent" — the OpenClaw agentId
-  registrationSource String?          // "seed" | "sso" | "manual"
-  registrationGroup String?           // e.g. "workspace-oc_xxx" — the OpenClaw group/session
-  mergedInto        String?           @db.Uuid // if merged, points to the surviving agent ID
-  mergedAt          DateTime?
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
+  openclawAgentId    String? // e.g. "education-agent" — the OpenClaw agentId
+  registrationSource String? // "seed" | "sso" | "manual"
+  registrationGroup  String? // e.g. "workspace-oc_xxx" — the OpenClaw group/session
+  mergedInto         String?                @db.Uuid // if merged, points to the surviving agent ID
+  mergedAt           DateTime?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
-  tasks MarketplaceTask[]
-  accessTokens AgentAccessToken[]
-  goalCard     AgentGoalCard?
+  tasks         MarketplaceTask[]
+  accessTokens  AgentAccessToken[]
+  goalCard      AgentGoalCard?
   weeklyReports WeeklyReport[]
+  dailyLogs     DailyLog[]
 
   @@index([status])
+  @@index([ownerId])
+  @@index([userId])
   @@map("marketplace_agents")
 }
 
 model MarketplaceTask {
-  id            String                @id @default(uuid()) @db.Uuid
-  agentId       String                @db.Uuid
-  agent         MarketplaceAgent      @relation(fields: [agentId], references: [id])
-  requesterId   String?               @db.Uuid
-  requester     User?                 @relation("MarketplaceRequester", fields: [requesterId], references: [id])
-  requesterName String
-  title         String
-  description   String                @db.Text
-  input         Json?
-  priority      MarketplacePriority   @default(normal)
-  status        MarketplaceTaskStatus @default(pending)
-  deadline      DateTime?
-  startedAt     DateTime?
-  completedAt   DateTime?
-  errorMsg      String?               @db.Text
+  id              String                @id @default(uuid()) @db.Uuid
+  agentId         String                @db.Uuid
+  agent           MarketplaceAgent      @relation(fields: [agentId], references: [id])
+  requesterId     String?               @db.Uuid
+  requester       User?                 @relation("MarketplaceRequester", fields: [requesterId], references: [id])
+  requesterName   String
+  title           String
+  description     String                @db.Text
+  input           Json?
+  priority        MarketplacePriority   @default(normal)
+  status          MarketplaceTaskStatus @default(pending)
+  deadline        DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  errorMsg        String?               @db.Text
   // Automation fields
-  notifiedAt    DateTime?
+  notifiedAt      DateTime?
   executionTimeMs Int?
-  tokensUsed    Int?
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
+  tokensUsed      Int?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   deliverables MarketplaceDeliverable[]
 
@@ -339,14 +400,14 @@ model MarketplaceDeliverable {
 // ─── Agent Access Token ─────────────────────────────────────────
 
 model AgentAccessToken {
-  id        String   @id @default(uuid()) @db.Uuid
-  agentId   String   @db.Uuid
-  agent     MarketplaceAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  token     String   @unique
-  name      String   @default("default")
+  id         String           @id @default(uuid()) @db.Uuid
+  agentId    String           @db.Uuid
+  agent      MarketplaceAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  token      String           @unique
+  name       String           @default("default")
   lastUsedAt DateTime?
-  createdAt DateTime @default(now())
-  expiresAt DateTime?
+  createdAt  DateTime         @default(now())
+  expiresAt  DateTime?
 
   @@index([agentId])
   @@index([token])
@@ -363,22 +424,22 @@ enum ServiceStatus {
 }
 
 model Service {
-  id            String        @id @default(uuid()) @db.Uuid
-  name          String        @unique                       // 机器标识 e.g. "agent-dev-center-backend"
-  displayName   String                                      // 显示名 e.g. "Agent Dev Center 后端"
-  description   String        @db.Text
-  port          Int?                                         // 本地端口
-  localUrl      String?                                      // 本地地址
-  remoteUrl     String?                                      // 远程地址
-  techStack     String[]      @default([])                  // ["Node.js", "Express", "PostgreSQL"]
-  owner         String?                                      // 负责 Agent
-  gitRepo       String?                                      // Git 仓库路径
-  database      String?                                      // 使用的数据库
-  status        ServiceStatus @default(unknown)
-  version       String?                                      // 最新部署版本
+  id             String        @id @default(uuid()) @db.Uuid
+  name           String        @unique // 机器标识 e.g. "agent-dev-center-backend"
+  displayName    String // 显示名 e.g. "Agent Dev Center 后端"
+  description    String        @db.Text
+  port           Int? // 本地端口
+  localUrl       String? // 本地地址
+  remoteUrl      String? // 远程地址
+  techStack      String[]      @default([]) // ["Node.js", "Express", "PostgreSQL"]
+  owner          String? // 负责 Agent
+  gitRepo        String? // Git 仓库路径
+  database       String? // 使用的数据库
+  status         ServiceStatus @default(unknown)
+  version        String? // 最新部署版本
   lastDeployedAt DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   // 关联需求
   requirements ServiceRequirement[]
@@ -389,14 +450,14 @@ model Service {
 }
 
 model ServiceRequirement {
-  id             String   @id @default(uuid()) @db.Uuid
-  serviceId      String   @db.Uuid
-  requirementId  String   @db.Uuid
-  relationType   String   @default("related")          // related | primary | secondary
-  createdAt      DateTime @default(now())
+  id            String   @id @default(uuid()) @db.Uuid
+  serviceId     String   @db.Uuid
+  requirementId String   @db.Uuid
+  relationType  String   @default("related") // related | primary | secondary
+  createdAt     DateTime @default(now())
 
-  service      Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  requirement  Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  service     Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  requirement Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
 
   @@unique([serviceId, requirementId])
   @@index([serviceId])
@@ -422,7 +483,7 @@ enum PipelineName {
   devops
   education
   business
-  cross_cutting    @map("cross-cutting")
+  cross_cutting @map("cross-cutting")
 }
 
 enum OkrRole {
@@ -446,35 +507,35 @@ enum MonthlyGoalStatus {
 }
 
 model AgentGoalCard {
-  id              String       @id @default(uuid()) @db.Uuid
-  agentId         String       @unique @db.Uuid
-  agent           MarketplaceAgent @relation(fields: [agentId], references: [id])
+  id      String           @id @default(uuid()) @db.Uuid
+  agentId String           @unique @db.Uuid
+  agent   MarketplaceAgent @relation(fields: [agentId], references: [id])
 
   // Pipeline
-  pipeline        PipelineName
-  layer           GoalLayer      @default(mainline)
-  upstreamAgentIds String[]    @default([])
-  downstreamAgentIds String[]  @default([])
+  pipeline           PipelineName
+  layer              GoalLayer    @default(mainline)
+  upstreamAgentIds   String[]     @default([])
+  downstreamAgentIds String[]     @default([])
 
   // Goals
-  longTermDirection String     @db.Text
-  monthlyGoals    Json         @default("[]")       // [{month:"2026-05", goals:[{text:string, status:MonthlyGoalStatus}]}]
-  selfCheckCriteria String     @db.Text
+  longTermDirection String @db.Text
+  monthlyGoals      Json   @default("[]") // [{month:"2026-05", goals:[{text:string, status:MonthlyGoalStatus}]}]
+  selfCheckCriteria String @db.Text
 
   // Push tracking
-  pushedMonths    String[]     @default([])          // 已推送的月份，用于去重
+  pushedMonths String[] @default([]) // 已推送的月份，用于去重
 
   // Status
-  status          GoalStatus   @default(active)
+  status GoalStatus @default(active)
 
   // Review
-  lastReviewedAt  DateTime?
-  lastReviewedBy  String?
+  lastReviewedAt DateTime?
+  lastReviewedBy String?
 
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  revisions       GoalRevision[]
+  revisions GoalRevision[]
 
   @@index([pipeline])
   @@index([status])
@@ -482,19 +543,19 @@ model AgentGoalCard {
 }
 
 model GoalRevision {
-  id              String       @id @default(uuid()) @db.Uuid
-  goalCardId      String       @db.Uuid
-  goalCard        AgentGoalCard @relation(fields: [goalCardId], references: [id], onDelete: Cascade)
+  id         String        @id @default(uuid()) @db.Uuid
+  goalCardId String        @db.Uuid
+  goalCard   AgentGoalCard @relation(fields: [goalCardId], references: [id], onDelete: Cascade)
 
-  longTermDirection String     @db.Text
-  monthlyGoals    Json
-  selfCheckCriteria String     @db.Text
-  pipeline        PipelineName
+  longTermDirection String       @db.Text
+  monthlyGoals      Json
+  selfCheckCriteria String       @db.Text
+  pipeline          PipelineName
 
-  changeNote      String       @db.Text
-  changedBy       String
-  changedById     String?      @db.Uuid
-  createdAt       DateTime     @default(now())
+  changeNote  String   @db.Text
+  changedBy   String
+  changedById String?  @db.Uuid
+  createdAt   DateTime @default(now())
 
   @@index([goalCardId])
   @@index([createdAt])
@@ -512,22 +573,22 @@ enum WeeklyReportStatus {
 }
 
 model WeeklyReport {
-  id            String             @id @default(uuid()) @db.Uuid
-  agentId       String             @db.Uuid
-  agent         MarketplaceAgent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  id      String           @id @default(uuid()) @db.Uuid
+  agentId String           @db.Uuid
+  agent   MarketplaceAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   // Week identification (e.g. "2026-W21" or "2026-05-19")
-  week          String
+  week String
 
   // Report content
-  content       String             @db.Text
-  summary       String             @default("") @db.Text
-  nextWeekPlan  String             @default("") @db.Text
-  blockers      String             @default("") @db.Text
+  content      String @db.Text
+  summary      String @default("") @db.Text
+  nextWeekPlan String @default("") @db.Text
+  blockers     String @default("") @db.Text
 
   // Submission
-  submittedBy   String             @default("")
-  submittedAt   DateTime?
+  submittedBy String    @default("")
+  submittedAt DateTime?
 
   // Review
   status        WeeklyReportStatus @default(draft)
@@ -535,8 +596,8 @@ model WeeklyReport {
   reviewedAt    DateTime?
   reviewComment String?            @db.Text
 
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([agentId, week])
   @@index([agentId])
@@ -554,21 +615,21 @@ enum PostmortemStatus {
 }
 
 model Postmortem {
-  id              String           @id @default(uuid()) @db.Uuid
-  requirementId   String?          @db.Uuid
-  requirement     Requirement?     @relation(fields: [requirementId], references: [id])
+  id            String       @id @default(uuid()) @db.Uuid
+  requirementId String?      @db.Uuid
+  requirement   Requirement? @relation(fields: [requirementId], references: [id])
 
-  title           String
-  phenomenon      String           @db.Text
-  rootCause       String           @db.Text
-  whyExistingProcess String        @db.Text
-  longTermPrinciple String         @db.Text
-  preventionMeasures String        @db.Text
-  responsiblePerson String
-  status          PostmortemStatus @default(pending)
+  title              String
+  phenomenon         String           @db.Text
+  rootCause          String           @db.Text
+  whyExistingProcess String           @db.Text
+  longTermPrinciple  String           @db.Text
+  preventionMeasures String           @db.Text
+  responsiblePerson  String
+  status             PostmortemStatus @default(pending)
 
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([responsiblePerson])
@@ -584,35 +645,35 @@ enum EntityType {
 }
 
 model Identity {
-  id              String       @id @default(uuid()) @db.Uuid
-  
+  id String @id @default(uuid()) @db.Uuid
+
   // Type
-  type            EntityType
-  
+  type EntityType
+
   // ── Common fields ──
   displayName       String
   avatar            String?
-  description       String       @db.Text
-  longTermDirection String       @db.Text
+  description       String        @db.Text
+  longTermDirection String        @db.Text
   // JSON schema: Array<{month, goal, krs: [{text, progress, status}], status}>
-  monthlyGoals      Json         @default("[]")
-  capabilities      Json         @default("[]")
+  monthlyGoals      Json          @default("[]")
+  capabilities      Json          @default("[]")
   pipeline          PipelineName?
   layer             GoalLayer?
-  
+
   // ── Agent-specific ──
-  agentId           String?      @unique            // references marketplace_agents.id
-  ownerId           String?      @map("owner_id")   // references users.id (no FK)
-  agentType         String?
-  
+  agentId   String? @unique // references marketplace_agents.id
+  ownerId   String? @map("owner_id") // references users.id (no FK)
+  agentType String?
+
   // ── Human-specific ──
-  userId            String?      @unique            // references users.id
-  
+  userId String? @unique // references users.id
+
   // ── Meta ──
-  status            String       @default("active")
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-  
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([type])
   @@index([pipeline])
   @@index([ownerId])
@@ -623,17 +684,76 @@ model Identity {
 // ─── Pipeline Event Log ─────────────────────────────────────
 
 model PipelineEvent {
-  id          String   @id @default(uuid()) @db.Uuid
-  taskId      String   @db.Uuid
-  fromStatus  String
-  toStatus    String
-  actor       String              // "system", "agent", "user"
-  actorId     String?             @db.Uuid
-  reason      String?  @db.Text
-  metadata    Json?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid()) @db.Uuid
+  taskId     String   @db.Uuid
+  fromStatus String
+  toStatus   String
+  actor      String // "system", "agent", "user"
+  actorId    String?  @db.Uuid
+  reason     String?  @db.Text
+  metadata   Json?
+  createdAt  DateTime @default(now())
 
   @@index([taskId])
   @@index([toStatus, actor])
   @@map("pipeline_events")
+}
+
+// ─── Workflow Engine ──────────────────────────────────────
+
+model WorkflowTemplate {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique // "backend-dev", "frontend-dev", "ops-deploy", "hotfix"
+  displayName String // "后端开发", "前端开发", "运维部署", "紧急修复"
+  description String   @db.Text
+  steps       Json // JSONB: [{name, displayName, role, requiredReports[], autoAdvance}]
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requirements Requirement[]
+
+  @@index([isActive])
+  @@map("workflow_templates")
+}
+
+model WorkflowTransition {
+  id            String      @id @default(uuid()) @db.Uuid
+  requirementId String      @db.Uuid
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  fromStep      String // step name
+  toStep        String // step name
+  action        String // "advance" | "reject" | "assign-workflow"
+  actorId       String?     @db.Uuid
+  actorName     String
+  actorRole     String
+  comment       String?     @db.Text
+  metadata      Json?
+  createdAt     DateTime    @default(now())
+
+  @@index([requirementId])
+  @@index([fromStep])
+  @@index([createdAt])
+  @@map("workflow_transitions")
+}
+
+// ─── Daily Log ──────────────────────────────────────────
+
+model DailyLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  agentId     String   @db.Uuid
+  agent       MarketplaceAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  date        String   // YYYY-MM-DD
+  status      String   @default("working") // working | completed | blocked | idle
+  content     String   @db.Text
+  problems    String?  @db.Text
+  submittedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([agentId, date])
+  @@index([date])
+  @@index([agentId])
+  @@index([submittedAt])
+  @@map("daily_logs")
 }

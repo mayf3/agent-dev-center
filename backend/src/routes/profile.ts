@@ -183,10 +183,39 @@ profileRouter.patch(
     const hrData: Record<string, any> = { ...hrBody };
     if (hrBody.onboardingDate) hrData.onboardingDate = new Date(hrBody.onboardingDate);
 
-    const updated = await prisma.user.update({
-      where: { id: targetId },
-      data: hrData,
-      select: userProfileSelect,
+    const internalRoleChanged = hrBody.internalRole !== undefined && target.internalRole !== hrBody.internalRole;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
+        where: { id: targetId },
+        data: hrData,
+        select: userProfileSelect,
+      });
+
+      if (internalRoleChanged) {
+        await tx.auditLog.create({
+          data: {
+            action: 'ROLE_CHANGE',
+            targetType: 'user',
+            targetId,
+            actorId: req.user!.id,
+            actorName: req.user!.name,
+            details: {
+              targetEmail: target.email,
+              targetName: target.name,
+              changes: {
+                internalRole: {
+                  from: target.internalRole,
+                  to: hrBody.internalRole ?? null,
+                },
+              },
+              source: 'profile-hr',
+            },
+          },
+        });
+      }
+
+      return updatedUser;
     });
 
     res.json({ message: 'HR 信息已更新', data: updated });

@@ -6,6 +6,7 @@ import { registerStatusRoutes } from './status.js';
 import { registerReviewRoutes } from './review.js';
 import { registerPipelineRoutes } from './pipeline.js';
 import { registerDecomposeRoutes } from './decompose.js';
+import { registerWorkflowRoutes } from './workflow.js';
 
 export const requirementsRouter = Router();
 
@@ -13,6 +14,7 @@ export const requirementsRouter = Router();
 requirementsRouter.use(authRequired);
 
 // 注册各模块路由
+registerWorkflowRoutes(requirementsRouter);
 registerCoreRoutes(requirementsRouter);
 registerAttachmentRoutes(requirementsRouter);
 registerStatusRoutes(requirementsRouter);

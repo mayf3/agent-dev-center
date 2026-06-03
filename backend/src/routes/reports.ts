@@ -124,6 +124,7 @@ reportsRouter.post(
     // 确认需求存在
     const requirement = await prisma.requirement.findUnique({
       where: { id: params.id },
+      include: { assigneeUser: { select: { name: true } } },
     });
     if (!requirement) throw new HttpError(404, '需求不存在');
 
@@ -207,9 +208,9 @@ reportsRouter.patch(
     if (!report) throw new HttpError(404, '报告不存在');
     if (report.status !== 'pending') throw new HttpError(400, '该报告已审核');
 
-    // TEST_REPORT 和 SECURITY_REVIEW 才需要 QA 审批
-    if (report.reportType !== ReportType.TEST_REPORT && report.reportType !== ReportType.SECURITY_REVIEW) {
-      throw new HttpError(400, '只有测试报告和安全审查需要 QA 审批');
+    // DEV_SELF_CHECK / TEST_REPORT / SECURITY_REVIEW 需要 QA 审批
+    if (report.reportType !== ReportType.DEV_SELF_CHECK && report.reportType !== ReportType.TEST_REPORT && report.reportType !== ReportType.SECURITY_REVIEW) {
+      throw new HttpError(400, '只有开发自检、测试报告和安全审查需要 QA 审批');
     }
 
     if (report.submittedById === req.user!.id) {
@@ -239,7 +240,53 @@ reportsRouter.patch(
 // CTO 最终审批（或直接审批非 QA 流程的报告）
 reportsRouter.patch(
   '/:reportId',
-  requireRoles('admin'),
+  asyncHandler(async (req, res, next) => {
+    // 权限检查：admin/cto_agent 直接通过，否则检查工作流步骤角色
+    const isAdminOrCto = req.user!.role === 'admin' || req.user!.role === 'cto_agent';
+    if (isAdminOrCto) return next();
+
+    // 工作流角色审批：检查报告是否属于当前用户负责的工作流步骤
+    const { params } = reportIdSchema.parse({ params: req.params });
+    const report = await prisma.requirementReport.findUnique({ where: { id: params.reportId } });
+    if (!report) throw new HttpError(404, '报告不存在');
+
+    // 查需求的工作流当前步骤
+    const requirement = await prisma.requirement.findUnique({
+      where: { id: report.requirementId },
+      include: { workflow: true },
+    });
+    if (!requirement?.workflow?.steps || !requirement.currentStep) {
+      throw new HttpError(403, '只有 CTO 可以审批报告');
+    }
+
+    const steps = requirement.workflow.steps as Array<{ name: string; role: string; requiredReports?: string[] }>;
+    const currentStep = steps.find(s => s.name === requirement.currentStep);
+    if (!currentStep?.requiredReports?.includes(report.reportType)) {
+      throw new HttpError(403, '只有 CTO 可以审批该报告（报告类型不在当前工作流步骤的待审批列表中）');
+    }
+
+    // 角色匹配
+    const roleMap: Record<string, string[]> = {
+      cto: ['cto', 'admin'],
+      developer: ['developer'],
+      tester: ['tester'],
+      security: ['security'],
+      ops: ['ops'],
+      pm: ['pm', 'requester'],
+    };
+    const allowedRoles = roleMap[currentStep.role] ?? [];
+    const userRole = req.user!.internalRole ?? req.user!.role;
+    if (!allowedRoles.includes(userRole)) {
+      throw new HttpError(403, `当前步骤需要「${currentStep.role}」角色，你的角色是「${userRole}」`);
+    }
+
+    // 不能审自己提交的
+    if (report.submittedById === req.user!.id) {
+      throw new HttpError(403, '审核者和提交者不能为同一人');
+    }
+
+    next();
+  }),
   asyncHandler(async (req, res) => {
     const { params, body } = reviewReportSchema.parse({
       params: req.params,
@@ -257,8 +304,8 @@ reportsRouter.patch(
       throw new HttpError(403, '审核者和提交者不能为同一人，报告不能自己审自己');
     }
 
-    // TEST_REPORT 和 SECURITY_REVIEW 必须先经 QA 审查
-    const requiresQaReview = report.reportType === ReportType.TEST_REPORT || report.reportType === ReportType.SECURITY_REVIEW;
+    // DEV_SELF_CHECK / TEST_REPORT / SECURITY_REVIEW 必须先经 QA 审查
+    const requiresQaReview = report.reportType === ReportType.DEV_SELF_CHECK || report.reportType === ReportType.TEST_REPORT || report.reportType === ReportType.SECURITY_REVIEW;
     const shouldBypassQa = requiresQaReview && body.qa_bypass === true;
     const reviewedAt = new Date();
 
@@ -294,7 +341,7 @@ reportsRouter.patch(
     // 通知相关方
     const reqInfo = await prisma.requirement.findUnique({
       where: { id: params.id },
-      select: { title: true, requesterId: true, assigneeId: true },
+      select: { title: true, requesterId: true, assigneeId: true, assignee: true, currentStep: true, workflowId: true },
     });
     const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
     void notifyEvent(reportEvent as any, {
@@ -303,6 +350,92 @@ reportsRouter.patch(
       reportType: report.reportType,
       actor: req.user!.name,
     });
+
+    // ─── 报告打回自动回退需求状态 + assignee ───
+    // 对于有工作流的需求：通过工作流 reject（按步骤角色自动分配）
+    // 对于无工作流的旧需求：从 revisions 历史找 assignee
+    if (body.status === 'rejected' && reqInfo) {
+      const reportType = report.reportType as string;
+
+      // 如果需求有工作流，不在这里处理回退（由 workflow reject 处理）
+      if (reqInfo.workflowId) {
+        // 工作流模式：报告打回不做状态回退，由 CTO/test-engineer 手动调 workflow reject
+      } else {
+        // 旧版非工作流模式保留原逻辑
+        let targetStep: string | null = null;
+
+        switch (reportType) {
+          case 'DEV_SELF_CHECK':
+          case 'TEST_REPORT':
+          case 'SECURITY_REVIEW':
+            targetStep = 'dev_self_check';
+            break;
+          case 'CTO_REVIEW':
+            targetStep = 'testing';
+            break;
+          case 'DEPLOY_CONFIRM':
+            targetStep = 'cto_review';
+            break;
+          default:
+            break;
+        }
+
+        if (targetStep) {
+          const lastRevision = await prisma.requirementRevision.findFirst({
+            where: {
+              requirementId: params.id,
+              assignee: { not: null },
+              status: { in: ['in_progress', 'testing'] },
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { assignee: true },
+          });
+
+          const rollbackAssigneeName = lastRevision?.assignee ?? reqInfo.assignee;
+
+          let rollbackAssigneeId: string | null = reqInfo.assigneeId;
+          if (rollbackAssigneeName) {
+            const assigneeUser = await prisma.user.findFirst({
+              where: { OR: [{ name: rollbackAssigneeName }, { email: rollbackAssigneeName }] },
+              select: { id: true },
+            });
+            rollbackAssigneeId = assigneeUser?.id ?? rollbackAssigneeId;
+          }
+
+          await prisma.requirement.update({
+            where: { id: params.id },
+            data: {
+              currentStep: targetStep,
+              assignee: rollbackAssigneeName,
+              assigneeId: rollbackAssigneeId,
+            },
+          });
+
+          await prisma.requirementRevision.create({
+            data: {
+              requirementId: params.id,
+              title: reqInfo.title ?? '',
+              description: '',
+              priority: 'P2',
+              status: 'in_progress',
+              requester: '',
+              department: '',
+              assignee: rollbackAssigneeName,
+              revisionNote: `${reportType} 报告被打回，步骤回退至 ${targetStep}，assignee 回退为 ${rollbackAssigneeName ?? '原开发者'}`,
+              operatorId: req.user!.id,
+            },
+          });
+
+          void notifyEvent('requirement.step_changed' as any, {
+            id: params.id,
+            title: reqInfo.title ?? '',
+            currentStep: targetStep,
+            actor: req.user!.name,
+            assignee: rollbackAssigneeName,
+          });
+        }
+      }
+    }
 
     res.json({ success: true, data: updated });
   }),
@@ -323,7 +456,7 @@ reportsRouter.get(
       where: { id: reportId },
       include: {
         submittedByUser: { select: { id: true, name: true, email: true } },
-        requirement: { select: { id: true, title: true, status: true } },
+        requirement: { select: { id: true, title: true, currentStep: true } },
       },
     });
 

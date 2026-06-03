@@ -19,6 +19,8 @@ import { PriorityTag } from '../../components/PriorityTag';
 import { ReportsTimeline } from '../../components/ReportsTimeline';
 import { RequirementAttachments } from '../../components/RequirementAttachments';
 import { StatusTag } from '../../components/StatusTag';
+import { TypeTag } from '../../components/TypeTag';
+import { Tag as AntTag } from 'antd';
 import { TaskTableSection } from '../../components/requirements/TaskTableSection';
 import { RevisionHistoryTab, RevisionHistoryTabLabel } from '../../components/requirements/RevisionHistoryTab';
 import { RequirementModals } from '../../components/requirements/RequirementModals';
@@ -27,6 +29,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { formatDateTime, formatDate, getErrorMessage } from '../../components/requirements/utils';
 
 const { TextArea } = Input;
+
+type RequirementWithRequesterId = Requirement & {
+  requesterId?: string | null;
+};
 
 export function RequirementDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -116,6 +122,88 @@ export function RequirementDetailPage() {
     );
   }
 
+  const requesterId = (requirement as RequirementWithRequesterId).requesterId;
+
+  const descriptionSection = (
+    <Card title="需求描述">
+      <div className="markdown-body">
+        <ReactMarkdown>{requirement.description}</ReactMarkdown>
+      </div>
+    </Card>
+  );
+
+  const notesSection = (
+    <Card
+      title="备注"
+      extra={
+        notesEditing ? (
+          <Space>
+            <Button size="small" onClick={handleCancelNotesEdit} disabled={notesSaving}>取消</Button>
+            <Button
+              type="primary"
+              size="small"
+              icon={<SaveOutlined />}
+              loading={notesSaving}
+              onClick={() => void handleSaveNotes()}
+            >
+              保存
+            </Button>
+          </Space>
+        ) : (
+          isAuthenticated && (
+            <Button size="small" icon={<EditOutlined />} onClick={handleStartNotesEdit}>编辑</Button>
+          )
+        )
+      }
+    >
+      <TextArea
+        value={notesEditing ? notesDraft : requirement.notes ?? ''}
+        onChange={(event) => setNotesDraft(event.target.value)}
+        placeholder="暂无备注"
+        rows={5}
+        disabled={!notesEditing}
+        showCount={notesEditing}
+      />
+    </Card>
+  );
+
+  const taskSection = (
+    <TaskTableSection
+      requirementId={requirement.id}
+      tasks={requirement.tasks ?? []}
+      canManage={isAdmin || isDeveloper}
+      onRefresh={loadRequirement}
+      onCreateTask={() => modalsRef.current?.openCreateTask()}
+    />
+  );
+
+  const tabsItems = [
+    ...(isMobile ? [] : [{
+      key: 'description', label: '需求描述',
+      children: (
+        <Space direction="vertical" size="large" className="page-stack">
+          {descriptionSection}
+          {notesSection}
+          {taskSection}
+        </Space>
+      )
+    }]),
+    {
+      key: 'reports', label: '验收报告',
+      children: <ReportsTimeline requirementId={requirement.id} isAdmin={isAdmin} />
+    },
+    {
+      key: 'history', label: <RevisionHistoryTabLabel />,
+      children: <RevisionHistoryTab requirementId={requirement.id} />
+    },
+    {
+      key: 'attachments', label: <><PaperClipOutlined /> 附件</>,
+      children: <RequirementAttachments requirementId={requirement.id} isAdmin={isAdmin} />
+    },
+  ];
+
+  const selectedTab = isMobile && activeTab === 'description' ? 'reports' : activeTab;
+
   return (
     <Space direction="vertical" size="large" className="page-stack">
       <div className="page-heading">
@@ -126,7 +214,7 @@ export function RequirementDetailPage() {
             <StatusTag status={requirement.status} />
           </Space>
           <Typography.Title level={3}>{requirement.title}</Typography.Title>
-          <Typography.Text type="secondary">
+          <Typography.Text type="secondary" className="page-heading-subtitle">
             {requirement.department} · {requirement.requester} · 更新于 {formatDateTime(requirement.updatedAt)}
           </Typography.Text>
         </div>
@@ -145,90 +233,47 @@ export function RequirementDetailPage() {
       </div>
 
       <div className="detail-grid">
+        {isMobile && (
+          <Space direction="vertical" size="large" className="page-stack requirement-detail-mobile-overview">
+            {descriptionSection}
+            {notesSection}
+            {taskSection}
+          </Space>
+        )}
+
         <Tabs
-          activeKey={activeTab}
+          activeKey={selectedTab}
           onChange={(key) => {
             if (key === 'description') searchParams.delete('tab');
             else searchParams.set('tab', key);
             setSearchParams(searchParams);
           }}
-          items={[
-            {
-              key: 'description', label: '需求描述',
-              children: (
-                <Space direction="vertical" size="large" className="page-stack">
-                  <Card title="需求描述">
-                    <div className="markdown-body">
-                      <ReactMarkdown>{requirement.description}</ReactMarkdown>
-                    </div>
-                  </Card>
-                  <Card
-                    title="备注"
-                    extra={
-                      notesEditing ? (
-                        <Space>
-                          <Button size="small" onClick={handleCancelNotesEdit} disabled={notesSaving}>取消</Button>
-                          <Button
-                            type="primary"
-                            size="small"
-                            icon={<SaveOutlined />}
-                            loading={notesSaving}
-                            onClick={() => void handleSaveNotes()}
-                          >
-                            保存
-                          </Button>
-                        </Space>
-                      ) : (
-                        isAuthenticated && (
-                          <Button size="small" icon={<EditOutlined />} onClick={handleStartNotesEdit}>编辑</Button>
-                        )
-                      )
-                    }
-                  >
-                    <TextArea
-                      value={notesEditing ? notesDraft : requirement.notes ?? ''}
-                      onChange={(event) => setNotesDraft(event.target.value)}
-                      placeholder="暂无备注"
-                      rows={5}
-                      disabled={!notesEditing}
-                      showCount={notesEditing}
-                    />
-                  </Card>
-                  <TaskTableSection
-                    requirementId={requirement.id}
-                    tasks={requirement.tasks ?? []}
-                    canManage={isAdmin || isDeveloper}
-                    onRefresh={loadRequirement}
-                    onCreateTask={() => modalsRef.current?.openCreateTask()}
-                  />
-                </Space>
-              )
-            },
-            {
-              key: 'reports', label: '验收报告',
-              children: <ReportsTimeline requirementId={requirement.id} isAdmin={isAdmin} />
-            },
-            {
-              key: 'history', label: <RevisionHistoryTabLabel />,
-              children: <RevisionHistoryTab requirementId={requirement.id} />
-            },
-            {
-              key: 'attachments', label: <><PaperClipOutlined /> 附件</>,
-              children: <RequirementAttachments requirementId={requirement.id} isAdmin={isAdmin} />
-            },
-          ]}
+          items={tabsItems}
         />
 
-        <Card title="需求信息">
+        <Card title="需求信息" className="mobile-descriptions-panel">
           <Descriptions bordered size="small" column={1}>
             <Descriptions.Item label="需求 ID">
               <Typography.Text copyable code>{requirement.id}</Typography.Text>
             </Descriptions.Item>
+            <Descriptions.Item label="提交者ID">
+              {requesterId ? (
+                <Typography.Text copyable code>{requesterId}</Typography.Text>
+              ) : (
+                <Typography.Text type="secondary">无</Typography.Text>
+              )}
+            </Descriptions.Item>
             <Descriptions.Item label="标题">{requirement.title}</Descriptions.Item>
             <Descriptions.Item label="优先级"><PriorityTag priority={requirement.priority} /></Descriptions.Item>
+            <Descriptions.Item label="类型"><TypeTag type={requirement.type} /></Descriptions.Item>
             <Descriptions.Item label="状态"><StatusTag status={requirement.status} /></Descriptions.Item>
             <Descriptions.Item label="提交者">{requirement.requester}</Descriptions.Item>
             <Descriptions.Item label="业务部门">{requirement.department}</Descriptions.Item>
+            <Descriptions.Item label="标签">
+              {requirement.tags && requirement.tags.length > 0
+                ? requirement.tags.map((tag) => <AntTag key={tag}>{tag}</AntTag>)
+                : <Typography.Text type="secondary">无</Typography.Text>}
+            </Descriptions.Item>
             <Descriptions.Item label="负责人">{requirement.assignee || '未分配'}</Descriptions.Item>
             <Descriptions.Item label="截止时间">{formatDate(requirement.dueDate)}</Descriptions.Item>
             <Descriptions.Item label="附件">
