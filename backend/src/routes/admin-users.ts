@@ -389,6 +389,63 @@ adminUsersRouter.post(
   })
 );
 
+// ─── Admin Create User (2026-06-04: 替代被关闭的公共注册) ────────────────
+
+adminUsersRouter.post(
+  '/',
+  assertAdmin,
+  asyncHandler(async (req, res) => {
+    const { name, email, password, role, internalRole } = req.body as {
+      name: string;
+      email: string;
+      password?: string;
+      role?: string;
+      internalRole?: string;
+    };
+
+    if (!name || !email) throw new HttpError(400, 'name 和 email 必填');
+
+    const validUserRoles = Object.values(UserRole);
+    const validInternalRoles = Object.values(InternalRole);
+    const userRole = (role && validUserRoles.includes(role as UserRole)) ? role as UserRole : 'developer';
+    const userInternalRole = (internalRole && validInternalRoles.includes(internalRole as InternalRole)) ? internalRole as InternalRole : null;
+
+    // Check duplicate email
+    const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    if (existing) throw new HttpError(409, `邮箱 ${email} 已存在`);
+
+    const plainPassword = password || generatePassword();
+    const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        role: userRole,
+        internalRole: userInternalRole,
+        mustChangePassword: !password,  // 自选密码不需要强制改
+      },
+      select: { id: true, name: true, email: true, role: true, internalRole: true },
+    });
+
+    await prisma.auditLog.create({
+      data: buildUserAuditLogData(req, 'USER_CREATED', user.id, {
+        targetEmail: user.email,
+        targetName: user.name,
+        role: user.role,
+        internalRole: user.internalRole,
+        selfProvidedPassword: !!password,
+      }),
+    });
+
+    res.status(201).json({
+      success: true,
+      data: { ...user, generatedPassword: password ? undefined : plainPassword },
+    });
+  })
+);
+
 // ─── Password Policy ─────────────────────────────────────────
 
 // GET /password-policy — Get current password policy
