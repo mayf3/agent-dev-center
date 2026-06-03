@@ -59,7 +59,7 @@ tasksRouter.post(
         data: {
           assignee: body.agentType,
           assigneeId: assigneeUser?.id ?? null,
-          status: requirement.status === 'pending' || requirement.status === 'rejected' ? 'approved' : undefined,
+          currentStep: requirement.currentStep || undefined,
           rejectReason: null
         }
       });
@@ -119,7 +119,7 @@ tasksRouter.get(
         requirement: {
           id: task.requirement.id,
           title: task.requirement.title,
-          status: task.requirement.status,
+          currentStep: task.requirement.currentStep,
           priority: task.requirement.priority
         }
       }))
@@ -164,7 +164,7 @@ tasksRouter.patch(
       if (body.status === 'in-progress') {
         await tx.requirement.update({
           where: { id: existing.requirementId },
-          data: { status: 'in_progress' }
+          data: { currentStep: 'in_progress' }
         });
       }
 
@@ -179,7 +179,7 @@ tasksRouter.patch(
 
         await tx.requirement.update({
           where: { id: existing.requirementId },
-          data: { status: unfinishedCount === 0 ? 'review' : 'in_progress' }
+          data: { currentStep: unfinishedCount === 0 ? 'cto_review' : 'in_progress' }
         });
       }
 
