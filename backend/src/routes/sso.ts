@@ -41,6 +41,9 @@ ssoRouter.post(
     if (!passwordMatches) {
       throw new HttpError(401, '邮箱或密码不正确');
     }
+    if (!user.enabled) {
+      throw new HttpError(401, '用户不存在或已被禁用');
+    }
 
     const safeUser = {
       id: user.id,
@@ -121,10 +124,10 @@ ssoRouter.get(
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, email: true, role: true, enabled: true },
     });
 
-    if (!user) {
+    if (!user || !user.enabled) {
       throw new HttpError(401, '用户不存在或已被禁用');
     }
 
@@ -134,7 +137,7 @@ ssoRouter.get(
 
     res.json({
       valid: true,
-      user,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
       expiresAt,
       expiresIn,
     });
