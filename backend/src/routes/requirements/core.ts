@@ -455,6 +455,7 @@ router.patch(
         rejectReason: body.rejectReason,
         gitHash: body.gitHash,
         deployVersion: body.deployVersion,
+        ...(body.workflowId ? { workflowId: body.workflowId } : {}),
       },
       include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
