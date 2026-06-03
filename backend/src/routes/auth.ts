@@ -88,6 +88,11 @@ authRouter.get(
 authRouter.post(
   '/register',
   asyncHandler(async (req, res) => {
+    // 2026-06-04: 注册入口关闭。新用户只能通过 admin POST /admin/users 创建。
+    // 原因：开放注册导致安全漏洞（任何人可注册 cto_agent/developer 角色）
+    throw new HttpError(403, '注册已关闭，请联系管理员创建账号');
+
+    /* eslint-disable no-unreachable */
     const { body } = registerSchema.parse({ body: req.body });
 
     // 邀请码校验：如果配置了 REGISTER_INVITE_CODE，则必须匹配

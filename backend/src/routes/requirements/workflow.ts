@@ -256,6 +256,21 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         }
       }
 
+      // 2026-06-04 铁律 #24 实现：按需求 type 跳过 security_review
+      // FEATURE/BUGFIX/INFRA/POSTMORTEM 类型不需要安全审查，直接跳过
+      // 只有 SECURITY 和安全相关需求才走安全审查
+      if (targetStep.name === 'security_review') {
+        const reqType = (requirement as any).type;
+        const securityTypes = ['SECURITY'];
+        if (!securityTypes.includes(reqType)) {
+          // 跳过 security_review，直接到下一步
+          const afterSecurity = getNextStep(steps, targetStep.name);
+          if (afterSecurity) {
+            targetStep = afterSecurity;
+          }
+        }
+      }
+
       // 自动解析下一步骤的 assigneeId
       const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
 
@@ -388,19 +403,20 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
   );
 
   /**
-   * GET /workflow-templates — 列出所有可用工作流模板
+   * GET /workflow-templates — 列出所有工作流模板
    * 任何已登录用户可查看（方便前端展示和 CTO 分配）
+   * 2026-06-04: 修改为返回所有模板（包括非活跃），以便诊断和修复
    */
   router.get(
     '/workflow-templates',
     asyncHandler(async (_req, res) => {
       const templates = await prisma.workflowTemplate.findMany({
-        where: { isActive: true },
         select: {
           id: true,
           name: true,
           displayName: true,
           description: true,
+          isActive: true,
           steps: true,
           createdAt: true,
         },
@@ -414,9 +430,60 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           name: t.name,
           displayName: t.displayName,
           description: t.description,
+          isActive: t.isActive,
           stepCount: (t.steps as any[]).length,
           steps: t.steps,
         })),
+      });
+    }),
+  );
+
+  /**
+   * PATCH /workflow-templates/:id/activate — 激活指定工作流模板（admin only）
+   * 2026-06-04: 用于修复无活跃模板的问题。同一时间只能有一个活跃模板。
+   */
+  router.patch(
+    '/workflow-templates/:id/activate',
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+
+      // Admin check
+      if (req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
+        throw new HttpError(403, '需要管理员权限');
+      }
+
+      // Deactivate all templates
+      await prisma.workflowTemplate.updateMany({
+        where: { isActive: true },
+        data: { isActive: false },
+      });
+
+      // Activate the specified template
+      const template = await prisma.workflowTemplate.findUnique({
+        where: { id },
+      });
+      if (!template) throw new HttpError(404, '模板不存在');
+
+      const updated = await prisma.workflowTemplate.update({
+        where: { id },
+        data: { isActive: true },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          action: 'WORKFLOW_TEMPLATE_ACTIVATED',
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          actorRole: req.user!.internalRole ?? req.user!.role,
+          targetId: id,
+          targetType: 'WorkflowTemplate',
+          details: { templateName: updated.name, displayName: updated.displayName },
+        },
+      });
+
+      res.json({
+        success: true,
+        data: { id: updated.id, name: updated.name, displayName: updated.displayName, isActive: updated.isActive },
       });
     }),
   );
