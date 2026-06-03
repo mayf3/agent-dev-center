@@ -10,8 +10,13 @@ const optionalDate = z.preprocess((value) => {
 }, z.date().optional());
 
 const nullableString = z.preprocess((value) => {
-  if (value === undefined || value === null || value === '') {
+  if (value === undefined || value === null) {
     return undefined;
+  }
+
+  // 空字符串表示主动清空（如清空 assignee），保留为 null
+  if (value === '') {
+    return null;
   }
 
   return String(value).trim();

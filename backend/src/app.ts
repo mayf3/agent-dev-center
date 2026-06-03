@@ -46,10 +46,15 @@ app.use((req, res, next) => {
   next();
 });
 
+// d7e0a85d: 生产环境禁止 localhost CORS，需显式配置 FRONTEND_ORIGIN
+const corsOrigin = env.FRONTEND_ORIGIN === '*' ? true : env.FRONTEND_ORIGIN;
+if (!corsOrigin && env.NODE_ENV === 'production') {
+  console.warn('[CORS] FRONTEND_ORIGIN not set in production — CORS disabled, only same-origin allowed');
+}
 app.use(
   cors({
-    origin: env.FRONTEND_ORIGIN === '*' ? true : env.FRONTEND_ORIGIN,
-    credentials: true
+    origin: corsOrigin || false,
+    credentials: !!env.FRONTEND_ORIGIN && env.FRONTEND_ORIGIN !== ''
   })
 );
 if (env.NODE_ENV === 'production') {

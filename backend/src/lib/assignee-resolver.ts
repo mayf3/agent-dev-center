@@ -45,13 +45,21 @@ export async function resolveAssigneeForStep(
     }
   }
 
-  // 查找匹配角色的用户
+  // 查找匹配角色的用户（按创建时间排序，保证确定性）
   const match = await prisma.user.findFirst({
     where: { internalRole: internalRole as any },
+    orderBy: { createdAt: 'asc' },
     select: { id: true },
   });
 
-  return match?.id ?? null;
+  if (match?.id) return match.id;
+
+  // 兜底：找不到匹配用户时分配给 CTO（避免 assignee 为空导致任务无人处理）
+  const cto = await prisma.user.findFirst({
+    where: { internalRole: 'cto' },
+    select: { id: true },
+  });
+  return cto?.id ?? null;
 }
 
 /**
