@@ -55,7 +55,7 @@ async function main() {
       description:
         '实现需求提交、CTO 审核、开发 Agent 分配、看板流转和完成验收的 MVP 流程。',
       priority: 'P1',
-      status: 'approved',
+      currentStep: 'approved',
       requester: '业务需求方',
       department: '平台产品',
       assignee: 'frontend-engineer',

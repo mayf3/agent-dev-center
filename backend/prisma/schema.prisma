@@ -344,6 +344,7 @@ model MarketplaceAgent {
   accessTokens  AgentAccessToken[]
   goalCard      AgentGoalCard?
   weeklyReports WeeklyReport[]
+  dailyLogs     DailyLog[]
 
   @@index([status])
   @@index([ownerId])
@@ -734,4 +735,25 @@ model WorkflowTransition {
   @@index([fromStep])
   @@index([createdAt])
   @@map("workflow_transitions")
+}
+
+// ─── Daily Log ──────────────────────────────────────────
+
+model DailyLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  agentId     String   @db.Uuid
+  agent       MarketplaceAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  date        String   // YYYY-MM-DD
+  status      String   @default("working") // working | completed | blocked | idle
+  content     String   @db.Text
+  problems    String?  @db.Text
+  submittedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([agentId, date])
+  @@index([date])
+  @@index([agentId])
+  @@index([submittedAt])
+  @@map("daily_logs")
 }
