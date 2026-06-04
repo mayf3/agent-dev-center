@@ -173,7 +173,7 @@ reportsRouter.get(
 
     const where: Prisma.RequirementReportWhereInput = {
       status: 'pending',
-      reportType: { in: ['TEST_REPORT', 'SECURITY_REVIEW'] },
+      reportType: { in: ['DEV_SELF_CHECK', 'TEST_REPORT', 'SECURITY_REVIEW'] },
     };
 
     const [reports, total] = await prisma.$transaction([
