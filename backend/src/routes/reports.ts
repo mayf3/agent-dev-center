@@ -153,6 +153,52 @@ reportsRouter.post(
 );
 
 /**
+ * GET /api/reports/pending-review
+ * QA 待审报告队列 — 返回所有 status=pending 且类型为 TEST_REPORT/SECURITY_REVIEW 的报告
+ * 仅 internalRole=qa 或 admin/cto_agent 可访问
+ */
+reportsRouter.get(
+  '/pending-review',
+  asyncHandler(async (req, res) => {
+    const actor = req.user!;
+    const isQa = actor.internalRole === 'qa';
+    const isAdmin = actor.role === 'admin' || actor.role === 'cto_agent' || actor.internalRole === 'cto';
+    if (!isQa && !isAdmin) {
+      throw new HttpError(403, '仅 QA 或管理员可查看待审报告队列');
+    }
+
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50));
+    const skip = (page - 1) * pageSize;
+
+    const where: Prisma.RequirementReportWhereInput = {
+      status: 'pending',
+      reportType: { in: ['TEST_REPORT', 'SECURITY_REVIEW'] },
+    };
+
+    const [reports, total] = await prisma.$transaction([
+      prisma.requirementReport.findMany({
+        where,
+        include: {
+          submittedByUser: { select: { id: true, name: true, email: true } },
+          requirement: { select: { id: true, title: true, currentStep: true, type: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+        skip,
+        take: pageSize,
+      }),
+      prisma.requirementReport.count({ where }),
+    ]);
+
+    res.json({
+      success: true,
+      data: reports,
+      meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+    });
+  }),
+);
+
+/**
  * GET /api/requirements/:id/reports
  * 查询需求的所有报告（需认证）
  */
