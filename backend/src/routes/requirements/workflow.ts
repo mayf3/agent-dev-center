@@ -228,18 +228,20 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
       }
 
-      // 报告校验（系统级强制，不允许 pending）
-      const { ok, missing } = await checkReportsApproved(params.id, currentStep.requiredReports);
-      if (!ok) {
-        const reportLabels: Record<string, string> = {
-          DEV_SELF_CHECK: '开发自检报告',
-          TEST_REPORT: '测试报告',
-          SECURITY_REVIEW: '安全检查报告',
-          CTO_REVIEW: 'CTO验收报告',
-          DEPLOY_CONFIRM: '部署确认报告',
-        };
-        const labels = missing.map(t => reportLabels[t] ?? t).join('、');
-        throw new HttpError(400, `推进失败：缺少已通过的报告 — ${labels}`);
+      // 当前步骤的报告校验（离开当前步骤也需要通过该步骤要求的报告）
+      if (currentStep.requiredReports.length > 0) {
+        const { ok, missing } = await checkReportsApproved(params.id, currentStep.requiredReports);
+        if (!ok) {
+          const reportLabels: Record<string, string> = {
+            DEV_SELF_CHECK: '开发自检报告',
+            TEST_REPORT: '测试报告',
+            SECURITY_REVIEW: '安全检查报告',
+            CTO_REVIEW: 'CTO验收报告',
+            DEPLOY_CONFIRM: '部署确认报告',
+          };
+          const labels = missing.map(t => reportLabels[t] ?? t).join('、');
+          throw new HttpError(400, `推进失败：当前步骤缺少已通过的报告 — ${labels}`);
+        }
       }
 
       // 找下一步
@@ -268,6 +270,22 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           if (afterSecurity) {
             targetStep = afterSecurity;
           }
+        }
+      }
+
+      // 目标步骤的报告校验（进入下一步必须满足该步骤的 requiredReports）
+      if (targetStep.requiredReports.length > 0) {
+        const { ok: targetOk, missing: targetMissing } = await checkReportsApproved(params.id, targetStep.requiredReports);
+        if (!targetOk) {
+          const reportLabels: Record<string, string> = {
+            DEV_SELF_CHECK: '开发自检报告',
+            TEST_REPORT: '测试报告',
+            SECURITY_REVIEW: '安全检查报告',
+            CTO_REVIEW: 'CTO验收报告',
+            DEPLOY_CONFIRM: '部署确认报告',
+          };
+          const labels = targetMissing.map(t => reportLabels[t] ?? t).join('、');
+          throw new HttpError(400, `推进失败：进入「${targetStep.displayName}」需要已通过的报告 — ${labels}`);
         }
       }
 
@@ -445,7 +463,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
   router.patch(
     '/workflow-templates/:id/activate',
     asyncHandler(async (req, res) => {
-      const { id } = req.params;
+      const id = req.params.id as string;
 
       // Admin check
       if (req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
@@ -474,10 +492,9 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           action: 'WORKFLOW_TEMPLATE_ACTIVATED',
           actorId: req.user!.id,
           actorName: req.user!.name,
-          actorRole: req.user!.internalRole ?? req.user!.role,
           targetId: id,
           targetType: 'WorkflowTemplate',
-          details: { templateName: updated.name, displayName: updated.displayName },
+          details: { templateName: updated.name, displayName: updated.displayName } as any,
         },
       });
 
