@@ -75,10 +75,31 @@ router.post(
         requester: body.requester ?? actor.name, requesterId: actor.id,
         department: body.department,
         assignee: createAssigneeName, assigneeId: createAssigneeId,
-        dueDate: body.dueDate, attachment: body.attachment
+        dueDate: body.dueDate, attachment: body.attachment,
+        dependsOnIds: body.dependsOnIds ?? []
       },
       include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
+
+    // 反向更新被依赖的需求的 blockedBy
+    if (body.dependsOnIds && body.dependsOnIds.length > 0) {
+      // 验证依赖的需求存在
+      const dependencies = await prisma.requirement.findMany({
+        where: { id: { in: body.dependsOnIds } },
+        select: { id: true, blockedBy: true },
+      });
+      if (dependencies.length !== body.dependsOnIds.length) {
+        throw new HttpError(400, `部分依赖需求不存在`);
+      }
+      // 更新每个被依赖需求的 blockedBy
+      for (const dep of dependencies) {
+        const newBlockedBy = [...(dep.blockedBy || []), requirement.id];
+        await prisma.requirement.update({
+          where: { id: dep.id },
+          data: { blockedBy: newBlockedBy },
+        });
+      }
+    }
 
     void notifyEvent('requirement.submitted', {
       id: requirement.id, title: requirement.title, actor: actor.name, assignee: createAssigneeName
@@ -290,7 +311,27 @@ router.get(
     if (!requirement) throw new HttpError(404, '需求不存在');
     if (!canReadRequirement(req.user!, requirement)) throw new HttpError(403, '无权查看该需求');
 
-    res.json(serializeRequirement(requirement));
+    // 查询依赖的需求详情
+    const dependsOn = requirement.dependsOnIds.length > 0
+      ? await prisma.requirement.findMany({
+          where: { id: { in: requirement.dependsOnIds } },
+          select: { id: true, title: true, currentStep: true, priority: true, status: true },
+        })
+      : [];
+
+    // 查询被哪些需求依赖
+    const blocks = requirement.blockedBy.length > 0
+      ? await prisma.requirement.findMany({
+          where: { id: { in: requirement.blockedBy } },
+          select: { id: true, title: true, currentStep: true, priority: true, status: true },
+        })
+      : [];
+
+    res.json({
+      ...serializeRequirement(requirement),
+      dependsOn,
+      blocks,
+    });
   })
 );
 
@@ -371,10 +412,33 @@ router.put(
         type: body.type, tags: body.tags,
         requester: body.requester, department: body.department,
         assignee: assigneeName, assigneeId, dueDate: body.dueDate, attachment: body.attachment,
-        notes: body.notes
+        notes: body.notes,
+        dependsOnIds: body.dependsOnIds
       },
       include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
+
+    // 处理 dependsOnIds 变化：更新被依赖需求的 blockedBy 反向引用
+    if (body.dependsOnIds !== undefined) {
+      const oldDeps = new Set(existing.dependsOnIds || []);
+      const newDeps = new Set(body.dependsOnIds);
+
+      // 新增的依赖：给被依赖需求加上此需求的 ID
+      for (const depId of [...newDeps].filter(id => !oldDeps.has(id))) {
+        const dep = await prisma.requirement.findUnique({ where: { id: depId }, select: { id: true, blockedBy: true } });
+        if (!dep) continue;
+        const newBlockedBy = [...(dep.blockedBy || []), params.id];
+        await prisma.requirement.update({ where: { id: depId }, data: { blockedBy: newBlockedBy } });
+      }
+
+      // 移除的依赖：从被依赖需求的 blockedBy 中删除此需求的 ID
+      for (const depId of [...oldDeps].filter(id => !newDeps.has(id))) {
+        const dep = await prisma.requirement.findUnique({ where: { id: depId }, select: { id: true, blockedBy: true } });
+        if (!dep) continue;
+        const newBlockedBy = (dep.blockedBy || []).filter(id => id !== params.id);
+        await prisma.requirement.update({ where: { id: depId }, data: { blockedBy: newBlockedBy } });
+      }
+    }
 
     await prisma.requirementRevision.create({
       data: {
