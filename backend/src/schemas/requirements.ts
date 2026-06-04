@@ -68,7 +68,9 @@ export const patchRequirementSchema = requirementIdSchema.extend({
       rejectReason: nullableString,
       gitHash: z.string().trim().optional(),
       deployVersion: z.string().trim().optional(),
-      workflowId: z.string().trim().optional()
+      workflowId: z.string().trim().optional(),
+      dependsOnIds: z.array(z.string().uuid()).optional().default([]),
+      blockedBy: z.array(z.string().uuid()).optional().default([])
     })
     .refine((body) => Object.keys(body).length > 0, {
       message: '至少提供一个要更新的字段'
@@ -88,7 +90,9 @@ export const updateRequirementSchema = requirementIdSchema.extend({
       assignee: nullableString,
       dueDate: optionalDate,
       attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
-      notes: z.string().optional()
+      notes: z.string().optional(),
+      dependsOnIds: z.array(z.string().uuid()).max(20).optional().default([]),
+      blockedBy: z.array(z.string().uuid()).max(20).optional().default([])
     })
     .refine((body) => Object.keys(body).length > 0, {
       message: '至少提供一个要更新的字段'

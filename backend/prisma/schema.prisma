@@ -170,6 +170,8 @@ model Requirement {
   tags                String[]              @default([])
   gitHash             String?
   deployVersion       String?
+  dependsOnIds        String[]              @default([]) @map("depends_on_ids")
+  blockedBy           String[]              @default([]) @map("blocked_by")
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   tasks               Task[]
