@@ -16,6 +16,14 @@ const server = app.listen(env.PORT, async () => {
   } catch (err) {
     console.error('[startup] Failed to ensure workflow templates:', err);
   }
+
+  // 启动时确保 marketplace_agents 有基础数据
+  try {
+    const { ensureMarketplaceAgents } = await import('./lib/seed-agents.js');
+    await ensureMarketplaceAgents();
+  } catch (err) {
+    console.error('[startup] Failed to seed marketplace agents:', err);
+  }
 });
 
 // ─── 自动催办 Cron ────────────────────────────────────────
