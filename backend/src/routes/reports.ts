@@ -1,13 +1,14 @@
 import { Prisma } from '@prisma/client';
 import { Router } from 'express';
-import { authRequired, requireRoles } from '../middleware/auth.js';
+import { authRequired } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { notifyEvent } from '../utils/notifications.js';
 import { archiveRecord } from '../lib/archive.js';
-import { InternalRole, ReportType } from '@prisma/client';
+import { ReportType } from '@prisma/client';
 import { requireInternalRole } from '../middleware/internal-workflow.js';
+import { getPlatformRoles, hasPlatformRole, isPlatformAdmin } from '../lib/platform-roles.js';
 import {
   submitReportSchema,
   listReportsSchema,
@@ -27,24 +28,44 @@ reportsRouter.use(authRequired);
  *
  * 规则（写死原则）：
  * - DEV_SELF_CHECK → 需求 assignee 可提
- * - TEST_REPORT → 仅 internal_role=tester 可提
- * - SECURITY_REVIEW → 仅 internal_role=security 可提
- * - CTO_REVIEW → 仅 internal_role=cto（admin）可提
- * - DEPLOY_CONFIRM → 仅 internal_role=ops 可提
+ * - TEST_REPORT → 仅 adc:tester 可提
+ * - SECURITY_REVIEW → 仅 adc:security 可提
+ * - CTO_REVIEW → 仅 adc:admin 可提
+ * - DEPLOY_CONFIRM → 仅 adc:ops 可提
  * - POSTMORTEM → 任何认证用户可提（全员验尸文化）
  * - ⛔ admin 不能代提交任何报告（allowAdmin: 已废除）
- * - ⛔ 角色校验使用 internal_role（因为所有 Agent 的 role 字段都是 'developer'）
+ * - ⛔ 角色校验优先使用 roles，兼容期 fallback 到 internalRole
  */
-const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role' | 'any'; internalRoles?: InternalRole[]; allowAdmin?: boolean }> = {
+const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role' | 'any'; platformRoles?: string[]; allowAdmin?: boolean }> = {
   DEV_SELF_CHECK:    { mode: 'assignee', allowAdmin: false },
-  TEST_REPORT:       { mode: 'role', internalRoles: ['tester'], allowAdmin: false },
-  SECURITY_REVIEW:   { mode: 'role', internalRoles: ['security'], allowAdmin: false },
-  CTO_REVIEW:        { mode: 'role', internalRoles: ['cto'], allowAdmin: true },
-  DEPLOY_CONFIRM:    { mode: 'role', internalRoles: ['ops'], allowAdmin: false },
+  TEST_REPORT:       { mode: 'role', platformRoles: ['adc:tester'], allowAdmin: false },
+  SECURITY_REVIEW:   { mode: 'role', platformRoles: ['adc:security'], allowAdmin: false },
+  CTO_REVIEW:        { mode: 'role', platformRoles: ['adc:admin'], allowAdmin: true },
+  DEPLOY_CONFIRM:    { mode: 'role', platformRoles: ['adc:ops'], allowAdmin: false },
   POSTMORTEM:        { mode: 'any', allowAdmin: true },
 };
 
 const QA_BYPASS_MIN_WAIT_MS = 2 * 60 * 60 * 1000;
+
+const WORKFLOW_STEP_PLATFORM_ROLES: Record<string, string[]> = {
+  cto: ['adc:admin'],
+  admin: ['adc:admin'],
+  developer: ['adc:developer'],
+  tester: ['adc:tester'],
+  security: ['adc:security'],
+  ops: ['adc:ops'],
+  pm: ['adc:pm', 'adc:viewer'],
+  requester: ['adc:pm', 'adc:viewer'],
+};
+
+function describeUserRoles(user: Express.AuthUser): string {
+  return getPlatformRoles(user).join(', ') || user.internalRole || user.role;
+}
+
+function hasWorkflowStepRole(user: Express.AuthUser, stepRole: string): boolean {
+  const platformRoles = WORKFLOW_STEP_PLATFORM_ROLES[stepRole] ?? [];
+  return platformRoles.some(role => hasPlatformRole(user, role));
+}
 
 /**
  * 校验提交者是否有权提交该类型的报告
@@ -53,18 +74,14 @@ const QA_BYPASS_MIN_WAIT_MS = 2 * 60 * 60 * 1000;
  * 验证记录：docs/postmortem-cto-hack-20260521.md
  */
 async function validateReportRole(
-  userId: string,
-  userRole: string,
-  userName: string,
-  userEmail: string,
+  user: Express.AuthUser,
   reportType: string,
   requirementId: string,
-  internalRole?: string,
 ): Promise<void> {
   const rule = REPORT_ROLE_MAP[reportType];
   if (!rule) return; // 未知类型暂不限制
 
-  const isAdminEnv = userRole === 'admin' || userRole === 'cto_agent';
+  const isAdminEnv = isPlatformAdmin(user);
 
   // admin 特赦：仅 allowAdmin=true 时放行（目前只有 CTO_REVIEW 和 POSTMORTEM）
   if (isAdminEnv && rule.allowAdmin) {
@@ -72,8 +89,8 @@ async function validateReportRole(
     if (rule.mode === 'assignee') {
       throw new HttpError(403, `⛔ ${reportType} 仅需求 assignee 可提交，admin 不能代提交`);
     }
-    if (rule.internalRoles && rule.internalRoles.length > 0 && !rule.internalRoles.includes('cto')) {
-      throw new HttpError(403, `⛔ ${reportType} 仅 ${rule.internalRoles.join('/')} 可提交，admin 不能代提交`);
+    if (rule.platformRoles && rule.platformRoles.length > 0 && !rule.platformRoles.includes('adc:admin')) {
+      throw new HttpError(403, `⛔ ${reportType} 仅 ${rule.platformRoles.join('/')} 可提交，admin 不能代提交`);
     }
     return; // admin 提交 CTO_REVIEW / POSTMORTEM → 放行
   }
@@ -83,12 +100,11 @@ async function validateReportRole(
     throw new HttpError(403, `⛔ admin 不能提交 ${reportType} 报告，请使用对应角色的 ADC 账号自行提交`);
   }
 
-  // role 模式：使用 internal_role 校验
-  // 注意：用 internal_role（测试工程师 = tester，安全卫士 = security）而非 role（全是 developer）
-  if (rule.mode === 'role' && rule.internalRoles && rule.internalRoles.length > 0) {
-    if (internalRole && rule.internalRoles.includes(internalRole as InternalRole)) return;
-    const allowed = rule.internalRoles.map(r => `internal_role=${r}`).join(' 或 ');
-    throw new HttpError(403, `${reportType} 报告仅 ${allowed} 可提交（你的 internal_role: ${internalRole ?? '未设置'}）`);
+  // role 模式：优先使用平台 roles 校验，兼容期 fallback 由 helper 处理
+  if (rule.mode === 'role' && rule.platformRoles && rule.platformRoles.length > 0) {
+    if (rule.platformRoles.some(role => hasPlatformRole(user, role))) return;
+    const allowed = rule.platformRoles.map(r => `role=${r}`).join(' 或 ');
+    throw new HttpError(403, `${reportType} 报告仅 ${allowed} 可提交（你的角色: ${describeUserRoles(user)}）`);
   }
 
   // any 模式：任何认证用户都可以
@@ -100,9 +116,9 @@ async function validateReportRole(
       where: { id: requirementId },
       select: { assigneeId: true, assignee: true },
     });
-    if (requirement?.assigneeId === userId) return;
+    if (requirement?.assigneeId === user.id) return;
     // fallback: 如果 assigneeId 为空，用 name/email 匹配（兼容旧数据）
-    if (requirement?.assignee && (requirement.assignee === userName || requirement.assignee === userEmail)) return;
+    if (requirement?.assignee && (requirement.assignee === user.name || requirement.assignee === user.email)) return;
     throw new HttpError(403, `${reportType} 仅需求 assignee 可提交，当前 assignee: ${requirement?.assignee ?? '未分配'}`);
   }
 
@@ -124,12 +140,12 @@ reportsRouter.post(
     // 确认需求存在
     const requirement = await prisma.requirement.findUnique({
       where: { id: params.id },
-      include: { assigneeUser: { select: { name: true } } },
+      include: { assigneeUser: { select: { name: true, roles: true } } },
     });
     if (!requirement) throw new HttpError(404, '需求不存在');
 
     // 校验提交者角色
-    await validateReportRole(req.user!.id, req.user!.role, req.user!.name, req.user!.email, body.reportType, params.id, req.user!.internalRole);
+    await validateReportRole(req.user!, body.reportType, params.id);
 
     const report = await prisma.requirementReport.create({
       data: {
@@ -155,14 +171,14 @@ reportsRouter.post(
 /**
  * GET /api/reports/pending-review
  * QA 待审报告队列 — 返回所有 status=pending 且类型为 TEST_REPORT/SECURITY_REVIEW 的报告
- * 仅 internalRole=qa 或 admin/cto_agent 可访问
+ * 仅 adc:qa 或 adc:admin 可访问
  */
 reportsRouter.get(
   '/pending-review',
   asyncHandler(async (req, res) => {
     const actor = req.user!;
-    const isQa = actor.internalRole === 'qa';
-    const isAdmin = actor.role === 'admin' || actor.role === 'cto_agent' || actor.internalRole === 'cto';
+    const isQa = hasPlatformRole(actor, 'qa');
+    const isAdmin = isPlatformAdmin(actor);
     if (!isQa && !isAdmin) {
       throw new HttpError(403, '仅 QA 或管理员可查看待审报告队列');
     }
@@ -180,7 +196,7 @@ reportsRouter.get(
       prisma.requirementReport.findMany({
         where,
         include: {
-          submittedByUser: { select: { id: true, name: true, email: true } },
+          submittedByUser: { select: { id: true, name: true, email: true, roles: true } },
           requirement: { select: { id: true, title: true, currentStep: true, type: true } },
         },
         orderBy: { createdAt: 'asc' },
@@ -225,7 +241,7 @@ reportsRouter.get(
     const reports = await prisma.requirementReport.findMany({
       where,
       include: {
-        submittedByUser: { select: { id: true, name: true, email: true } },
+        submittedByUser: { select: { id: true, name: true, email: true, roles: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -287,8 +303,8 @@ reportsRouter.patch(
 reportsRouter.patch(
   '/:reportId',
   asyncHandler(async (req, res, next) => {
-    // 权限检查：admin/cto_agent 直接通过，否则检查工作流步骤角色
-    const isAdminOrCto = req.user!.role === 'admin' || req.user!.role === 'cto_agent';
+    // 权限检查：adc:admin 直接通过，否则检查工作流步骤角色
+    const isAdminOrCto = isPlatformAdmin(req.user!);
     if (isAdminOrCto) return next();
 
     // 工作流角色审批：检查报告是否属于当前用户负责的工作流步骤
@@ -311,19 +327,8 @@ reportsRouter.patch(
       throw new HttpError(403, '只有 CTO 可以审批该报告（报告类型不在当前工作流步骤的待审批列表中）');
     }
 
-    // 角色匹配
-    const roleMap: Record<string, string[]> = {
-      cto: ['cto', 'admin'],
-      developer: ['developer'],
-      tester: ['tester'],
-      security: ['security'],
-      ops: ['ops'],
-      pm: ['pm', 'requester'],
-    };
-    const allowedRoles = roleMap[currentStep.role] ?? [];
-    const userRole = req.user!.internalRole ?? req.user!.role;
-    if (!allowedRoles.includes(userRole)) {
-      throw new HttpError(403, `当前步骤需要「${currentStep.role}」角色，你的角色是「${userRole}」`);
+    if (!hasWorkflowStepRole(req.user!, currentStep.role)) {
+      throw new HttpError(403, `当前步骤需要「${currentStep.role}」角色，你的角色是「${describeUserRoles(req.user!)}」`);
     }
 
     // 不能审自己提交的
@@ -501,7 +506,7 @@ reportsRouter.get(
     const report = await prisma.requirementReport.findUnique({
       where: { id: reportId },
       include: {
-        submittedByUser: { select: { id: true, name: true, email: true } },
+        submittedByUser: { select: { id: true, name: true, email: true, roles: true } },
         requirement: { select: { id: true, title: true, currentStep: true } },
       },
     });
@@ -537,9 +542,9 @@ reportsRouter.delete(
     if (!report) throw new HttpError(404, '报告不存在');
     if (report.requirementId !== params.id) throw new HttpError(400, '报告与需求不匹配');
 
-    // 权限检查：仅提交者本人或 admin/cto_agent
+    // 权限检查：仅提交者本人或 adc:admin
     const isOwner = report.submittedById === req.user!.id;
-    const isAdmin = req.user!.role === 'admin' || req.user!.role === 'cto_agent';
+    const isAdmin = isPlatformAdmin(req.user!);
     if (!isOwner && !isAdmin) throw new HttpError(403, '无权删除该报告');
 
     // 仅允许删除 pending 或 changes_requested 状态的报告

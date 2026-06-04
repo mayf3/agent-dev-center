@@ -17,6 +17,7 @@ import {
 } from '../../schemas/workflow.js';
 import { canReadRequirement } from './utils.js';
 import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
+import { hasPlatformRole, getPlatformRole } from '../../lib/platform-roles.js';
 
 // ── Types ────────────────────────────────────────────────
 
@@ -30,9 +31,14 @@ interface WorkflowStep {
 
 // ── Helpers ──────────────────────────────────────────────
 
-/** Map user internalRole to workflow step role */
-function mapUserRole(internalRole: string | null | undefined, role: string): string | null {
-  if (!internalRole) return null;
+/** Map user roles to workflow step role (platform-aware) */
+function mapUserRole(user: Express.AuthUser, role: string): string | null {
+  // 先尝试基于 roles 数组匹配
+  if (hasPlatformRole(user, role)) {
+    return role;
+  }
+  // 兼容旧 internalRole
+  if (!user.internalRole) return null;
   const mapping: Record<string, string[]> = {
     cto: ['cto', 'admin'],
     admin: ['cto', 'admin'],
@@ -42,7 +48,7 @@ function mapUserRole(internalRole: string | null | undefined, role: string): str
     ops: ['ops'],
     pm: ['pm', 'requester'],
   };
-  const allowed = mapping[internalRole] || [];
+  const allowed = mapping[user.internalRole] || [];
   return allowed.includes(role) ? role : null;
 }
 
@@ -223,9 +229,10 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
       // 角色校验（系统级强制约束）
-      const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
+      const matchedRole = mapUserRole(req.user!, currentStep.role);
       if (!matchedRole && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
-        throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
+        const platformRole = getPlatformRole(req.user!);
+        throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${platformRole ?? req.user!.internalRole ?? req.user!.role}」`);
       }
 
       // 报告校验（系统级强制，不允许 pending）
@@ -291,7 +298,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         action: 'advance',
         actorId: req.user!.id,
         actorName: req.user!.name,
-        actorRole: req.user!.internalRole ?? req.user!.role,
+        actorRole: getPlatformRole(req.user!) ?? req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
         metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
       });
@@ -333,7 +340,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
       // 角色校验
-      const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
+      const matchedRole = mapUserRole(req.user!, currentStep.role);
       if (!matchedRole && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
         throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色才能回退`);
       }
@@ -384,7 +391,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         action: 'reject',
         actorId: req.user!.id,
         actorName: req.user!.name,
-        actorRole: req.user!.internalRole ?? req.user!.role,
+        actorRole: getPlatformRole(req.user!) ?? req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
       });
 
@@ -448,7 +455,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       const { id } = req.params;
 
       // Admin check
-      if (req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
+      if (!hasPlatformRole(req.user!, 'admin') && req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
         throw new HttpError(403, '需要管理员权限');
       }
 
@@ -474,7 +481,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           action: 'WORKFLOW_TEMPLATE_ACTIVATED',
           actorId: req.user!.id,
           actorName: req.user!.name,
-          actorRole: req.user!.internalRole ?? req.user!.role,
+          actorRole: getPlatformRole(req.user!) ?? req.user!.internalRole ?? req.user!.role,
           targetId: id,
           targetType: 'WorkflowTemplate',
           details: { templateName: updated.name, displayName: updated.displayName },
@@ -529,7 +536,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       }
 
       // 检查当前用户是否可以操作
-      const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
+      const matchedRole = mapUserRole(req.user!, currentStep.role);
       const canOperate = !!matchedRole || req.user!.role === 'admin' || req.user!.role === 'cto_agent';
 
       // 检查报告完成情况
