@@ -38,7 +38,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: ['DEV_SELF_CHECK', 'DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
@@ -94,7 +94,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: ['DEV_SELF_CHECK', 'DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
@@ -150,7 +150,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: ['DEV_SELF_CHECK', 'DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
@@ -206,7 +206,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: ['DEV_SELF_CHECK', 'DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
