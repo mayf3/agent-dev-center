@@ -16,7 +16,7 @@ import path from 'node:path';
  * 这些角色是工作流的审批者/执行者，不应该被 assignee 限制。
  */
 export function canReadRequirement(user: Express.AuthUser, requirement: { requesterId: string | null; requester: string; assigneeId: string | null; assignee: string | null }) {
-  if (user.role === 'admin' || user.role === 'cto_agent') {
+  if (user.role === 'admin' || user.role === 'cto_agent' || user.internalRole === 'cto') {
     return true;
   }
 
@@ -78,8 +78,8 @@ export function canEditRequirement(user: Express.AuthUser, requirement: {
  * - developer → 只看 assignee=自己的（开发者只管自己的需求）
  */
 export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.RequirementWhereInput {
-  // 管理层：看所有
-  if (user.role === 'admin' || user.role === 'cto_agent' || user.internalRole === 'pm') {
+  // 管理层：看所有（admin/cto_agent/pm/cto）
+  if (user.role === 'admin' || user.role === 'cto_agent' || user.internalRole === 'pm' || user.internalRole === 'cto') {
     return {};
   }
 
