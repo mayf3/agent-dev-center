@@ -58,6 +58,18 @@ app.use(
     credentials: !!env.FRONTEND_ORIGIN && env.FRONTEND_ORIGIN !== ''
   })
 );
+
+// 安全头：HSTS + XSS 保护 + Content-Type 防嗅探 + 点击劫持防护
+app.use((req, res, next) => {
+  if (env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '0'); // 现代浏览器推荐禁用，依赖 CSP
+  res.removeHeader('X-Powered-By');
+  next();
+});
 if (env.NODE_ENV === 'production') {
   app.use(gatewayGuard());
 }
