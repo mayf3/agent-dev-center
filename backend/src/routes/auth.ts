@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken, authRequired } from '../middleware/auth.js';
+import { env } from '../config/env.js';
 import { loginSchema, registerSchema, changePasswordSchema, adminResetPasswordSchema, batchRegisterSchema, forceChangePasswordSchema } from '../schemas/auth.js';
 import { env } from '../config/env.js';
 import { UserRole, InternalRole } from '@prisma/client';
@@ -126,6 +127,107 @@ authRouter.post(
       refreshToken,
       user: { ...toSafeUser(safeUser), mustChangePassword },
       generatedPassword: body.password ? undefined : plainPassword  // 自选密码不返回
+    });
+  })
+);
+
+// POST /auth/sso-login — 906e46ab: 统一走 auth-service SSO 验证
+authRouter.post(
+  '/sso-login',
+  asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      throw new HttpError(400, 'email 和 password 必填');
+    }
+
+    // 尝试调用 auth-service 验证
+    try {
+      const authServiceUrl = env.AUTH_SERVICE_URL;
+      const response = await fetch(`${authServiceUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+        signal: AbortSignal.timeout(5000), // 5s 超时
+      });
+
+      if (response.ok) {
+        const data = await response.json() as { accessToken?: string; user?: { id: string; name: string; email: string; role: string } };
+
+        // auth-service 验证成功，同步/查找本地用户
+        let localUser = await prisma.user.findUnique({ where: { email } });
+        if (!localUser) {
+          // 自动创建本地用户记录（不含密码）
+          localUser = await prisma.user.create({
+            data: {
+              name: data.user?.name || email.split('@')[0],
+              email,
+              password: 'sso-managed', // SSO 用户不需要本地密码
+              role: (data.user?.role as any) || 'developer',
+              mustChangePassword: false,
+            },
+          });
+        }
+
+        // 用 auth-service 返回的 token 或签发 ADC 自己的 token
+        const safeUser = {
+          id: localUser.id,
+          name: localUser.name,
+          email: localUser.email,
+          role: localUser.role,
+          internalRole: localUser.internalRole,
+          okrRole: localUser.okrRole,
+        };
+
+        const accessToken = signAccessToken(safeUser as any);
+        const refreshToken = signRefreshToken(safeUser as any);
+
+        // 更新最后登录时间
+        prisma.user.update({ where: { id: localUser.id }, data: { lastLoginAt: new Date() } }).catch(() => {});
+
+        return res.json({
+          accessToken,
+          refreshToken,
+          user: { ...safeUser, mustChangePassword: false },
+          source: 'auth-service',
+        });
+      }
+    } catch (err) {
+      // auth-service 不可用，fallback 到本地验证
+      console.warn('[SSO] auth-service unavailable, falling back to local auth:', (err as Error).message);
+    }
+
+    // Fallback: 本地验证
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new HttpError(401, '邮箱或密码不正确');
+    }
+    const passwordMatches = await bcrypt.compare(password, user.password);
+    if (!passwordMatches) {
+      throw new HttpError(401, '邮箱或密码不正确');
+    }
+    if (!user.enabled) {
+      throw new HttpError(401, '用户不存在或已被禁用');
+    }
+
+    const safeUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      internalRole: user.internalRole,
+      okrRole: user.okrRole,
+    };
+
+    const accessToken = signAccessToken(safeUser as any);
+    const refreshToken = signRefreshToken(safeUser as any);
+
+    prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }).catch(() => {});
+
+    res.json({
+      accessToken,
+      refreshToken,
+      user: { ...safeUser, mustChangePassword: user.mustChangePassword },
+      source: 'local',
     });
   })
 );
