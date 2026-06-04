@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { HttpError } from '../../utils/http-error.js';
+import { hasPlatformRole, isPlatformAdmin } from '../../lib/platform-roles.js';
 import {
   getRequirementUploadMimeType,
   getRequirementUploadPath,
@@ -10,22 +11,32 @@ import {
 import { createReadStream, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 
+const WORKFLOW_REVIEW_ROLES = ['qa', 'tester', 'security', 'ops'] as const;
+
+function hasAnyPlatformRole(user: Express.AuthUser, roles: readonly string[]): boolean {
+  return roles.some(role => hasPlatformRole(user, role));
+}
+
+function isWorkflowReviewRole(user: Express.AuthUser): boolean {
+  return hasAnyPlatformRole(user, WORKFLOW_REVIEW_ROLES);
+}
+
 /** 权限判断：是否可查看该需求（基于 user.id）
  *
  * 2026-06-04 修复：QA/tester/security/ops 角色可查看所有需求。
  * 这些角色是工作流的审批者/执行者，不应该被 assignee 限制。
  */
 export function canReadRequirement(user: Express.AuthUser, requirement: { requesterId: string | null; requester: string; assigneeId: string | null; assignee: string | null }) {
-  if (user.role === 'admin' || user.role === 'cto_agent' || user.internalRole === 'cto') {
+  if (isPlatformAdmin(user)) {
     return true;
   }
 
   // 工作流审批角色：可查看所有需求
-  if (user.internalRole === 'qa' || user.internalRole === 'tester' || user.internalRole === 'security' || user.internalRole === 'ops') {
+  if (isWorkflowReviewRole(user)) {
     return true;
   }
 
-  if (user.role === 'requester') {
+  if (hasPlatformRole(user, 'viewer')) {
     return requirement.requesterId === user.id ||
            requirement.requester === user.name ||
            requirement.requester === user.email;
@@ -79,20 +90,20 @@ export function canEditRequirement(user: Express.AuthUser, requirement: {
  */
 export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.RequirementWhereInput {
   // 管理层：看所有（admin/cto_agent/pm/cto）
-  if (user.role === 'admin' || user.role === 'cto_agent' || user.internalRole === 'pm' || user.internalRole === 'cto') {
+  if (isPlatformAdmin(user) || hasPlatformRole(user, 'pm')) {
+    return {};
+  }
+
+  // QA/安全/测试/运维：看所有需求（他们是工作流审批者，不是需求执行者）
+  if (isWorkflowReviewRole(user)) {
     return {};
   }
 
   // 提交者：只看自己提的
-  if (user.role === 'requester' && user.internalRole !== 'qa' && user.internalRole !== 'tester' && user.internalRole !== 'security' && user.internalRole !== 'ops') {
+  if (hasPlatformRole(user, 'viewer')) {
     return {
       OR: [{ requesterId: user.id }, { requester: user.name }, { requester: user.email }]
     };
-  }
-
-  // QA/安全/测试/运维：看所有需求（他们是工作流审批者，不是需求执行者）
-  if (user.internalRole === 'qa' || user.internalRole === 'tester' || user.internalRole === 'security' || user.internalRole === 'ops') {
-    return {};
   }
 
   // 开发者：只看分配给自己的

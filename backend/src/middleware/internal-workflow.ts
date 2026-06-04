@@ -2,6 +2,7 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { InternalRole, RequirementPriority, ReportType, ReportStatus } from '@prisma/client';
 import { HttpError } from '../utils/http-error.js';
 import { prisma } from '../lib/prisma.js';
+import { hasPlatformRole } from '../lib/platform-roles.js';
 
 /**
  * P0 需求内部角色中间件
@@ -24,6 +25,7 @@ declare global {
       email: string;
       role: string;
       internalRole?: InternalRole;
+      roles?: string[];
     }
   }
 }
@@ -36,11 +38,12 @@ export function requireInternalRole(...roles: InternalRole[]): RequestHandler {
       return next(new HttpError(401, '请先登录'));
     }
 
-    if (!req.user.internalRole) {
+    const hasRequiredRole = roles.some(role => hasPlatformRole(req.user!, role));
+    if (!hasRequiredRole && !req.user.internalRole && (!req.user.roles || req.user.roles.length === 0)) {
       return next(new HttpError(403, '当前用户未分配内部角色，请联系管理员'));
     }
 
-    if (!roles.includes(req.user.internalRole)) {
+    if (!hasRequiredRole) {
       return next(new HttpError(403, `需要 ${roles.join(' 或 ')} 权限`));
     }
 
@@ -148,12 +151,12 @@ export async function enforceReportReviewFlow(req: Request, _res: Response, next
     const hasQaClearance = Boolean(report.qaReviewedAt || report.qaBypass);
 
     // 非 QA 角色尝试审批
-    if (req.user.internalRole !== InternalRole.qa && !hasQaClearance) {
+    if (!hasPlatformRole(req.user, InternalRole.qa) && !hasQaClearance) {
       return next(new HttpError(403, '测试报告和安全审查必须先经 QA 审查，再由 CTO 最终审批'));
     }
 
     // QA 已经审查，现在由 CTO 审批
-    if (req.user.internalRole === InternalRole.cto && !hasQaClearance) {
+    if (hasPlatformRole(req.user, InternalRole.cto) && !hasQaClearance) {
       return next(new HttpError(403, '请先由 QA 进行审查，CTO 才能最终审批'));
     }
   }

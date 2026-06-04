@@ -4,11 +4,13 @@ import type { SignOptions, JwtPayload } from 'jsonwebtoken';
 import type { UserRole, InternalRole } from '@prisma/client';
 import { env } from '../config/env.js';
 import { prisma } from '../lib/prisma.js';
+import { getPlatformRoles, hasPlatformRole } from '../lib/platform-roles.js';
 import { HttpError } from '../utils/http-error.js';
 import { asyncHandler } from '../utils/async-handler.js';
 
 interface TokenPayload extends JwtPayload {
   sub: string;
+  roles?: string[];
   type?: 'access' | 'refresh';
   iss?: string;
   aud?: string;
@@ -19,6 +21,13 @@ interface TokenPayload extends JwtPayload {
 const JWT_ISSUER = 'agent-dev-center';
 const JWT_AUDIENCE = 'adc-api';
 const JWT_VERSION = 'v1';
+
+function toAuthUser<T extends Express.AuthUser>(user: T): Express.AuthUser {
+  return {
+    ...user,
+    roles: getPlatformRoles(user),
+  };
+}
 
 /**
  * 生成访问令牌 (87c0d549 - JWT加固)
@@ -33,6 +42,7 @@ export function signAccessToken(user: Express.AuthUser): string {
       sub: user.id,
       name: user.name,
       role: user.role,
+      roles: getPlatformRoles(user),
       okrRole: user.okrRole,
       iss: JWT_ISSUER,
       aud: JWT_AUDIENCE,
@@ -159,32 +169,32 @@ export const authRequired = asyncHandler(async (req: Request, _res: Response, ne
     // Agent JWT: sub 是 agentId，查 User 表 by agentId
     const user = await prisma.user.findFirst({
       where: { agentId: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, permissions: true, mustChangePassword: true, enabled: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, roles: true, okrRole: true, permissions: true, mustChangePassword: true, enabled: true }
     });
     if (!user || !user.enabled) {
       throw new HttpError(401, 'Agent 不存在或已被禁用');
     }
-    req.user = user as Express.AuthUser;
+    req.user = toAuthUser(user as Express.AuthUser);
   } else if (isAuthServiceToken) {
     // auth-service JWT: sub 是 UUID, source 可能是 'email' 或 'agent-token'
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, permissions: true, mustChangePassword: true, enabled: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, roles: true, okrRole: true, permissions: true, mustChangePassword: true, enabled: true }
     });
     if (!user || !user.enabled) {
       throw new HttpError(401, '用户不存在或已被禁用');
     }
-    req.user = user as Express.AuthUser;
+    req.user = toAuthUser(user as Express.AuthUser);
   } else {
     // 用户 JWT: sub 是 UUID
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, permissions: true, mustChangePassword: true, enabled: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, roles: true, okrRole: true, permissions: true, mustChangePassword: true, enabled: true }
     });
     if (!user || !user.enabled) {
       throw new HttpError(401, '用户不存在或已被禁用');
     }
-    req.user = user as Express.AuthUser;
+    req.user = toAuthUser(user as Express.AuthUser);
   }
 
   next();
@@ -196,7 +206,7 @@ export function requireRoles(...roles: UserRole[]): RequestHandler {
       return next(new HttpError(401, '请先登录'));
     }
 
-    if (!roles.includes(req.user.role as UserRole)) {
+    if (!roles.some(role => hasPlatformRole(req.user!, role))) {
       return next(new HttpError(403, '当前角色无权执行此操作'));
     }
 

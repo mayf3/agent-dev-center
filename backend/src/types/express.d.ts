@@ -8,6 +8,7 @@ declare global {
       email: string;
       role: UserRole;
       internalRole?: InternalRole | null | undefined;
+      roles?: string[] | null | undefined;
       okrRole?: string | null | undefined;
       mustChangePassword?: boolean | null | undefined;
       enabled?: boolean | null | undefined;
