@@ -242,6 +242,11 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         throw new HttpError(400, `推进失败：缺少已通过的报告 — ${labels}`);
       }
 
+      // 铁律 #29：dev_self_check → test_env_deploy 时 gitHash 不能为空
+      if (requirement.currentStep === 'dev_self_check' && !requirement.gitHash) {
+        throw new HttpError(400, '该需求尚未关联代码提交（gitHash 为空），无法推进到部署阶段。请先 git push 并更新需求 gitHash');
+      }
+
       // 找下一步
       const nextStep = getNextStep(steps, requirement.currentStep);
       if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
