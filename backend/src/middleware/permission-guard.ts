@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import type { Permission } from '../schemas/agent-sso.js';
+import { isPlatformAdmin } from '../lib/platform-roles.js';
 
 /**
  * Agent 权限守卫中间件
@@ -16,16 +17,18 @@ export function agentPermission(required: Permission | 'admin') {
   return asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
     // 情况 1: 用户 JWT 认证（admin 角色自动通过）
     if (req.user) {
-      if (req.user.role === 'admin') return next();
+      if (isPlatformAdmin(req.user)) return next();
 
       // 查 user 的 permissions
       const { prisma } = await import('../lib/prisma.js');
       const user = await prisma.user.findUnique({
         where: { id: req.user.id },
-        select: { permissions: true, role: true },
+        select: { permissions: true, role: true, internalRole: true, roles: true },
       });
 
       if (user) {
+        if (isPlatformAdmin(user)) return next();
+
         const perms = (user.permissions as string[]) ?? [];
         if (perms.includes('admin') || perms.includes(required)) {
           return next();
@@ -42,10 +45,12 @@ export function agentPermission(required: Permission | 'admin') {
       const { prisma } = await import('../lib/prisma.js');
       const user = await prisma.user.findFirst({
         where: { agentId: req.agentAuth.agentId },
-        select: { permissions: true },
+        select: { permissions: true, role: true, internalRole: true, roles: true },
       });
 
       if (user) {
+        if (isPlatformAdmin(user)) return next();
+
         const perms = (user.permissions as string[]) ?? [];
         if (perms.includes('admin') || perms.includes(required)) {
           return next();
