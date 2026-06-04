@@ -14,6 +14,8 @@ import {
   assignWorkflowSchema,
   advanceStepSchema,
   rejectStepSchema,
+  pmApproveStepSchema,
+  pmRejectStepSchema,
 } from '../../schemas/workflow.js';
 import { canReadRequirement } from './utils.js';
 import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
@@ -27,6 +29,14 @@ interface WorkflowStep {
   requiredReports: string[];
   autoAdvance: boolean;
 }
+
+const PM_REVIEW_STEP: WorkflowStep = {
+  name: 'pm_review',
+  displayName: 'PM审批',
+  role: 'pm',
+  requiredReports: [],
+  autoAdvance: false,
+};
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -58,6 +68,22 @@ function parseSteps(stepsJson: unknown): WorkflowStep[] {
   return steps;
 }
 
+/** Dynamically add PM review without changing the stored template JSON. */
+function withPmReviewStep(steps: WorkflowStep[]): WorkflowStep[] {
+  if (steps.some(s => s.name === PM_REVIEW_STEP.name)) return steps;
+  return [{ ...PM_REVIEW_STEP }, ...steps];
+}
+
+/**
+ * Existing requirements that are already past PM review should keep the original
+ * template order, otherwise rejecting the first real step would unexpectedly go
+ * back to pm_review.
+ */
+function parseStepsForCurrentStep(stepsJson: unknown, currentStep: string): WorkflowStep[] {
+  const steps = parseSteps(stepsJson);
+  return currentStep === PM_REVIEW_STEP.name ? withPmReviewStep(steps) : steps;
+}
+
 /** Get current step definition from workflow */
 function getCurrentStep(steps: WorkflowStep[], stepName: string): WorkflowStep | undefined {
   return steps.find(s => s.name === stepName);
@@ -75,6 +101,46 @@ function getPreviousStep(steps: WorkflowStep[], currentStepName: string): Workfl
   const idx = steps.findIndex(s => s.name === currentStepName);
   if (idx <= 0) return null;
   return steps[idx - 1];
+}
+
+/** Resolve the next workflow step, including existing auto/security skip rules. */
+function getAdvanceTarget(
+  steps: WorkflowStep[],
+  currentStepName: string,
+  requirementType: unknown,
+): { nextStep: WorkflowStep; targetStep: WorkflowStep; skippedStep: string | null } {
+  const nextStep = getNextStep(steps, currentStepName);
+  if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
+
+  let targetStep = nextStep;
+
+  // 如果下一步是 auto，自动再推进一步
+  if (nextStep.autoAdvance) {
+    const afterNext = getNextStep(steps, nextStep.name);
+    if (afterNext) {
+      targetStep = afterNext;
+    }
+  }
+
+  // 2026-06-04 铁律 #24 实现：按需求 type 跳过 security_review
+  // FEATURE/BUGFIX/INFRA/POSTMORTEM 类型不需要安全审查，直接跳过
+  // 只有 SECURITY 和安全相关需求才走安全审查
+  if (targetStep.name === 'security_review') {
+    const securityTypes = ['SECURITY'];
+    if (!securityTypes.includes(String(requirementType ?? ''))) {
+      // 跳过 security_review，直接到下一步
+      const afterSecurity = getNextStep(steps, targetStep.name);
+      if (afterSecurity) {
+        targetStep = afterSecurity;
+      }
+    }
+  }
+
+  return {
+    nextStep,
+    targetStep,
+    skippedStep: targetStep.name !== nextStep.name ? nextStep.name : null,
+  };
 }
 
 /** Check if all required reports are approved */
@@ -146,28 +212,33 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       });
       if (!template) throw new HttpError(404, `工作流模板「${body.workflowName}」不存在或已停用`);
 
-      const steps = parseSteps(template.steps);
-      if (steps.length === 0) throw new HttpError(400, '工作流模板无有效步骤');
+      const templateSteps = parseSteps(template.steps);
+      if (templateSteps.length === 0) throw new HttpError(400, '工作流模板无有效步骤');
+      const steps = withPmReviewStep(templateSteps);
 
-      // 支持可选的 startStep 参数，用于迁移现有数据
-      let targetStep;
+      // 支持可选的 startStep 参数；未指定时默认从 PM 审批开始
+      let targetStep: WorkflowStep | undefined;
       if (body.startStep) {
         targetStep = steps.find(s => s.name === body.startStep);
         if (!targetStep) {
           throw new HttpError(400, `工作流中不存在步骤「${body.startStep}」，可用步骤：${steps.map(s => s.name).join(', ')}`);
         }
       } else {
-        targetStep = steps[0];
+        targetStep = steps.find(s => s.name === PM_REVIEW_STEP.name) ?? steps[0];
       }
+      const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
+
       const updateData: any = {
         workflowId: template.id,
         currentStep: targetStep.name,
+        assigneeId: newAssigneeId,
       };
 
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: updateData,
       });
+      const newAssigneeName = await getAssigneeName(newAssigneeId);
 
       await logTransition({
         requirementId: params.id,
@@ -189,6 +260,8 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           workflowDisplayName: template.displayName,
           currentStep: targetStep.name,
           currentStepDisplayName: targetStep.displayName,
+          newAssigneeId,
+          newAssigneeName,
           steps: steps.map(s => ({
             name: s.name,
             displayName: s.displayName,
@@ -218,7 +291,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
       if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
 
-      const steps = parseSteps(requirement.workflow.steps);
+      const steps = parseStepsForCurrentStep(requirement.workflow.steps, requirement.currentStep);
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
@@ -242,44 +315,24 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         throw new HttpError(400, `推进失败：缺少已通过的报告 — ${labels}`);
       }
 
-      // 找下一步
-      const nextStep = getNextStep(steps, requirement.currentStep);
-      if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
-
-      let targetStep = nextStep;
-
-      // 如果下一步是 auto，自动再推进一步
-      if (nextStep.autoAdvance) {
-        const afterNext = getNextStep(steps, nextStep.name);
-        if (afterNext) {
-          targetStep = afterNext;
-        }
-      }
-
-      // 2026-06-04 铁律 #24 实现：按需求 type 跳过 security_review
-      // FEATURE/BUGFIX/INFRA/POSTMORTEM 类型不需要安全审查，直接跳过
-      // 只有 SECURITY 和安全相关需求才走安全审查
-      if (targetStep.name === 'security_review') {
-        const reqType = (requirement as any).type;
-        const securityTypes = ['SECURITY'];
-        if (!securityTypes.includes(reqType)) {
-          // 跳过 security_review，直接到下一步
-          const afterSecurity = getNextStep(steps, targetStep.name);
-          if (afterSecurity) {
-            targetStep = afterSecurity;
-          }
-        }
-      }
+      const { nextStep, targetStep, skippedStep } = getAdvanceTarget(steps, requirement.currentStep, (requirement as any).type);
 
       // 自动解析下一步骤的 assigneeId
       const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
+      const updateData: any = {
+        currentStep: targetStep.name,
+        assigneeId: newAssigneeId,
+      };
+
+      if (currentStep.name === PM_REVIEW_STEP.name) {
+        updateData.pmApprovedAt = new Date();
+        updateData.pmApprovedBy = req.user!.name;
+        updateData.rejectReason = null;
+      }
 
       const updated = await prisma.requirement.update({
         where: { id: params.id },
-        data: {
-          currentStep: targetStep.name,
-          assigneeId: newAssigneeId,
-        },
+        data: updateData,
       });
 
       const newAssigneeName = await getAssigneeName(newAssigneeId);
@@ -293,7 +346,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         actorName: req.user!.name,
         actorRole: req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
-        metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+        metadata: { skippedAutoStep: skippedStep },
       });
 
       res.json({
@@ -328,7 +381,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
       if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
 
-      const steps = parseSteps(requirement.workflow.steps);
+      const steps = parseStepsForCurrentStep(requirement.workflow.steps, requirement.currentStep);
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
@@ -342,7 +395,10 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       let targetStepName: string;
       let targetStepDef: WorkflowStep | undefined;
 
-      if (body.targetStep) {
+      if (currentStep.name === PM_REVIEW_STEP.name) {
+        targetStepName = 'rejected';
+        targetStepDef = undefined;
+      } else if (body.targetStep) {
         // 方案A：支持指定回退到任意前序步骤
         const target = steps.find(s => s.name === body.targetStep);
         if (!target) {
@@ -372,6 +428,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         data: {
           currentStep: targetStepName,
           assigneeId: newAssigneeId,
+          ...(currentStep.name === PM_REVIEW_STEP.name ? { rejectReason: body.comment } : {}),
         },
       });
 
@@ -386,6 +443,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         actorName: req.user!.name,
         actorRole: req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
+        metadata: currentStep.name === PM_REVIEW_STEP.name ? { pmReview: true } : undefined,
       });
 
       res.json({
@@ -514,7 +572,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         });
       }
 
-      const steps = parseSteps(requirement.workflow.steps);
+      const steps = parseStepsForCurrentStep(requirement.workflow.steps, requirement.currentStep);
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) {
         return res.json({
