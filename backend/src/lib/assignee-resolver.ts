@@ -18,6 +18,7 @@ const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
   ops: 'ops',
   pm: 'pm',
   requester: 'pm',
+  qa: 'qa',  // 2026-06-05 新增 QA 步骤支持
 };
 
 /**
