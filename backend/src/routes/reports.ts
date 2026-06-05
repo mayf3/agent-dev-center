@@ -131,15 +131,50 @@ reportsRouter.post(
     // 校验提交者角色
     await validateReportRole(req.user!.id, req.user!.role, req.user!.name, req.user!.email, body.reportType, params.id, req.user!.internalRole);
 
-    const report = await prisma.requirementReport.create({
-      data: {
+    // 9da94ac1: 报告绑定工作流步骤，实现 upsert 逻辑
+    const workflowStep = requirement.currentStep ?? null;
+
+    // 检查是否已存在同类型的报告
+    const existingReport = await prisma.requirementReport.findFirst({
+      where: {
         requirementId: params.id,
         reportType: body.reportType,
-        content: body.content as Prisma.InputJsonValue,
-        submittedBy: body.submittedBy ?? req.user!.name,
-        submittedById: req.user!.id,
+        workflowStep,
       },
+      orderBy: { createdAt: 'desc' },
     });
+
+    let report;
+
+    if (existingReport) {
+      // 如果已存在且为 approved/rejected，拒绝提交
+      if (existingReport.status === 'approved' || existingReport.status === 'rejected') {
+        throw new HttpError(409, `该需求当前步骤已存在 ${body.reportType} 报告（状态：${existingReport.status}），无法重复提交`);
+      }
+
+      // 如果是 pending 或 changes_requested，则更新内容（upsert）
+      report = await prisma.requirementReport.update({
+        where: { id: existingReport.id },
+        data: {
+          content: body.content as Prisma.InputJsonValue,
+          submittedBy: body.submittedBy ?? req.user!.name,
+          submittedById: req.user!.id,
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      // 不存在则创建
+      report = await prisma.requirementReport.create({
+        data: {
+          requirementId: params.id,
+          reportType: body.reportType,
+          workflowStep,
+          content: body.content as Prisma.InputJsonValue,
+          submittedBy: body.submittedBy ?? req.user!.name,
+          submittedById: req.user!.id,
+        },
+      });
+    }
 
     void notifyEvent('report.submitted', {
       id: params.id,
