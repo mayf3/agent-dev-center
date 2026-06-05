@@ -34,12 +34,12 @@ const PM_REVIEW: StepDef = {
   autoAdvance: false,
 };
 
-/** QA 审查 DEV_SELF_CHECK 报告质量 */
+/** QA 审查 DEV_SELF_CHECK 报告质量 — 进入时不需要 approved 报告，QA 在此步骤审批 */
 const QA_REVIEW_DEV: StepDef = {
   name: 'qa_review',
   displayName: 'QA审查(开发自检)',
   role: 'qa',
-  requiredReports: ['DEV_SELF_CHECK'],
+  requiredReports: [],  // 进入不检查报告是否 approved，QA 在此步骤审批 pending 报告
   autoAdvance: false,
 };
 
@@ -49,7 +49,7 @@ const STANDARD_DEV_MIDDLE: StepDef[] = [
     name: 'test_env_deploy',
     displayName: '部署测试环境',
     role: 'ops',
-    requiredReports: [],
+    requiredReports: ['DEV_SELF_CHECK'],  // QA 审批 DSC 后才能部署
     autoAdvance: false,
   },
   {
