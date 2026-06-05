@@ -258,10 +258,14 @@ model RequirementReport {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
+  // 9da94ac1: 绑定工作流步骤，同一需求同步骤同类型只能有一份报告
+  workflowStep    String?      @map("workflow_step")
+
   @@index([requirementId])
   @@index([reportType])
   @@index([submittedBy])
   @@index([status])
+  @@unique([requirementId, reportType, workflowStep])
   @@map("requirement_reports")
 }
 
