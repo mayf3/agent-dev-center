@@ -263,23 +263,45 @@ reportsRouter.patch(
       throw new HttpError(403, '审核者和提交者不能为同一人，报告不能自己审自己');
     }
 
+    const reviewedAt = new Date();
+
     const updated = await prisma.requirementReport.update({
       where: { id: params.reportId },
       data: {
-        qaReviewedAt: new Date(),
+        qaReviewedAt: reviewedAt,
         qaReviewedBy: req.user!.name,
-        // QA 审批不改变最终状态，只是标记已审查
         reviewComment: body.reviewComment,
+        // QA 审查直接改变报告状态（2026-06-05 改进：QA 是 qa_review 步骤的 assignee，应直接审批）
+        status: body.status,
+        reviewedAt,
       },
     });
 
-    void notifyEvent('report.qa_reviewed' as any, {
+    const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
+    void notifyEvent(reportEvent as any, {
       id: params.id,
       title: report.reportType,
-      qa: req.user!.name,
+      actor: req.user!.name,
     });
 
-    res.json({ success: true, data: updated, message: 'QA 审查完成，等待 CTO 最终审批' });
+    // 如果是 rejected/changes_requested，触发报告打回逻辑
+    if (body.status === 'rejected' || body.status === 'changes_requested') {
+      const reqInfo = await prisma.requirement.findUnique({
+        where: { id: params.id },
+        select: { title: true, currentStep: true, workflowId: true, assigneeId: true, assignee: true },
+      });
+
+      if (reqInfo?.workflowId && reqInfo.currentStep) {
+        void notifyEvent('report.rejected' as any, {
+          id: params.id,
+          title: reqInfo.title,
+          reportType: report.reportType,
+          actor: req.user!.name,
+        });
+      }
+    }
+
+    res.json({ success: true, data: updated, message: `QA 审查完成，报告已${body.status === 'approved' ? '通过' : '驳回'}` });
   }),
 );
 
