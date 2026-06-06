@@ -243,11 +243,14 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
 
       let targetStep = nextStep;
 
-      // 如果下一步是 auto，自动再推进一步
-      if (nextStep.autoAdvance) {
-        const afterNext = getNextStep(steps, nextStep.name);
+      // 连续跳过 autoAdvance 步骤：如果下一步标记为 autoAdvance，
+      // 继续往下找直到遇到需要人工操作的步骤
+      while (targetStep.autoAdvance) {
+        const afterNext = getNextStep(steps, targetStep.name);
         if (afterNext) {
           targetStep = afterNext;
+        } else {
+          break;
         }
       }
 
@@ -286,6 +289,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           TEST_REPORT: '测试报告',
           SECURITY_REVIEW: '安全检查报告',
           CTO_REVIEW: 'CTO验收报告',
+          TEST_DEPLOY_CONFIRM: '测试部署确认报告',
           DEPLOY_CONFIRM: '部署确认报告',
         };
         const labels = missing.map(t => reportLabels[t] ?? t).join('、');
