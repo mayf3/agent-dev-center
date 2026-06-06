@@ -5,6 +5,7 @@ export const reportTypeValues = [
   'SECURITY_REVIEW',
   'TEST_REPORT',
   'CTO_REVIEW',
+  'TEST_DEPLOY_CONFIRM',
   'DEPLOY_CONFIRM',
   'POSTMORTEM',
 ] as const;
