@@ -254,11 +254,17 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       // 2026-06-04 铁律 #24 实现：按需求 type 跳过 security_review
       // FEATURE/BUGFIX/INFRA/POSTMORTEM 类型不需要安全审查，直接跳过
       // 只有 SECURITY 和安全相关需求才走安全审查
-      const skippedSecurityReview = targetStep.name === 'security_review';
-      if (skippedSecurityReview) {
+      //
+      // 2026-06-06 修复：跳过步骤 ≠ 跳过报告检查
+      // 跳过 security_review 时，仍然需要检查 security_review.requiredReports（TEST_REPORT）
+      // 只是不需要 SECURITY_REVIEW 报告（因为安全工程师没参与）
+      let skippedSecurityReports: string[] = [];
+      if (targetStep.name === 'security_review') {
         const reqType = (requirement as any).type;
         const securityTypes = ['SECURITY'];
         if (!securityTypes.includes(reqType)) {
+          // 记录被跳过步骤的 requiredReports（这些仍需检查）
+          skippedSecurityReports = targetStep.requiredReports;
           // 跳过 security_review，直接到下一步
           const afterSecurity = getNextStep(steps, targetStep.name);
           if (afterSecurity) {
@@ -269,19 +275,14 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
 
       // 报告校验
       // 2026-06-06 修复：检查目标步骤的 requiredReports，而非当前步骤的
-      // 比如 dev_self_check → test_env_deploy，检查 test_env_deploy 需要 DEV_SELF_CHECK
       //
       // 2026-06-06 修复2：区分"已提交"和"已通过"
-      // dev_self_check → test_env_deploy: 需要 DEV_SELF_CHECK 存在即可（submitted）
-      // test_env_deploy → testing:        需要 DEV_SELF_CHECK 已通过（approved）
       //
-      // 2026-06-06 修复3：跳过 security_review 时，同时豁免 SECURITY_REVIEW 报告要求
-      // 非 SECURITY 类型不需要安全审查，如果目标步骤（cto_review）要求 SECURITY_REVIEW，
-      // 自动从 requiredReports 中移除
-      let targetRequiredReports = targetStep.requiredReports;
-      if (skippedSecurityReview) {
-        targetRequiredReports = targetRequiredReports.filter(r => r !== 'SECURITY_REVIEW');
-      }
+      // 2026-06-06 修复3：跳过 security_review 时
+      // - security_review 的 requiredReports（TEST_REPORT）仍然要检查
+      // - SECURITY_REVIEW 报告豁免（安全工程师没参与，不需要出报告）
+      let targetRequiredReports = [...skippedSecurityReports, ...targetStep.requiredReports];
+      targetRequiredReports = targetRequiredReports.filter(r => r !== 'SECURITY_REVIEW');
       const isFirstAdvance = requirement.currentStep === 'dev_self_check' && targetStep.name === 'test_env_deploy';
       const checkMode: 'submitted' | 'approved' = isFirstAdvance ? 'submitted' : 'approved';
       const { ok, missing } = await checkReports(params.id, targetRequiredReports, checkMode);
