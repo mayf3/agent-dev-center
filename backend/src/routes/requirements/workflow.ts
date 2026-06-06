@@ -39,6 +39,7 @@ function mapUserRole(internalRole: string | null | undefined, role: string): str
     developer: ['developer'],
     tester: ['tester'],
     security: ['security'],
+    qa: ['qa'],
     ops: ['ops'],
     pm: ['pm', 'requester'],
   };
