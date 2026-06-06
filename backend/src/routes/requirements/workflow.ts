@@ -254,7 +254,8 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       // 2026-06-04 铁律 #24 实现：按需求 type 跳过 security_review
       // FEATURE/BUGFIX/INFRA/POSTMORTEM 类型不需要安全审查，直接跳过
       // 只有 SECURITY 和安全相关需求才走安全审查
-      if (targetStep.name === 'security_review') {
+      const skippedSecurityReview = targetStep.name === 'security_review';
+      if (skippedSecurityReview) {
         const reqType = (requirement as any).type;
         const securityTypes = ['SECURITY'];
         if (!securityTypes.includes(reqType)) {
@@ -273,9 +274,17 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       // 2026-06-06 修复2：区分"已提交"和"已通过"
       // dev_self_check → test_env_deploy: 需要 DEV_SELF_CHECK 存在即可（submitted）
       // test_env_deploy → testing:        需要 DEV_SELF_CHECK 已通过（approved）
+      //
+      // 2026-06-06 修复3：跳过 security_review 时，同时豁免 SECURITY_REVIEW 报告要求
+      // 非 SECURITY 类型不需要安全审查，如果目标步骤（cto_review）要求 SECURITY_REVIEW，
+      // 自动从 requiredReports 中移除
+      let targetRequiredReports = targetStep.requiredReports;
+      if (skippedSecurityReview) {
+        targetRequiredReports = targetRequiredReports.filter(r => r !== 'SECURITY_REVIEW');
+      }
       const isFirstAdvance = requirement.currentStep === 'dev_self_check' && targetStep.name === 'test_env_deploy';
       const checkMode: 'submitted' | 'approved' = isFirstAdvance ? 'submitted' : 'approved';
-      const { ok, missing } = await checkReports(params.id, targetStep.requiredReports, checkMode);
+      const { ok, missing } = await checkReports(params.id, targetRequiredReports, checkMode);
       if (!ok) {
         const reportLabels: Record<string, string> = {
           DEV_SELF_CHECK: '开发自检报告',
