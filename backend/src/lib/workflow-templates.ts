@@ -21,12 +21,21 @@ interface TemplateDef {
   steps: StepDef[];
 }
 
+const PM_REVIEW_STEP: StepDef = {
+  name: 'pm_review',
+  displayName: 'PM需求评审',
+  role: 'pm',
+  requiredReports: [],
+  autoAdvance: false,
+};
+
 const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'frontend-dev',
     displayName: '前端开发流程',
-    description: '前端需求专用：前端开发→测试→安全→CTO→部署',
+    description: 'PM评审→前端开发→测试→安全→CTO→部署',
     steps: [
+      PM_REVIEW_STEP,
       {
         name: 'dev_self_check',
         displayName: '前端开发自检',
@@ -81,8 +90,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'standard-dev',
     displayName: '标准开发流程',
-    description: '标准流程：开发自检→部署测试环境→测试→安全→CTO→部署→完成',
+    description: 'PM评审→开发自检→部署测试环境→测试→安全→CTO→部署→完成',
     steps: [
+      PM_REVIEW_STEP,
       {
         name: 'dev_self_check',
         displayName: '开发自检',
@@ -137,8 +147,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'backend-dev',
     displayName: '后端开发流程',
-    description: '后端需求：后端开发→部署测试环境→测试→安全→CTO→部署→完成',
+    description: 'PM评审→后端开发→部署测试环境→测试→安全→CTO→部署→完成',
     steps: [
+      PM_REVIEW_STEP,
       {
         name: 'dev_self_check',
         displayName: '后端开发自检',
@@ -193,8 +204,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'fullstack-dev',
     displayName: '全栈开发流程',
-    description: '全栈需求：开发→部署测试环境→测试→安全→CTO→部署→完成',
+    description: 'PM评审→开发→部署测试环境→测试→安全→CTO→部署→完成',
     steps: [
+      PM_REVIEW_STEP,
       {
         name: 'dev_self_check',
         displayName: '开发自检（前后端）',
@@ -249,8 +261,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'security-fix',
     displayName: '安全修复流程',
-    description: '安全漏洞修复专用：修复→安全验证→CTO→部署',
+    description: '安全漏洞修复：PM评审→修复→安全验证→CTO→部署',
     steps: [
+      PM_REVIEW_STEP,
       {
         name: 'dev_self_check',
         displayName: '修复自检',
@@ -291,8 +304,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'ops-deploy',
     displayName: '运维部署流程',
-    description: '纯部署/配置类需求：CTO审批→部署确认',
+    description: '纯部署/配置类：PM评审→CTO审批→部署确认',
     steps: [
+      PM_REVIEW_STEP,
       {
         name: 'cto_review',
         displayName: 'CTO审批',
