@@ -3,6 +3,12 @@
  *
  * 应用启动时自动 upsert，确保每个环境都有标准工作流模板。
  * 如需新增模板，在此文件添加即可。
+ *
+ * 设计原则：
+ * - requiredReports 检查时机：advance 到目标步骤时检查目标步骤的 requiredReports
+ * - 因此 test_env_deploy.requiredReports=[]（进入不需要报告）
+ *   testing.requiredReports=['TEST_DEPLOY_CONFIRM']（Op 部署完提交报告，Tester 才能 advance）
+ * - dev_self_check.autoAdvance=true：开发提交报告后自动跳到 qa_review
  */
 import { prisma } from './prisma.js';
 
@@ -37,6 +43,52 @@ const QA_REVIEW_STEP: StepDef = {
   autoAdvance: false,
 };
 
+// ==================== 4 个开发类模板共享步骤（pm_review → done） ====================
+const DEV_STEPS_AFTER_QA: StepDef[] = [
+  {
+    name: 'test_env_deploy',
+    displayName: '部署测试环境',
+    role: 'ops',
+    requiredReports: [],           // 进入不需要报告（QA 审批完直接进）
+    autoAdvance: false,
+  },
+  {
+    name: 'testing',
+    displayName: '测试验证',
+    role: 'tester',
+    requiredReports: ['TEST_DEPLOY_CONFIRM'],  // Op 部署完提交报告，Tester 才能工作
+    autoAdvance: false,            // 不自动跳（Tester 需要实际测试）
+  },
+  {
+    name: 'security_review',
+    displayName: '安全审查',
+    role: 'security',
+    requiredReports: ['TEST_REPORT'],
+    autoAdvance: false,
+  },
+  {
+    name: 'cto_review',
+    displayName: 'CTO验收',
+    role: 'cto',
+    requiredReports: ['SECURITY_REVIEW'],
+    autoAdvance: false,
+  },
+  {
+    name: 'deploying',
+    displayName: '部署上线',
+    role: 'ops',
+    requiredReports: ['CTO_REVIEW'],
+    autoAdvance: false,
+  },
+  {
+    name: 'done',
+    displayName: '已完成',
+    role: 'cto',
+    requiredReports: ['DEPLOY_CONFIRM'],
+    autoAdvance: false,
+  },
+];
+
 const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'frontend-dev',
@@ -49,51 +101,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         displayName: '前端开发自检',
         role: 'developer',
         requiredReports: [],
-        autoAdvance: true,
+        autoAdvance: true,           // 提交报告后自动跳到 qa_review
       },
       { ...QA_REVIEW_STEP },
-      {
-        name: 'test_env_deploy',
-        displayName: '部署测试环境',
-        role: 'ops',
-        requiredReports: ['TEST_DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
-      {
-        name: 'testing',
-        displayName: '测试验证',
-        role: 'tester',
-        requiredReports: [],
-        autoAdvance: true,
-      },
-      {
-        name: 'security_review',
-        displayName: '安全审查',
-        role: 'security',
-        requiredReports: ['TEST_REPORT'],
-        autoAdvance: false,
-      },
-      {
-        name: 'cto_review',
-        displayName: 'CTO验收',
-        role: 'cto',
-        requiredReports: ['SECURITY_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'deploying',
-        displayName: '部署上线',
-        role: 'ops',
-        requiredReports: ['CTO_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'done',
-        displayName: '已完成',
-        role: 'cto',
-        requiredReports: ['DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
+      ...DEV_STEPS_AFTER_QA,
     ],
   },
   {
@@ -110,48 +121,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         autoAdvance: true,
       },
       { ...QA_REVIEW_STEP },
-      {
-        name: 'test_env_deploy',
-        displayName: '部署测试环境',
-        role: 'ops',
-        requiredReports: ['TEST_DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
-      {
-        name: 'testing',
-        displayName: '测试验证',
-        role: 'tester',
-        requiredReports: [],
-        autoAdvance: true,
-      },
-      {
-        name: 'security_review',
-        displayName: '安全审查',
-        role: 'security',
-        requiredReports: ['TEST_REPORT'],
-        autoAdvance: false,
-      },
-      {
-        name: 'cto_review',
-        displayName: 'CTO验收',
-        role: 'cto',
-        requiredReports: ['SECURITY_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'deploying',
-        displayName: '部署上线',
-        role: 'ops',
-        requiredReports: ['CTO_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'done',
-        displayName: '已完成',
-        role: 'cto',
-        requiredReports: ['DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
+      ...DEV_STEPS_AFTER_QA,
     ],
   },
   {
@@ -168,48 +138,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         autoAdvance: true,
       },
       { ...QA_REVIEW_STEP },
-      {
-        name: 'test_env_deploy',
-        displayName: '部署测试环境',
-        role: 'ops',
-        requiredReports: ['TEST_DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
-      {
-        name: 'testing',
-        displayName: '测试验证',
-        role: 'tester',
-        requiredReports: [],
-        autoAdvance: true,
-      },
-      {
-        name: 'security_review',
-        displayName: '安全审查',
-        role: 'security',
-        requiredReports: ['TEST_REPORT'],
-        autoAdvance: false,
-      },
-      {
-        name: 'cto_review',
-        displayName: 'CTO验收',
-        role: 'cto',
-        requiredReports: ['SECURITY_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'deploying',
-        displayName: '部署上线',
-        role: 'ops',
-        requiredReports: ['CTO_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'done',
-        displayName: '已完成',
-        role: 'cto',
-        requiredReports: ['DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
+      ...DEV_STEPS_AFTER_QA,
     ],
   },
   {
@@ -226,48 +155,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         autoAdvance: true,
       },
       { ...QA_REVIEW_STEP },
-      {
-        name: 'test_env_deploy',
-        displayName: '部署测试环境',
-        role: 'ops',
-        requiredReports: ['TEST_DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
-      {
-        name: 'testing',
-        displayName: '测试验证',
-        role: 'tester',
-        requiredReports: [],
-        autoAdvance: true,
-      },
-      {
-        name: 'security_review',
-        displayName: '安全审查',
-        role: 'security',
-        requiredReports: ['TEST_REPORT'],
-        autoAdvance: false,
-      },
-      {
-        name: 'cto_review',
-        displayName: 'CTO验收',
-        role: 'cto',
-        requiredReports: ['SECURITY_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'deploying',
-        displayName: '部署上线',
-        role: 'ops',
-        requiredReports: ['CTO_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'done',
-        displayName: '已完成',
-        role: 'cto',
-        requiredReports: ['DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
+      ...DEV_STEPS_AFTER_QA,
     ],
   },
   {
