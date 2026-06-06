@@ -279,10 +279,19 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       // 报告校验
       // 2026-06-06 修复：检查目标步骤的 requiredReports，而非当前步骤的
       // 2026-06-06 修复3：跳过 security_review 步骤但保留 TEST_REPORT 检查
-      // 所有报告检查统一使用 'approved' 模式（qa_review 步骤已显式卡住 DEV_SELF_CHECK）
+      // 2026-06-06 修复4：部署确认报告（TEST_DEPLOY_CONFIRM/DEPLOY_CONFIRM）只需 submitted 模式
+      //   — Ops 自确认部署完成即可推进，不需要 CTO 审批
+      //   — CTO 审批在 cto_review/deploying 阶段统一进行
       let targetRequiredReports = [...skippedSecurityReports, ...targetStep.requiredReports];
       targetRequiredReports = targetRequiredReports.filter(r => r !== 'SECURITY_REVIEW');
-      const { ok, missing } = await checkReports(params.id, targetRequiredReports, 'approved');
+      // 部署确认报告只需提交就可，不需要审批
+      const deployReports = ['TEST_DEPLOY_CONFIRM', 'DEPLOY_CONFIRM'];
+      const needsApproval = targetRequiredReports.filter(r => !deployReports.includes(r));
+      const needsSubmitted = targetRequiredReports.filter(r => deployReports.includes(r));
+      const { ok: okApproved, missing: missingApproved } = await checkReports(params.id, needsApproval, 'approved');
+      const { ok: okSubmitted, missing: missingSubmitted } = await checkReports(params.id, needsSubmitted, 'submitted');
+      const ok = okApproved && okSubmitted;
+      const missing = [...missingApproved, ...missingSubmitted];
       if (!ok) {
         const reportLabels: Record<string, string> = {
           DEV_SELF_CHECK: '开发自检报告',
