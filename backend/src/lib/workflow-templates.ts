@@ -29,11 +29,19 @@ const PM_REVIEW_STEP: StepDef = {
   autoAdvance: false,
 };
 
+const QA_REVIEW_STEP: StepDef = {
+  name: 'qa_review',
+  displayName: 'QA质量审查',
+  role: 'qa',
+  requiredReports: ['DEV_SELF_CHECK'],
+  autoAdvance: false,
+};
+
 const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'frontend-dev',
     displayName: '前端开发流程',
-    description: 'PM评审→前端开发→测试→安全→CTO→部署',
+    description: 'PM评审→前端开发→QA审查→部署测试环境→测试→安全→CTO→部署→完成',
     steps: [
       PM_REVIEW_STEP,
       {
@@ -43,18 +51,19 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      { ...QA_REVIEW_STEP },
       {
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
       {
         name: 'testing',
         displayName: '测试验证',
         role: 'tester',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
       {
@@ -90,7 +99,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'standard-dev',
     displayName: '标准开发流程',
-    description: 'PM评审→开发自检→部署测试环境→测试→安全→CTO→部署→完成',
+    description: 'PM评审→开发自检→QA审查→部署测试环境→测试→安全→CTO→部署→完成',
     steps: [
       PM_REVIEW_STEP,
       {
@@ -100,18 +109,19 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      { ...QA_REVIEW_STEP },
       {
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
       {
         name: 'testing',
         displayName: '测试验证',
         role: 'tester',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
       {
@@ -147,7 +157,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'backend-dev',
     displayName: '后端开发流程',
-    description: 'PM评审→后端开发→部署测试环境→测试→安全→CTO→部署→完成',
+    description: 'PM评审→后端开发→QA审查→部署测试环境→测试→安全→CTO→部署→完成',
     steps: [
       PM_REVIEW_STEP,
       {
@@ -157,18 +167,19 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      { ...QA_REVIEW_STEP },
       {
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
       {
         name: 'testing',
         displayName: '测试验证',
         role: 'tester',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
       {
@@ -204,7 +215,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'fullstack-dev',
     displayName: '全栈开发流程',
-    description: 'PM评审→开发→部署测试环境→测试→安全→CTO→部署→完成',
+    description: 'PM评审→开发→QA审查→部署测试环境→测试→安全→CTO→部署→完成',
     steps: [
       PM_REVIEW_STEP,
       {
@@ -214,18 +225,19 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      { ...QA_REVIEW_STEP },
       {
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
       {
         name: 'testing',
         displayName: '测试验证',
         role: 'tester',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
       {

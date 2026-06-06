@@ -275,17 +275,11 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
 
       // 报告校验
       // 2026-06-06 修复：检查目标步骤的 requiredReports，而非当前步骤的
-      //
-      // 2026-06-06 修复2：区分"已提交"和"已通过"
-      //
-      // 2026-06-06 修复3：跳过 security_review 时
-      // - security_review 的 requiredReports（TEST_REPORT）仍然要检查
-      // - SECURITY_REVIEW 报告豁免（安全工程师没参与，不需要出报告）
+      // 2026-06-06 修复3：跳过 security_review 步骤但保留 TEST_REPORT 检查
+      // 所有报告检查统一使用 'approved' 模式（qa_review 步骤已显式卡住 DEV_SELF_CHECK）
       let targetRequiredReports = [...skippedSecurityReports, ...targetStep.requiredReports];
       targetRequiredReports = targetRequiredReports.filter(r => r !== 'SECURITY_REVIEW');
-      const isFirstAdvance = requirement.currentStep === 'dev_self_check' && targetStep.name === 'test_env_deploy';
-      const checkMode: 'submitted' | 'approved' = isFirstAdvance ? 'submitted' : 'approved';
-      const { ok, missing } = await checkReports(params.id, targetRequiredReports, checkMode);
+      const { ok, missing } = await checkReports(params.id, targetRequiredReports, 'approved');
       if (!ok) {
         const reportLabels: Record<string, string> = {
           DEV_SELF_CHECK: '开发自检报告',
