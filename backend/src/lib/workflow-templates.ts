@@ -45,7 +45,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'testing',
         displayName: '测试验证',
         role: 'tester',
-        requiredReports: [],
+        requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       {
@@ -101,7 +101,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'testing',
         displayName: '测试验证',
         role: 'tester',
-        requiredReports: [],
+        requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       {
@@ -157,7 +157,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'testing',
         displayName: '测试验证',
         role: 'tester',
-        requiredReports: [],
+        requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       {
@@ -213,7 +213,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'testing',
         displayName: '测试验证',
         role: 'tester',
-        requiredReports: [],
+        requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       {

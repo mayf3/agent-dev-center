@@ -154,7 +154,7 @@ reportsRouter.post(
 
 /**
  * GET /api/reports/pending-review
- * QA 待审报告队列 — 返回所有 status=pending 且类型为 TEST_REPORT/SECURITY_REVIEW 的报告
+ * QA 待审报告队列 — 返回所有 status=pending 且类型为 DEV_SELF_CHECK/TEST_REPORT/SECURITY_REVIEW 的报告
  * 仅 internalRole=qa 或 admin/cto_agent 可访问
  */
 reportsRouter.get(
@@ -173,7 +173,7 @@ reportsRouter.get(
 
     const where: Prisma.RequirementReportWhereInput = {
       status: 'pending',
-      reportType: { in: ['TEST_REPORT', 'SECURITY_REVIEW'] },
+      reportType: { in: ['DEV_SELF_CHECK', 'TEST_REPORT', 'SECURITY_REVIEW'] },
     };
 
     const [reports, total] = await prisma.$transaction([
