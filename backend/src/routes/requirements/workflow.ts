@@ -243,14 +243,18 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
 
       let targetStep = nextStep;
 
-      // 连续跳过 autoAdvance 步骤：如果下一步标记为 autoAdvance，
-      // 继续往下找直到遇到需要人工操作的步骤
-      while (targetStep.autoAdvance) {
-        const afterNext = getNextStep(steps, targetStep.name);
-        if (afterNext) {
-          targetStep = afterNext;
-        } else {
-          break;
+      // 2026-06-06 连续跳过 autoAdvance 步骤
+      // 仅当当前步骤本身是 autoAdvance 时才跳过（如开发者提交报告后自动跳 QA 审查）
+      // 如果是从上一步推进来的（如 PM 评审 → 开发自检），停在 dev_self_check 不跳过
+      // 否则 dev_self_check 被跳过 → 开发者没机会提交 DEV_SELF_CHECK → 报告检查死锁
+      if (currentStep.autoAdvance) {
+        while (targetStep.autoAdvance) {
+          const afterNext = getNextStep(steps, targetStep.name);
+          if (afterNext) {
+            targetStep = afterNext;
+          } else {
+            break;
+          }
         }
       }
 
@@ -282,12 +286,23 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       // 2026-06-06 修复4：部署确认报告（TEST_DEPLOY_CONFIRM/DEPLOY_CONFIRM）只需 submitted 模式
       //   — Ops 自确认部署完成即可推进，不需要 CTO 审批
       //   — CTO 审批在 cto_review/deploying 阶段统一进行
+      // 2026-06-06 修复5：autoAdvance 时目标步骤的报告用 submitted 模式
+      //   — 例如开发者提交 DEV_SELF_CHECK 后 autoAdvance 到 qa_review
+      //   — DEV_SELF_CHECK 刚提交是 pending，QA 会在 qa_review 阶段审批
+      //   — 如果要求 approved，autoAdvance 永远卡住
       let targetRequiredReports = [...skippedSecurityReports, ...targetStep.requiredReports];
       targetRequiredReports = targetRequiredReports.filter(r => r !== 'SECURITY_REVIEW');
-      // 部署确认报告只需提交就可，不需要审批
-      const deployReports = ['TEST_DEPLOY_CONFIRM', 'DEPLOY_CONFIRM'];
-      const needsApproval = targetRequiredReports.filter(r => !deployReports.includes(r));
-      const needsSubmitted = targetRequiredReports.filter(r => deployReports.includes(r));
+      // 部署确认报告和 CTO 自审报告只需提交就可，不需要审批
+      const autoSubmittedReports = ['TEST_DEPLOY_CONFIRM', 'DEPLOY_CONFIRM', 'CTO_REVIEW'];
+      // autoAdvance 时，目标步骤的报告也只需 submitted（提交即过，等接手的人来审批）
+      // 跳过 security 时的 TEST_REPORT 也只需 submitted（CTO 在 cto_review 统一审）
+      const submittedReports = [
+        ...autoSubmittedReports,
+        ...(currentStep.autoAdvance ? targetRequiredReports : []),
+        ...skippedSecurityReports,
+      ];
+      const needsApproval = targetRequiredReports.filter(r => !submittedReports.includes(r));
+      const needsSubmitted = targetRequiredReports.filter(r => submittedReports.includes(r));
       const { ok: okApproved, missing: missingApproved } = await checkReports(params.id, needsApproval, 'approved');
       const { ok: okSubmitted, missing: missingSubmitted } = await checkReports(params.id, needsSubmitted, 'submitted');
       const ok = okApproved && okSubmitted;
