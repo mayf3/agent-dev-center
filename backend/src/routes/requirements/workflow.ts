@@ -228,20 +228,6 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
       }
 
-      // 报告校验（系统级强制，不允许 pending）
-      const { ok, missing } = await checkReportsApproved(params.id, currentStep.requiredReports);
-      if (!ok) {
-        const reportLabels: Record<string, string> = {
-          DEV_SELF_CHECK: '开发自检报告',
-          TEST_REPORT: '测试报告',
-          SECURITY_REVIEW: '安全检查报告',
-          CTO_REVIEW: 'CTO验收报告',
-          DEPLOY_CONFIRM: '部署确认报告',
-        };
-        const labels = missing.map(t => reportLabels[t] ?? t).join('、');
-        throw new HttpError(400, `推进失败：缺少已通过的报告 — ${labels}`);
-      }
-
       // 找下一步
       const nextStep = getNextStep(steps, requirement.currentStep);
       if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
@@ -269,6 +255,22 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
             targetStep = afterSecurity;
           }
         }
+      }
+
+      // 报告校验（系统级强制，不允许 pending）
+      // 2026-06-06 修复：检查目标步骤的 requiredReports，而非当前步骤的
+      // 比如 dev_self_check → test_env_deploy，检查 test_env_deploy 需要 DEV_SELF_CHECK
+      const { ok, missing } = await checkReportsApproved(params.id, targetStep.requiredReports);
+      if (!ok) {
+        const reportLabels: Record<string, string> = {
+          DEV_SELF_CHECK: '开发自检报告',
+          TEST_REPORT: '测试报告',
+          SECURITY_REVIEW: '安全检查报告',
+          CTO_REVIEW: 'CTO验收报告',
+          DEPLOY_CONFIRM: '部署确认报告',
+        };
+        const labels = missing.map(t => reportLabels[t] ?? t).join('、');
+        throw new HttpError(400, `推进失败：缺少已通过的报告 — ${labels}`);
       }
 
       // 自动解析下一步骤的 assigneeId
@@ -445,7 +447,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
   router.patch(
     '/workflow-templates/:id/activate',
     asyncHandler(async (req, res) => {
-      const { id } = req.params;
+      const id = req.params.id as string;
 
       // Admin check
       if (req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
@@ -473,8 +475,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         data: {
           action: 'WORKFLOW_TEMPLATE_ACTIVATED',
           actorId: req.user!.id,
-          actorName: req.user!.name,
-          actorRole: req.user!.internalRole ?? req.user!.role,
+          actorName: req.user!.name || req.user!.email,
           targetId: id,
           targetType: 'WorkflowTemplate',
           details: { templateName: updated.name, displayName: updated.displayName },
