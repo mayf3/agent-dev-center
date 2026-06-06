@@ -33,6 +33,7 @@ export function signAccessToken(user: Express.AuthUser): string {
       sub: user.id,
       name: user.name,
       role: user.role,
+      internalRole: user.internalRole,
       okrRole: user.okrRole,
       iss: JWT_ISSUER,
       aud: JWT_AUDIENCE,
