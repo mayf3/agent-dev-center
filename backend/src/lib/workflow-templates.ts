@@ -49,14 +49,14 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         displayName: '前端开发自检',
         role: 'developer',
         requiredReports: [],
-        autoAdvance: false,
+        autoAdvance: true,
       },
       { ...QA_REVIEW_STEP },
       {
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: [],
+        requiredReports: ['TEST_DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
@@ -64,7 +64,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         displayName: '测试验证',
         role: 'tester',
         requiredReports: [],
-        autoAdvance: false,
+        autoAdvance: true,
       },
       {
         name: 'security_review',
@@ -107,14 +107,14 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         displayName: '开发自检',
         role: 'developer',
         requiredReports: [],
-        autoAdvance: false,
+        autoAdvance: true,
       },
       { ...QA_REVIEW_STEP },
       {
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: [],
+        requiredReports: ['TEST_DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
@@ -122,7 +122,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         displayName: '测试验证',
         role: 'tester',
         requiredReports: [],
-        autoAdvance: false,
+        autoAdvance: true,
       },
       {
         name: 'security_review',
@@ -165,14 +165,14 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         displayName: '后端开发自检',
         role: 'developer',
         requiredReports: [],
-        autoAdvance: false,
+        autoAdvance: true,
       },
       { ...QA_REVIEW_STEP },
       {
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: [],
+        requiredReports: ['TEST_DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
@@ -180,7 +180,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         displayName: '测试验证',
         role: 'tester',
         requiredReports: [],
-        autoAdvance: false,
+        autoAdvance: true,
       },
       {
         name: 'security_review',
@@ -223,14 +223,14 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         displayName: '开发自检（前后端）',
         role: 'developer',
         requiredReports: [],
-        autoAdvance: false,
+        autoAdvance: true,
       },
       { ...QA_REVIEW_STEP },
       {
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
-        requiredReports: [],
+        requiredReports: ['TEST_DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
@@ -238,7 +238,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         displayName: '测试验证',
         role: 'tester',
         requiredReports: [],
-        autoAdvance: false,
+        autoAdvance: true,
       },
       {
         name: 'security_review',
