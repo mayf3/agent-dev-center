@@ -78,23 +78,32 @@ function getPreviousStep(steps: WorkflowStep[], currentStepName: string): Workfl
 }
 
 /** Check if all required reports are approved */
-async function checkReportsApproved(requirementId: string, requiredReports: string[]): Promise<{ ok: boolean; missing: string[] }> {
+/** 检查需求是否有指定类型的报告（已提交/已通过），按 mode 区分：
+ * - 'submitted': 报告存在即可（pending 或 approved，排除 rejected）
+ * - 'approved':  报告必须已通过（status=approved）
+ */
+async function checkReports(requirementId: string, requiredReports: string[], mode: 'submitted' | 'approved' = 'approved'): Promise<{ ok: boolean; missing: string[] }> {
   if (requiredReports.length === 0) return { ok: true, missing: [] };
 
-  const approvedReports = await prisma.requirementReport.findMany({
+  const statusFilter = mode === 'approved' ? 'approved' : undefined;
+
+  const existingReports = await prisma.requirementReport.findMany({
     where: {
       requirementId,
       reportType: { in: requiredReports as any },
-      status: 'approved',
+      ...(statusFilter ? { status: statusFilter as any } : { status: { not: 'rejected' as any } }),
     },
     select: { reportType: true },
   });
 
-  const approvedTypes = new Set(approvedReports.map(r => r.reportType));
-  const missing = requiredReports.filter(t => !approvedTypes.has(t as any));
+  const existingTypes = new Set(existingReports.map(r => r.reportType));
+  const missing = requiredReports.filter(t => !existingTypes.has(t as any));
 
   return { ok: missing.length === 0, missing };
 }
+
+/** 兼容旧名称 */
+const checkReportsApproved = (id: string, reports: string[]) => checkReports(id, reports, 'approved');
 
 /** Write audit transition log */
 async function logTransition(params: {
@@ -257,10 +266,16 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         }
       }
 
-      // 报告校验（系统级强制，不允许 pending）
+      // 报告校验
       // 2026-06-06 修复：检查目标步骤的 requiredReports，而非当前步骤的
       // 比如 dev_self_check → test_env_deploy，检查 test_env_deploy 需要 DEV_SELF_CHECK
-      const { ok, missing } = await checkReportsApproved(params.id, targetStep.requiredReports);
+      //
+      // 2026-06-06 修复2：区分"已提交"和"已通过"
+      // dev_self_check → test_env_deploy: 需要 DEV_SELF_CHECK 存在即可（submitted）
+      // test_env_deploy → testing:        需要 DEV_SELF_CHECK 已通过（approved）
+      const isFirstAdvance = requirement.currentStep === 'dev_self_check' && targetStep.name === 'test_env_deploy';
+      const checkMode: 'submitted' | 'approved' = isFirstAdvance ? 'submitted' : 'approved';
+      const { ok, missing } = await checkReports(params.id, targetStep.requiredReports, checkMode);
       if (!ok) {
         const reportLabels: Record<string, string> = {
           DEV_SELF_CHECK: '开发自检报告',
