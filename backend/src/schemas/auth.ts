@@ -6,7 +6,7 @@ export const registerSchema = z.object({
     email: z.string().trim().email('邮箱格式不正确').transform((email) => email.toLowerCase()),
     password: z.string().min(6, '密码至少需要 6 个字符').optional(),  // bf651cbc: optional, auto-gen if omitted
     role: z.enum(['requester', 'developer', 'cto-agent']).default('requester').transform(r => r === 'cto-agent' ? 'cto_agent' : r),
-    inviteCode: z.string().optional().default('')
+    inviteCode: z.string().min(1, '邀请码不能为空')  // e03c7b39: 邀请码必填
   })
 });
 
