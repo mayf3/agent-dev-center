@@ -56,7 +56,7 @@ const DEV_STEPS_AFTER_QA: StepDef[] = [
     name: 'testing',
     displayName: '测试验证',
     role: 'tester',
-    requiredReports: ['TEST_DEPLOY_CONFIRM'],  // Op 部署完提交报告，Tester 才能工作
+    requiredReports: ['DEPLOY_CONFIRM'],  // Op 部署完提交报告，Tester 才能工作
     autoAdvance: false,            // 不自动跳（Tester 需要实际测试）
   },
   {
