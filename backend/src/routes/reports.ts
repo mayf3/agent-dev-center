@@ -275,7 +275,7 @@ reportsRouter.patch(
       qa: req.user!.name,
     });
 
-    res.json({ success: true, data: updated, message: 'QA 审查完成，等待 CTO 最终审批' });
+    res.json({ success: true, data: updated, message: 'QA 审查完成，报告已审批' });
   }),
 );
 
