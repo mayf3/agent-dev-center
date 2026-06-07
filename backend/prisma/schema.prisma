@@ -113,6 +113,7 @@ model User {
   marketplaceAgents     MarketplaceAgent[]    @relation("MarketplaceAgentOwner")
   linkedAgent           MarketplaceAgent?     @relation("AgentUserLink")
   marketplaceTasks      MarketplaceTask[]     @relation("MarketplaceRequester")
+  ownedProjects         Project[]             @relation("ProjectOwner")
 
   @@index([lastLoginAt])
   @@map("users")
@@ -759,4 +760,19 @@ model DailyLog {
   @@index([agentId])
   @@index([submittedAt])
   @@map("daily_logs")
+}
+
+model Project {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  description String?  @db.Text
+  boundaries  String?  @db.Text  // 产品边界
+  featureList String?  @db.Text  // 功能清单
+  status      String   @default("active")
+  ownerId     String?  @db.Uuid
+  owner       User?    @relation("ProjectOwner", fields: [ownerId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("projects")
 }
