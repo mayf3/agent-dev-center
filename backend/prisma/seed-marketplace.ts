@@ -8,7 +8,7 @@ async function main() {
   const users = await prisma.user.findMany({
     where: {
       internalRole: { not: null },
-      marketplaceAgent: null,  // 还没同步到 marketplace 的
+      marketplaceAgents: { none: {} },  // 还没同步到 marketplace 的
     },
   });
 
