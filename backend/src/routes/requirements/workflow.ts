@@ -239,8 +239,9 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
       // 角色校验（系统级强制约束）
+      // 35c9cea2: 移除 admin/cto 豁免，所有用户只能 advance 自己角色对应的步骤
       const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-      if (!matchedRole && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
+      if (!matchedRole) {
         throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
       }
 
@@ -394,8 +395,9 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
       // 角色校验
+      // 35c9cea2: 移除 admin/cto 豁免
       const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-      if (!matchedRole && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
+      if (!matchedRole) {
         throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色才能回退`);
       }
 
@@ -458,6 +460,104 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           newAssigneeId,
           newAssigneeName,
           comment: body.comment,
+        },
+      });
+    }),
+  );
+
+  /**
+   * POST /:id/workflow/force-advance — 管理员强制推进（35c9cea2）
+   * 仅 admin/cto，需要 force=true + reason 参数
+   * 所有操作记录审计日志
+   */
+  router.post(
+    '/:id/workflow/force-advance',
+    requireRoles('admin', 'cto_agent'),
+    asyncHandler(async (req, res) => {
+      const { params } = requirementIdSchema.parse({ params: req.params });
+      const { force, reason } = z.object({
+        force: z.literal(true),
+        reason: z.string().trim().min(5, '必须提供强制推进原因（至少5字）'),
+      }).parse(req.body);
+
+      const requirement = await prisma.requirement.findUnique({
+        where: { id: params.id },
+        include: { workflow: true },
+      });
+      if (!requirement) throw new HttpError(404, '需求不存在');
+      if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
+      if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
+
+      const steps = parseSteps(requirement.workflow.steps);
+      const currentStep = getCurrentStep(steps, requirement.currentStep);
+      if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
+
+      const nextStep = getNextStep(steps, requirement.currentStep);
+      if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
+
+      let targetStep = nextStep;
+
+      // 跳过 autoAdvance
+      if (currentStep.autoAdvance) {
+        while (targetStep.autoAdvance) {
+          const afterNext = getNextStep(steps, targetStep.name);
+          if (afterNext) { targetStep = afterNext; } else { break; }
+        }
+      }
+
+      // 跳过 security_review（同 advance 逻辑）
+      if (targetStep.name === 'security_review') {
+        const reqType = (requirement as any).type;
+        if (reqType !== 'SECURITY') {
+          const afterSecurity = getNextStep(steps, targetStep.name);
+          if (afterSecurity) { targetStep = afterSecurity; }
+        }
+      }
+
+      const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
+      const updated = await prisma.requirement.update({
+        where: { id: params.id },
+        data: { currentStep: targetStep.name, assigneeId: newAssigneeId },
+      });
+      const newAssigneeName = await getAssigneeName(newAssigneeId);
+
+      // 审计日志：强制推进必须记录
+      await logTransition({
+        requirementId: params.id,
+        fromStep: requirement.currentStep,
+        toStep: targetStep.name,
+        action: 'force-advance',
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorRole: req.user!.internalRole ?? req.user!.role,
+        comment: `[FORCE] ${reason}`,
+        metadata: { force: true, reason, skippedRole: currentStep.role },
+      });
+
+      // 额外审计日志到 AuditLog 表
+      await prisma.auditLog.create({
+        data: {
+          action: 'WORKFLOW_FORCE_ADVANCE',
+          actorId: req.user!.id,
+          actorName: req.user!.name || req.user!.email,
+          targetId: params.id,
+          targetType: 'Requirement',
+          details: { fromStep: requirement.currentStep, toStep: targetStep.name, reason },
+        },
+      });
+
+      res.json({
+        success: true,
+        data: {
+          requirementId: updated.id,
+          fromStep: requirement.currentStep,
+          toStep: targetStep.name,
+          toStepDisplayName: targetStep.displayName,
+          newAssigneeId,
+          newAssigneeName,
+          isDone: targetStep.name === steps[steps.length - 1]?.name,
+          forced: true,
+          reason,
         },
       });
     }),
@@ -588,9 +688,9 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         });
       }
 
-      // 检查当前用户是否可以操作
+      // 检查当前用户是否可以操作（35c9cea2: admin/cto 不能代操作）
       const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-      const canOperate = !!matchedRole || req.user!.role === 'admin' || req.user!.role === 'cto_agent';
+      const canOperate = !!matchedRole;
 
       // 检查报告完成情况
       const { ok: reportsReady, missing } = await checkReportsApproved(params.id, currentStep.requiredReports);
