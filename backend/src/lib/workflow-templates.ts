@@ -49,7 +49,7 @@ const DEV_STEPS_AFTER_QA: StepDef[] = [
     name: 'test_env_deploy',
     displayName: '部署测试环境',
     role: 'ops',
-    requiredReports: [],           // 进入不需要报告（QA 审批完直接进）
+    requiredReports: ['DEPLOY_CONFIRM'],  // a5dcb973: 部署确认铁律 — 必须提交 DEPLOY_CONFIRM 才能推进
     autoAdvance: false,
   },
   {
