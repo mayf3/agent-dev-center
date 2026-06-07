@@ -43,6 +43,39 @@ const QA_REVIEW_STEP: StepDef = {
   autoAdvance: false,
 };
 
+// ==================== QA 门禁步骤定义 ====================
+const QA_GATE_TEST: StepDef = {
+  name: 'qa_review_test',
+  displayName: 'QA审查测试报告',
+  role: 'qa',
+  requiredReports: ['TEST_REPORT'],
+  autoAdvance: false,
+};
+
+const QA_GATE_SECURITY: StepDef = {
+  name: 'qa_review_security',
+  displayName: 'QA审查安全报告',
+  role: 'qa',
+  requiredReports: ['SECURITY_REVIEW'],
+  autoAdvance: false,
+};
+
+const QA_GATE_CTO: StepDef = {
+  name: 'qa_review_cto',
+  displayName: 'QA审查CTO验收',
+  role: 'qa',
+  requiredReports: ['CTO_REVIEW'],
+  autoAdvance: false,
+};
+
+const QA_GATE_DEPLOY: StepDef = {
+  name: 'qa_review_deploy',
+  displayName: 'QA审查部署确认',
+  role: 'qa',
+  requiredReports: ['DEPLOY_CONFIRM'],
+  autoAdvance: false,
+};
+
 // ==================== 4 个开发类模板共享步骤（pm_review → done） ====================
 const DEV_STEPS_AFTER_QA: StepDef[] = [
   {
@@ -59,6 +92,7 @@ const DEV_STEPS_AFTER_QA: StepDef[] = [
     requiredReports: ['DEPLOY_CONFIRM'],  // Op 部署完提交报告，Tester 才能工作
     autoAdvance: false,            // 不自动跳（Tester 需要实际测试）
   },
+  { ...QA_GATE_TEST },             // QA 审查测试报告
   {
     name: 'security_review',
     displayName: '安全审查',
@@ -66,6 +100,7 @@ const DEV_STEPS_AFTER_QA: StepDef[] = [
     requiredReports: ['TEST_REPORT'],
     autoAdvance: false,
   },
+  { ...QA_GATE_SECURITY },         // QA 审查安全报告
   {
     name: 'cto_review',
     displayName: 'CTO验收',
@@ -73,6 +108,7 @@ const DEV_STEPS_AFTER_QA: StepDef[] = [
     requiredReports: ['SECURITY_REVIEW'],
     autoAdvance: false,
   },
+  { ...QA_GATE_CTO },              // QA 审查 CTO 验收
   {
     name: 'deploying',
     displayName: '部署上线',
@@ -80,6 +116,7 @@ const DEV_STEPS_AFTER_QA: StepDef[] = [
     requiredReports: ['CTO_REVIEW'],
     autoAdvance: false,
   },
+  { ...QA_GATE_DEPLOY },           // QA 审查部署确认
   {
     name: 'done',
     displayName: '已完成',
