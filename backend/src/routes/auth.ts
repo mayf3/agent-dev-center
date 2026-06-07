@@ -131,7 +131,7 @@ authRouter.post(
   '/login',
   asyncHandler(async (req, res) => {
     const { body } = loginSchema.parse({ body: req.body });
-    let user = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { email: body.email }
     });
 
