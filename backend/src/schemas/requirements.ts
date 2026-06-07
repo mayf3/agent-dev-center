@@ -20,7 +20,7 @@ const nullableString = z.preprocess((value) => {
   }
 
   return String(value).trim();
-}, z.string().optional());
+}, z.string().nullable().optional());
 
 export const createRequirementSchema = z.object({
   body: z.object({
