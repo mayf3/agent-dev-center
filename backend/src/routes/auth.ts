@@ -134,7 +134,7 @@ authRouter.post(
   '/login',
   asyncHandler(async (req, res) => {
     const { body } = loginSchema.parse({ body: req.body });
-    let user = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { email: body.email }
     });
 
@@ -361,8 +361,8 @@ authRouter.post(
   '/admin-reset-password',
   authRequired,
   asyncHandler(async (req, res) => {
-    // Only admin/cto can use this
-    if (req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
+    // c6c66d14: 铁律 #17 — 账号密码归口 admin（HR 系统），CTO 不再持有重置权限
+    if (req.user!.role !== 'admin') {
       throw new HttpError(403, '只有管理员可以重置密码');
     }
 
