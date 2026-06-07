@@ -33,7 +33,9 @@ export const createRequirementSchema = z.object({
     department: z.string().trim().min(2).max(80),
     assignee: nullableString,
     dueDate: optionalDate,
-    attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined))
+    attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
+    repoPath: z.string().trim().max(500).optional(),   // 4397e6a9: 代码仓库路径
+    branch: z.string().trim().max(200).optional()      // 4397e6a9: Git 分支名
   })
 });
 
@@ -68,6 +70,8 @@ export const patchRequirementSchema = requirementIdSchema.extend({
       rejectReason: nullableString,
       gitHash: z.string().trim().optional(),
       deployVersion: z.string().trim().optional(),
+      repoPath: z.string().trim().max(500).optional(),   // 4397e6a9
+      branch: z.string().trim().max(200).optional(),     // 4397e6a9
       workflowId: z.string().trim().optional()
     })
     .refine((body) => Object.keys(body).length > 0, {
@@ -88,7 +92,9 @@ export const updateRequirementSchema = requirementIdSchema.extend({
       assignee: nullableString,
       dueDate: optionalDate,
       attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
-      notes: z.string().optional()
+      notes: z.string().optional(),
+      repoPath: z.string().trim().max(500).optional(),   // 4397e6a9
+      branch: z.string().trim().max(200).optional()      // 4397e6a9
     })
     .refine((body) => Object.keys(body).length > 0, {
       message: '至少提供一个要更新的字段'
