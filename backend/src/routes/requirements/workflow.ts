@@ -238,6 +238,11 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
       }
 
+      // 0e0ea5f8: advance 时强制校验 gitHash 非空（无代码不推进）
+      if (!requirement.gitHash) {
+        throw new HttpError(400, '推进失败：需求未设置 gitHash，请先更新代码提交哈希');
+      }
+
       // 找下一步
       const nextStep = getNextStep(steps, requirement.currentStep);
       if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
