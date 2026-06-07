@@ -68,6 +68,18 @@ router.post(
       }
     }
 
+    // 6ca1e970: assignee 未指定时默认分配给 CTO（internalRole=cto）
+    if (!createAssigneeId) {
+      const ctoUser = await prisma.user.findFirst({
+        where: { internalRole: 'cto' },
+        select: { id: true, name: true },
+      });
+      if (ctoUser) {
+        createAssigneeId = ctoUser.id;
+        createAssigneeName = ctoUser.name;
+      }
+    }
+
     const requirement = await prisma.requirement.create({
       data: {
         title: body.title, description: body.description, priority: body.priority,

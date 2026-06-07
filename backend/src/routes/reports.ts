@@ -154,7 +154,7 @@ reportsRouter.post(
 
 /**
  * GET /api/reports/pending-review
- * QA 待审报告队列 — 返回所有 status=pending 且类型为 TEST_REPORT/SECURITY_REVIEW 的报告
+ * QA 待审报告队列 — 返回所有 status=pending 且类型为 DEV_SELF_CHECK/TEST_REPORT/SECURITY_REVIEW 的报告
  * 仅 internalRole=qa 或 admin/cto_agent 可访问
  */
 reportsRouter.get(
@@ -173,7 +173,7 @@ reportsRouter.get(
 
     const where: Prisma.RequirementReportWhereInput = {
       status: 'pending',
-      reportType: { in: ['TEST_REPORT', 'SECURITY_REVIEW'] },
+      reportType: { in: ['DEV_SELF_CHECK', 'TEST_REPORT', 'SECURITY_REVIEW'] },
     };
 
     const [reports, total] = await prisma.$transaction([
@@ -254,11 +254,6 @@ reportsRouter.patch(
     if (!report) throw new HttpError(404, '报告不存在');
     if (report.status !== 'pending') throw new HttpError(400, '该报告已审核');
 
-    // DEV_SELF_CHECK / TEST_REPORT / SECURITY_REVIEW 需要 QA 审批
-    if (report.reportType !== ReportType.DEV_SELF_CHECK && report.reportType !== ReportType.TEST_REPORT && report.reportType !== ReportType.SECURITY_REVIEW) {
-      throw new HttpError(400, '只有开发自检、测试报告和安全审查需要 QA 审批');
-    }
-
     if (report.submittedById === req.user!.id) {
       throw new HttpError(403, '审核者和提交者不能为同一人，报告不能自己审自己');
     }
@@ -266,9 +261,10 @@ reportsRouter.patch(
     const updated = await prisma.requirementReport.update({
       where: { id: params.reportId },
       data: {
-        qaReviewedAt: new Date(),
+        status: body.status,              // QA 最终审批：改为 approved/rejected
+        reviewedAt: new Date(),            // 设置最终审批时间
+        qaReviewedAt: new Date(),          // QA 审查标记
         qaReviewedBy: req.user!.name,
-        // QA 审批不改变最终状态，只是标记已审查
         reviewComment: body.reviewComment,
       },
     });
@@ -279,7 +275,7 @@ reportsRouter.patch(
       qa: req.user!.name,
     });
 
-    res.json({ success: true, data: updated, message: 'QA 审查完成，等待 CTO 最终审批' });
+    res.json({ success: true, data: updated, message: 'QA 审查完成，报告已审批' });
   }),
 );
 

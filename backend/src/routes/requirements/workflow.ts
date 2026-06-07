@@ -39,6 +39,7 @@ function mapUserRole(internalRole: string | null | undefined, role: string): str
     developer: ['developer'],
     tester: ['tester'],
     security: ['security'],
+    qa: ['qa'],
     ops: ['ops'],
     pm: ['pm', 'requester'],
   };
@@ -78,23 +79,32 @@ function getPreviousStep(steps: WorkflowStep[], currentStepName: string): Workfl
 }
 
 /** Check if all required reports are approved */
-async function checkReportsApproved(requirementId: string, requiredReports: string[]): Promise<{ ok: boolean; missing: string[] }> {
+/** 检查需求是否有指定类型的报告（已提交/已通过），按 mode 区分：
+ * - 'submitted': 报告存在即可（pending 或 approved，排除 rejected）
+ * - 'approved':  报告必须已通过（status=approved）
+ */
+async function checkReports(requirementId: string, requiredReports: string[], mode: 'submitted' | 'approved' = 'approved'): Promise<{ ok: boolean; missing: string[] }> {
   if (requiredReports.length === 0) return { ok: true, missing: [] };
 
-  const approvedReports = await prisma.requirementReport.findMany({
+  const statusFilter = mode === 'approved' ? 'approved' : undefined;
+
+  const existingReports = await prisma.requirementReport.findMany({
     where: {
       requirementId,
       reportType: { in: requiredReports as any },
-      status: 'approved',
+      ...(statusFilter ? { status: statusFilter as any } : { status: { not: 'rejected' as any } }),
     },
     select: { reportType: true },
   });
 
-  const approvedTypes = new Set(approvedReports.map(r => r.reportType));
-  const missing = requiredReports.filter(t => !approvedTypes.has(t as any));
+  const existingTypes = new Set(existingReports.map(r => r.reportType));
+  const missing = requiredReports.filter(t => !existingTypes.has(t as any));
 
   return { ok: missing.length === 0, missing };
 }
+
+/** 兼容旧名称 */
+const checkReportsApproved = (id: string, reports: string[]) => checkReports(id, reports, 'approved');
 
 /** Write audit transition log */
 async function logTransition(params: {
@@ -164,6 +174,12 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         currentStep: targetStep.name,
       };
 
+      // 自动解析目标步骤的 assignee（修复：assign-workflow 不设置 assignee 的 bug）
+      const resolvedAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
+      if (resolvedAssigneeId) {
+        updateData.assigneeId = resolvedAssigneeId;
+      }
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: updateData,
@@ -228,47 +244,87 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
       }
 
-      // 报告校验（系统级强制，不允许 pending）
-      const { ok, missing } = await checkReportsApproved(params.id, currentStep.requiredReports);
-      if (!ok) {
-        const reportLabels: Record<string, string> = {
-          DEV_SELF_CHECK: '开发自检报告',
-          TEST_REPORT: '测试报告',
-          SECURITY_REVIEW: '安全检查报告',
-          CTO_REVIEW: 'CTO验收报告',
-          DEPLOY_CONFIRM: '部署确认报告',
-        };
-        const labels = missing.map(t => reportLabels[t] ?? t).join('、');
-        throw new HttpError(400, `推进失败：缺少已通过的报告 — ${labels}`);
-      }
-
       // 找下一步
       const nextStep = getNextStep(steps, requirement.currentStep);
       if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
 
       let targetStep = nextStep;
 
-      // 如果下一步是 auto，自动再推进一步
-      if (nextStep.autoAdvance) {
-        const afterNext = getNextStep(steps, nextStep.name);
-        if (afterNext) {
-          targetStep = afterNext;
+      // 2026-06-06 连续跳过 autoAdvance 步骤
+      // 仅当当前步骤本身是 autoAdvance 时才跳过（如开发者提交报告后自动跳 QA 审查）
+      // 如果是从上一步推进来的（如 PM 评审 → 开发自检），停在 dev_self_check 不跳过
+      // 否则 dev_self_check 被跳过 → 开发者没机会提交 DEV_SELF_CHECK → 报告检查死锁
+      if (currentStep.autoAdvance) {
+        while (targetStep.autoAdvance) {
+          const afterNext = getNextStep(steps, targetStep.name);
+          if (afterNext) {
+            targetStep = afterNext;
+          } else {
+            break;
+          }
         }
       }
 
       // 2026-06-04 铁律 #24 实现：按需求 type 跳过 security_review
       // FEATURE/BUGFIX/INFRA/POSTMORTEM 类型不需要安全审查，直接跳过
       // 只有 SECURITY 和安全相关需求才走安全审查
+      //
+      // 2026-06-06 修复：跳过步骤 ≠ 跳过报告检查
+      // 跳过 security_review 时，仍然需要检查 security_review.requiredReports（TEST_REPORT）
+      // 只是不需要 SECURITY_REVIEW 报告（因为安全工程师没参与）
+      let skippedSecurityReports: string[] = [];
       if (targetStep.name === 'security_review') {
         const reqType = (requirement as any).type;
         const securityTypes = ['SECURITY'];
         if (!securityTypes.includes(reqType)) {
+          // 记录被跳过步骤的 requiredReports（这些仍需检查）
+          skippedSecurityReports = targetStep.requiredReports;
           // 跳过 security_review，直接到下一步
           const afterSecurity = getNextStep(steps, targetStep.name);
           if (afterSecurity) {
             targetStep = afterSecurity;
           }
         }
+      }
+
+      // 报告校验
+      // 2026-06-06 修复：检查目标步骤的 requiredReports，而非当前步骤的
+      // 2026-06-06 修复3：跳过 security_review 步骤但保留 TEST_REPORT 检查
+      // 2026-06-06 修复4：部署确认报告（TEST_DEPLOY_CONFIRM/DEPLOY_CONFIRM）只需 submitted 模式
+      //   — Ops 自确认部署完成即可推进，不需要 CTO 审批
+      //   — CTO 审批在 cto_review/deploying 阶段统一进行
+      // 2026-06-06 修复5：autoAdvance 时目标步骤的报告用 submitted 模式
+      //   — 例如开发者提交 DEV_SELF_CHECK 后 autoAdvance 到 qa_review
+      //   — DEV_SELF_CHECK 刚提交是 pending，QA 会在 qa_review 阶段审批
+      //   — 如果要求 approved，autoAdvance 永远卡住
+      let targetRequiredReports = [...skippedSecurityReports, ...targetStep.requiredReports];
+      targetRequiredReports = targetRequiredReports.filter(r => r !== 'SECURITY_REVIEW');
+      // 部署确认报告和 CTO 自审报告只需提交就可，不需要审批
+      const autoSubmittedReports = ['TEST_DEPLOY_CONFIRM', 'DEPLOY_CONFIRM', 'CTO_REVIEW'];
+      // autoAdvance 时，目标步骤的报告也只需 submitted（提交即过，等接手的人来审批）
+      // 跳过 security 时的 TEST_REPORT 也只需 submitted（CTO 在 cto_review 统一审）
+      const submittedReports = [
+        ...autoSubmittedReports,
+        ...(currentStep.autoAdvance ? targetRequiredReports : []),
+        ...skippedSecurityReports,
+      ];
+      const needsApproval = targetRequiredReports.filter(r => !submittedReports.includes(r));
+      const needsSubmitted = targetRequiredReports.filter(r => submittedReports.includes(r));
+      const { ok: okApproved, missing: missingApproved } = await checkReports(params.id, needsApproval, 'approved');
+      const { ok: okSubmitted, missing: missingSubmitted } = await checkReports(params.id, needsSubmitted, 'submitted');
+      const ok = okApproved && okSubmitted;
+      const missing = [...missingApproved, ...missingSubmitted];
+      if (!ok) {
+        const reportLabels: Record<string, string> = {
+          DEV_SELF_CHECK: '开发自检报告',
+          TEST_REPORT: '测试报告',
+          SECURITY_REVIEW: '安全检查报告',
+          CTO_REVIEW: 'CTO验收报告',
+          TEST_DEPLOY_CONFIRM: '测试部署确认报告',
+          DEPLOY_CONFIRM: '部署确认报告',
+        };
+        const labels = missing.map(t => reportLabels[t] ?? t).join('、');
+        throw new HttpError(400, `推进失败：缺少已通过的报告 — ${labels}`);
       }
 
       // 自动解析下一步骤的 assigneeId
@@ -445,7 +501,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
   router.patch(
     '/workflow-templates/:id/activate',
     asyncHandler(async (req, res) => {
-      const { id } = req.params;
+      const id = req.params.id as string;
 
       // Admin check
       if (req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
@@ -473,8 +529,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         data: {
           action: 'WORKFLOW_TEMPLATE_ACTIVATED',
           actorId: req.user!.id,
-          actorName: req.user!.name,
-          actorRole: req.user!.internalRole ?? req.user!.role,
+          actorName: req.user!.name || req.user!.email,
           targetId: id,
           targetType: 'WorkflowTemplate',
           details: { templateName: updated.name, displayName: updated.displayName },
