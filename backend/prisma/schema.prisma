@@ -170,6 +170,8 @@ model Requirement {
   type                RequirementType       @default(FEATURE)
   tags                String[]              @default([])
   gitHash             String?
+  repoPath            String?             // 4397e6a9: 代码仓库本地路径
+  branch              String?             // 4397e6a9: Git 分支名
   deployVersion       String?
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
