@@ -281,6 +281,25 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         }
       }
 
+      // 67b50767: 部署队列锁 — advance 到 test_env_deploy 时检查同 repoPath 是否已有需求在部署
+      if (targetStep.name === 'test_env_deploy') {
+        const reqRepoPath = (requirement as any).repoPath;
+        if (reqRepoPath) {
+          const conflicting = await prisma.requirement.findFirst({
+            where: {
+              id: { not: params.id },
+              repoPath: reqRepoPath,
+              currentStep: { in: ['test_env_deploy', 'deploying'] },
+            },
+            select: { id: true, title: true, currentStep: true },
+          });
+          if (conflicting) {
+            throw new HttpError(409, `部署队列锁：代码路径「${reqRepoPath}」已有需求「${conflicting.title}」(${conflicting.id.slice(0, 8)}) 处于 ${conflicting.currentStep} 状态，请等待其完成后再推进`);
+          }
+        }
+        // repoPath 为空时跳过锁检查（向后兼容）
+      }
+
       // 报告校验
       // 2026-06-06 修复：检查目标步骤的 requiredReports，而非当前步骤的
       // 2026-06-06 修复3：跳过 security_review 步骤但保留 TEST_REPORT 检查
