@@ -174,6 +174,12 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         currentStep: targetStep.name,
       };
 
+      // 自动解析目标步骤的 assignee（修复：assign-workflow 不设置 assignee 的 bug）
+      const resolvedAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
+      if (resolvedAssigneeId) {
+        updateData.assigneeId = resolvedAssigneeId;
+      }
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: updateData,
