@@ -87,7 +87,8 @@ router.post(
         requester: body.requester ?? actor.name, requesterId: actor.id,
         department: body.department,
         assignee: createAssigneeName, assigneeId: createAssigneeId,
-        dueDate: body.dueDate, attachment: body.attachment
+        dueDate: body.dueDate, attachment: body.attachment,
+        repoPath: body.repoPath, branch: body.branch   // 4397e6a9
       },
       include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
@@ -383,7 +384,8 @@ router.put(
         type: body.type, tags: body.tags,
         requester: body.requester, department: body.department,
         assignee: assigneeName, assigneeId, dueDate: body.dueDate, attachment: body.attachment,
-        notes: body.notes
+        notes: body.notes,
+        repoPath: body.repoPath, branch: body.branch   // 4397e6a9
       },
       include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
@@ -467,6 +469,8 @@ router.patch(
         rejectReason: body.rejectReason,
         gitHash: body.gitHash,
         deployVersion: body.deployVersion,
+        repoPath: body.repoPath,     // 4397e6a9
+        branch: body.branch,         // 4397e6a9
         ...(body.workflowId ? { workflowId: body.workflowId } : {}),
       },
       include: { tasks: true, assigneeUser: { select: { name: true } } }
