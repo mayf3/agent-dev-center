@@ -43,7 +43,7 @@ export const createRequirementSchema = z.object({
 export const listRequirementsSchema = z.object({
   query: z.object({
     page: z.coerce.number().int().positive().default(1),
-    pageSize: z.coerce.number().int().positive().max(100).default(10),
+    pageSize: z.coerce.number().int().min(1).transform(v => Math.min(v, 100)).default(10),
     currentStep: z.string().trim().min(1).max(80).optional(),
     status: z.enum(requirementStatusValues).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
