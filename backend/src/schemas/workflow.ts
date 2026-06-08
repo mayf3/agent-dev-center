@@ -20,6 +20,14 @@ export const rejectStepSchema = z.object({
   }),
 });
 
+export const pmApproveStepSchema = advanceStepSchema;
+
+export const pmRejectStepSchema = z.object({
+  body: z.object({
+    comment: z.string().trim().min(1, '驳回原因不能为空').max(2000),
+  }),
+});
+
 export const workflowTemplateIdSchema = z.object({
   params: z.object({
     id: z.string().uuid(),
