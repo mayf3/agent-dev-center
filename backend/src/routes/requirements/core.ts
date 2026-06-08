@@ -12,7 +12,7 @@ import {
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { serializeRequirement } from '../../utils/status.js';
-import { validateAssigneeRoleMatch, resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
+import { validateAssigneeRoleMatch } from '../../lib/assignee-resolver.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
 import { findOverdueRequirements, runOverdueCheck } from '../../utils/overdue-check.js';
@@ -68,18 +68,6 @@ router.post(
       }
     }
 
-    // 6ca1e970: assignee 未指定时默认分配给 CTO（internalRole=cto）
-    if (!createAssigneeId) {
-      const ctoUser = await prisma.user.findFirst({
-        where: { internalRole: 'cto' },
-        select: { id: true, name: true },
-      });
-      if (ctoUser) {
-        createAssigneeId = ctoUser.id;
-        createAssigneeName = ctoUser.name;
-      }
-    }
-
     const requirement = await prisma.requirement.create({
       data: {
         title: body.title, description: body.description, priority: body.priority,
@@ -88,39 +76,27 @@ router.post(
         department: body.department,
         assignee: createAssigneeName, assigneeId: createAssigneeId,
         dueDate: body.dueDate, attachment: body.attachment,
-        repoPath: body.repoPath, branch: body.branch   // 4397e6a9
+        dependsOnIds: body.dependsOnIds ?? []
       },
       include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
 
-    // 2026-06-08: 创建需求后自动分配工作流，强制从 pm_review 开始
-    // 需求 type → 工作流模板映射
-    const WORKFLOW_TYPE_MAP: Record<string, string> = {
-      FEATURE: 'standard-dev',
-      BUGFIX: 'hotfix',
-      INFRA: 'ops-deploy',
-      SECURITY: 'security-fix',
-      POSTMORTEM: 'hotfix',
-    };
-    const workflowName = body.workflowName || WORKFLOW_TYPE_MAP[body.type || 'FEATURE'] || 'standard-dev';
-
-    const template = await prisma.workflowTemplate.findFirst({
-      where: { name: workflowName, isActive: true },
-    });
-
-    if (template) {
-      // 强制从第一步开始（通常是 pm_review）
-      const steps = template.steps as Array<{ name: string; role: string }>;
-      const firstStep = steps[0];
-      if (firstStep) {
-        const pmAssigneeId = await resolveAssigneeForStep(firstStep.role, requirement.assigneeId);
+    // 反向更新被依赖的需求的 blockedBy
+    if (body.dependsOnIds && body.dependsOnIds.length > 0) {
+      // 验证依赖的需求存在
+      const dependencies = await prisma.requirement.findMany({
+        where: { id: { in: body.dependsOnIds } },
+        select: { id: true, blockedBy: true },
+      });
+      if (dependencies.length !== body.dependsOnIds.length) {
+        throw new HttpError(400, `部分依赖需求不存在`);
+      }
+      // 更新每个被依赖需求的 blockedBy
+      for (const dep of dependencies) {
+        const newBlockedBy = [...(dep.blockedBy || []), requirement.id];
         await prisma.requirement.update({
-          where: { id: requirement.id },
-          data: {
-            workflowId: template.id,
-            currentStep: firstStep.name,
-            ...(pmAssigneeId ? { assigneeId: pmAssigneeId } : {}),
-          },
+          where: { id: dep.id },
+          data: { blockedBy: newBlockedBy },
         });
       }
     }
@@ -135,14 +111,6 @@ router.post(
         type: 'possible_duplicate',
         message: `检测到 ${similarItems.length} 个相似需求（相似度 ≥ 80%）`,
         similar: similarItems,
-      };
-    }
-
-    // 返回工作流信息
-    if (template) {
-      response.workflowAssigned = {
-        workflowName: template.name,
-        currentStep: (template.steps as Array<{ name: string; role: string }>)[0]?.name,
       };
     }
 
@@ -343,7 +311,27 @@ router.get(
     if (!requirement) throw new HttpError(404, '需求不存在');
     if (!canReadRequirement(req.user!, requirement)) throw new HttpError(403, '无权查看该需求');
 
-    res.json(serializeRequirement(requirement));
+    // 查询依赖的需求详情
+    const dependsOn = requirement.dependsOnIds.length > 0
+      ? await prisma.requirement.findMany({
+          where: { id: { in: requirement.dependsOnIds } },
+          select: { id: true, title: true, currentStep: true, priority: true, status: true },
+        })
+      : [];
+
+    // 查询被哪些需求依赖
+    const blocks = requirement.blockedBy.length > 0
+      ? await prisma.requirement.findMany({
+          where: { id: { in: requirement.blockedBy } },
+          select: { id: true, title: true, currentStep: true, priority: true, status: true },
+        })
+      : [];
+
+    res.json({
+      ...serializeRequirement(requirement),
+      dependsOn,
+      blocks,
+    });
   })
 );
 
@@ -425,10 +413,32 @@ router.put(
         requester: body.requester, department: body.department,
         assignee: assigneeName, assigneeId, dueDate: body.dueDate, attachment: body.attachment,
         notes: body.notes,
-        repoPath: body.repoPath, branch: body.branch   // 4397e6a9
+        dependsOnIds: body.dependsOnIds
       },
       include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
+
+    // 处理 dependsOnIds 变化：更新被依赖需求的 blockedBy 反向引用
+    if (body.dependsOnIds !== undefined) {
+      const oldDeps = new Set(existing.dependsOnIds || []);
+      const newDeps = new Set(body.dependsOnIds);
+
+      // 新增的依赖：给被依赖需求加上此需求的 ID
+      for (const depId of [...newDeps].filter(id => !oldDeps.has(id))) {
+        const dep = await prisma.requirement.findUnique({ where: { id: depId }, select: { id: true, blockedBy: true } });
+        if (!dep) continue;
+        const newBlockedBy = [...(dep.blockedBy || []), params.id];
+        await prisma.requirement.update({ where: { id: depId }, data: { blockedBy: newBlockedBy } });
+      }
+
+      // 移除的依赖：从被依赖需求的 blockedBy 中删除此需求的 ID
+      for (const depId of [...oldDeps].filter(id => !newDeps.has(id))) {
+        const dep = await prisma.requirement.findUnique({ where: { id: depId }, select: { id: true, blockedBy: true } });
+        if (!dep) continue;
+        const newBlockedBy = (dep.blockedBy || []).filter(id => id !== params.id);
+        await prisma.requirement.update({ where: { id: depId }, data: { blockedBy: newBlockedBy } });
+      }
+    }
 
     await prisma.requirementRevision.create({
       data: {
@@ -509,8 +519,6 @@ router.patch(
         rejectReason: body.rejectReason,
         gitHash: body.gitHash,
         deployVersion: body.deployVersion,
-        repoPath: body.repoPath,     // 4397e6a9
-        branch: body.branch,         // 4397e6a9
         ...(body.workflowId ? { workflowId: body.workflowId } : {}),
       },
       include: { tasks: true, assigneeUser: { select: { name: true } } }

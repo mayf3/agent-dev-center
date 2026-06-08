@@ -175,6 +175,8 @@ model Requirement {
   repoPath            String?             // 4397e6a9: 代码仓库本地路径
   branch              String?             // 4397e6a9: Git 分支名
   deployVersion       String?
+  dependsOnIds        String[]              @default([]) @map("depends_on_ids")
+  blockedBy           String[]              @default([]) @map("blocked_by")
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   tasks               Task[]
