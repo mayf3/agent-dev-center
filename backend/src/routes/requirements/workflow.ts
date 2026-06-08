@@ -160,11 +160,20 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       if (steps.length === 0) throw new HttpError(400, '工作流模板无有效步骤');
 
       // 支持可选的 startStep 参数，用于迁移现有数据
+      // 2026-06-08 铁律：禁止跳过 pm_review。startStep 只能用于回退到合法步骤（需求已有工作流且被 reject 回退时）
       let targetStep;
       if (body.startStep) {
+        // 如果需求从未有过工作流（新需求），禁止用 startStep 跳过第一步
+        if (!requirement.workflowId) {
+          throw new HttpError(400, `新需求必须从工作流第一步开始（pm_review），不允许用 startStep 跳过。`);
+        }
         targetStep = steps.find(s => s.name === body.startStep);
         if (!targetStep) {
           throw new HttpError(400, `工作流中不存在步骤「${body.startStep}」，可用步骤：${steps.map(s => s.name).join(', ')}`);
+        }
+        // 禁止用 startStep 跳到 done 或跳过 pm_review
+        if (targetStep.name === 'done') {
+          throw new HttpError(400, `禁止通过 startStep 直接跳到 done（违反铁律 #28）`);
         }
       } else {
         targetStep = steps[0];

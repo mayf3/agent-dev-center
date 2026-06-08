@@ -12,7 +12,7 @@ import {
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { serializeRequirement } from '../../utils/status.js';
-import { validateAssigneeRoleMatch } from '../../lib/assignee-resolver.js';
+import { validateAssigneeRoleMatch, resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
 import { findOverdueRequirements, runOverdueCheck } from '../../utils/overdue-check.js';
@@ -93,6 +93,38 @@ router.post(
       include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
 
+    // 2026-06-08: 创建需求后自动分配工作流，强制从 pm_review 开始
+    // 需求 type → 工作流模板映射
+    const WORKFLOW_TYPE_MAP: Record<string, string> = {
+      FEATURE: 'standard-dev',
+      BUGFIX: 'hotfix',
+      INFRA: 'ops-deploy',
+      SECURITY: 'security-fix',
+      POSTMORTEM: 'hotfix',
+    };
+    const workflowName = body.workflowName || WORKFLOW_TYPE_MAP[body.type || 'FEATURE'] || 'standard-dev';
+
+    const template = await prisma.workflowTemplate.findFirst({
+      where: { name: workflowName, isActive: true },
+    });
+
+    if (template) {
+      // 强制从第一步开始（通常是 pm_review）
+      const steps = template.steps as Array<{ name: string; role: string }>;
+      const firstStep = steps[0];
+      if (firstStep) {
+        const pmAssigneeId = await resolveAssigneeForStep(firstStep.role, requirement.assigneeId);
+        await prisma.requirement.update({
+          where: { id: requirement.id },
+          data: {
+            workflowId: template.id,
+            currentStep: firstStep.name,
+            ...(pmAssigneeId ? { assigneeId: pmAssigneeId } : {}),
+          },
+        });
+      }
+    }
+
     void notifyEvent('requirement.submitted', {
       id: requirement.id, title: requirement.title, actor: actor.name, assignee: createAssigneeName
     });
@@ -103,6 +135,14 @@ router.post(
         type: 'possible_duplicate',
         message: `检测到 ${similarItems.length} 个相似需求（相似度 ≥ 80%）`,
         similar: similarItems,
+      };
+    }
+
+    // 返回工作流信息
+    if (template) {
+      response.workflowAssigned = {
+        workflowName: template.name,
+        currentStep: (template.steps as Array<{ name: string; role: string }>)[0]?.name,
       };
     }
 

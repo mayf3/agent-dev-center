@@ -35,7 +35,8 @@ export const createRequirementSchema = z.object({
     dueDate: optionalDate,
     attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
     repoPath: z.string().trim().max(500).optional(),   // 4397e6a9: 代码仓库路径
-    branch: z.string().trim().max(200).optional()      // 4397e6a9: Git 分支名
+    branch: z.string().trim().max(200).optional(),     // 4397e6a9: Git 分支名
+    workflowName: z.string().trim().max(80).optional()  // 2026-06-08: 创建时指定工作流模板
   })
 });
 
