@@ -88,18 +88,15 @@ authRouter.get(
 authRouter.post(
   '/register',
   asyncHandler(async (req, res) => {
-    // 2026-06-04: 注册入口关闭。新用户只能通过 admin POST /admin/users 创建。
-    // 原因：开放注册导致安全漏洞（任何人可注册 cto_agent/developer 角色）
-    throw new HttpError(403, '注册已关闭，请联系管理员创建账号');
-
-    /* eslint-disable no-unreachable */
     const { body } = registerSchema.parse({ body: req.body });
 
-    // 邀请码校验：如果配置了 REGISTER_INVITE_CODE，则必须匹配
-    if (env.REGISTER_INVITE_CODE) {
-      if (body.inviteCode !== env.REGISTER_INVITE_CODE) {
-        throw new HttpError(403, '邀请码无效，无法注册');
-      }
+    // e03c7b39: 邀请码校验 — 必须配置 REGISTER_INVITE_CODE 且匹配才能注册
+    // 如果未配置 REGISTER_INVITE_CODE，禁止注册（防止开放注册漏洞）
+    if (!env.REGISTER_INVITE_CODE) {
+      throw new HttpError(403, '注册已关闭，请联系管理员创建账号');
+    }
+    if (body.inviteCode !== env.REGISTER_INVITE_CODE) {
+      throw new HttpError(403, '邀请码无效，无法注册');
     }
     // Auto-generate random 24-char password only if not provided
     // bf651cbc: Respect caller-provided password (e.g. agent .env)
