@@ -9,7 +9,6 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken, authRequired } f
 import { loginSchema, registerSchema, changePasswordSchema, adminResetPasswordSchema, batchRegisterSchema, forceChangePasswordSchema } from '../schemas/auth.js';
 import { env } from '../config/env.js';
 import { UserRole, InternalRole } from '@prisma/client';
-import { getPlatformRoles, isPlatformAdmin } from '../lib/platform-roles.js';
 
 export const authRouter = Router();
 
@@ -50,7 +49,6 @@ function toSafeUser(user: any): Express.AuthUser {
     email: user.email,
     role: user.role,
     internalRole: user.internalRole,
-    roles: getPlatformRoles(user),
     okrRole: user.okrRole ?? undefined,
   };
 }
@@ -75,7 +73,7 @@ authRouter.get(
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, roles: true, okrRole: true, mustChangePassword: true, enabled: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true, enabled: true }
     });
 
     if (!user || !user.enabled) {
@@ -114,10 +112,9 @@ authRouter.post(
         email: body.email,
         password: hashedPassword,
         role: body.role,
-        roles: getPlatformRoles({ role: body.role }),
         mustChangePassword: body.password ? false : true  // 自选密码不需要强制改密
       },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, roles: true, okrRole: true, mustChangePassword: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true }
     });
 
     const { mustChangePassword, ...safeUser } = user;
@@ -137,33 +134,16 @@ authRouter.post(
   '/login',
   asyncHandler(async (req, res) => {
     const { body } = loginSchema.parse({ body: req.body });
-    let user = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { email: body.email }
     });
 
     if (!user) {
-      // TEMP(2026-06-04): Auto-create cto@agent.local if not exists (emergency recovery)
-      if (body.email.toLowerCase() === 'cto@agent.local' && body.password === 'PASSWORD_REMOVED_BY_SECURITY_CLEANUP') {
-        const hashedPassword = await bcrypt.hash('PASSWORD_REMOVED_BY_SECURITY_CLEANUP', 10);
-        user = await prisma.user.create({
-          data: {
-            name: 'CTO',
-            email: 'cto@agent.local',
-            password: hashedPassword,
-            role: 'admin',
-            internalRole: 'cto',
-            roles: ['adc:admin'],
-            mustChangePassword: false,
-          },
-        });
-      } else {
-        throw new HttpError(401, '邮箱或密码不正确');
-      }
+      throw new HttpError(401, '邮箱或密码不正确');
     }
 
     const passwordMatches = await bcrypt.compare(body.password, user.password);
-    // TEMP(2026-06-04): CTO emergency bypass - skip bcrypt compare for known password
-    if (!passwordMatches && !(body.email.toLowerCase() === 'cto@agent.local' && body.password === 'PASSWORD_REMOVED_BY_SECURITY_CLEANUP')) {
+    if (!passwordMatches) {
       throw new HttpError(401, '邮箱或密码不正确');
     }
     if (!user.enabled) {
@@ -176,7 +156,6 @@ authRouter.post(
       email: user.email,
       role: user.role,
       internalRole: user.internalRole,
-      roles: user.roles,
       okrRole: user.okrRole
     });
 
@@ -278,7 +257,7 @@ authRouter.post(
   authRequired,
   asyncHandler(async (req, res) => {
     // Only admin can batch register
-    if (!isPlatformAdmin(req.user!)) {
+    if (req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
       throw new HttpError(403, '只有管理员可以批量注册 Agent');
     }
 
@@ -300,7 +279,6 @@ authRouter.post(
             email: agent.email,
             password: hashedPassword,
             role: agent.role,
-            roles: getPlatformRoles({ role: agent.role, internalRole: agent.internalRole }),
             mustChangePassword: agent.password ? false : true,  // 自选密码不强制改密
             ...(agent.internalRole ? { internalRole: agent.internalRole } : {})
           }
@@ -343,7 +321,7 @@ authRouter.post(
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, roles: true, okrRole: true, mustChangePassword: true, enabled: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true, enabled: true }
     });
 
     if (!user || !user.enabled) {
@@ -368,7 +346,7 @@ authRouter.post(
   authRequired,
   asyncHandler(async (req, res) => {
     // Only admin/cto can use this
-    if (!isPlatformAdmin(req.user!)) {
+    if (req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
       throw new HttpError(403, '只有管理员可以重置密码');
     }
 

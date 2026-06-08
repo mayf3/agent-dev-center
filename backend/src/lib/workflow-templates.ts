@@ -3,6 +3,8 @@
  *
  * 应用启动时自动 upsert，确保每个环境都有标准工作流模板。
  * 如需新增模板，在此文件添加即可。
+ *
+ * 2026-06-05: 所有开发类模板增加 pm_review（第1步）和 qa_review（dev_self_check 后）
  */
 import { prisma } from './prisma.js';
 
@@ -21,68 +23,86 @@ interface TemplateDef {
   steps: StepDef[];
 }
 
-const DEFAULT_TEMPLATES: TemplateDef[] = [
+// ── 通用步骤块 ─────────────────────────────────────────
+
+/** PM 审批步骤 — 所有开发类需求第一步 */
+const PM_REVIEW: StepDef = {
+  name: 'pm_review',
+  displayName: 'PM审批',
+  role: 'pm',
+  requiredReports: [],
+  autoAdvance: false,
+};
+
+/** QA 审查 DEV_SELF_CHECK 报告质量 — 进入时不需要 approved 报告，QA 在此步骤审批 */
+const QA_REVIEW_DEV: StepDef = {
+  name: 'qa_review',
+  displayName: 'QA审查(开发自检)',
+  role: 'qa',
+  requiredReports: [],  // 进入不检查报告是否 approved，QA 在此步骤审批 pending 报告
+  autoAdvance: false,
+};
+
+/** 标准开发中段：test_env_deploy → testing → qa_review → security_review → cto_review → deploying → done */
+const STANDARD_DEV_MIDDLE: StepDef[] = [
   {
-    name: 'frontend-dev',
-    displayName: '前端开发流程',
-    description: '前端需求专用：前端开发→测试→安全→CTO→部署',
-    steps: [
-      {
-        name: 'dev_self_check',
-        displayName: '前端开发自检',
-        role: 'developer',
-        requiredReports: [],
-        autoAdvance: false,
-      },
-      {
-        name: 'test_env_deploy',
-        displayName: '部署测试环境',
-        role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK', 'DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
-      {
-        name: 'testing',
-        displayName: '测试验证',
-        role: 'tester',
-        requiredReports: [],
-        autoAdvance: false,
-      },
-      {
-        name: 'security_review',
-        displayName: '安全审查',
-        role: 'security',
-        requiredReports: ['TEST_REPORT'],
-        autoAdvance: false,
-      },
-      {
-        name: 'cto_review',
-        displayName: 'CTO验收',
-        role: 'cto',
-        requiredReports: ['SECURITY_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'deploying',
-        displayName: '部署上线',
-        role: 'ops',
-        requiredReports: ['CTO_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'done',
-        displayName: '已完成',
-        role: 'cto',
-        requiredReports: ['DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
-    ],
+    name: 'test_env_deploy',
+    displayName: '部署测试环境',
+    role: 'ops',
+    requiredReports: ['DEV_SELF_CHECK'],  // QA 审批 DSC 后才能部署
+    autoAdvance: false,
   },
+  {
+    name: 'testing',
+    displayName: '测试验证',
+    role: 'tester',
+    requiredReports: [],
+    autoAdvance: false,
+  },
+  {
+    name: 'qa_review_test',
+    displayName: 'QA审查(测试报告)',
+    role: 'qa',
+    requiredReports: ['TEST_REPORT'],
+    autoAdvance: false,
+  },
+  {
+    name: 'security_review',
+    displayName: '安全审查',
+    role: 'security',
+    requiredReports: [],
+    autoAdvance: false,
+  },
+  {
+    name: 'cto_review',
+    displayName: 'CTO验收',
+    role: 'cto',
+    requiredReports: ['SECURITY_REVIEW'],
+    autoAdvance: false,
+  },
+  {
+    name: 'deploying',
+    displayName: '部署上线',
+    role: 'ops',
+    requiredReports: ['CTO_REVIEW'],
+    autoAdvance: false,
+  },
+  {
+    name: 'done',
+    displayName: '已完成',
+    role: 'cto',
+    requiredReports: ['DEPLOY_CONFIRM'],
+    autoAdvance: false,
+  },
+];
+
+const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'standard-dev',
     displayName: '标准开发流程',
-    description: '标准流程：开发自检→部署测试环境→测试→安全→CTO→部署→完成',
+    description: 'PM审批→开发自检→QA审查→部署测试→测试→QA审查→安全→CTO→部署→完成',
     steps: [
+      PM_REVIEW,
       {
         name: 'dev_self_check',
         displayName: '开发自检',
@@ -90,55 +110,33 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      QA_REVIEW_DEV,
+      ...STANDARD_DEV_MIDDLE,
+    ],
+  },
+  {
+    name: 'frontend-dev',
+    displayName: '前端开发流程',
+    description: '前端需求：PM审批→前端开发→QA审查→部署测试→测试→QA审查→安全→CTO→部署',
+    steps: [
+      PM_REVIEW,
       {
-        name: 'test_env_deploy',
-        displayName: '部署测试环境',
-        role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK', 'DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
-      {
-        name: 'testing',
-        displayName: '测试验证',
-        role: 'tester',
+        name: 'dev_self_check',
+        displayName: '前端开发自检',
+        role: 'developer',
         requiredReports: [],
         autoAdvance: false,
       },
-      {
-        name: 'security_review',
-        displayName: '安全审查',
-        role: 'security',
-        requiredReports: ['TEST_REPORT'],
-        autoAdvance: false,
-      },
-      {
-        name: 'cto_review',
-        displayName: 'CTO验收',
-        role: 'cto',
-        requiredReports: ['SECURITY_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'deploying',
-        displayName: '部署上线',
-        role: 'ops',
-        requiredReports: ['CTO_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'done',
-        displayName: '已完成',
-        role: 'cto',
-        requiredReports: ['DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
+      QA_REVIEW_DEV,
+      ...STANDARD_DEV_MIDDLE,
     ],
   },
   {
     name: 'backend-dev',
     displayName: '后端开发流程',
-    description: '后端需求：后端开发→部署测试环境→测试→安全→CTO→部署→完成',
+    description: '后端需求：PM审批→后端开发→QA审查→部署测试→测试→QA审查→安全→CTO→部署',
     steps: [
+      PM_REVIEW,
       {
         name: 'dev_self_check',
         displayName: '后端开发自检',
@@ -146,55 +144,16 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
-      {
-        name: 'test_env_deploy',
-        displayName: '部署测试环境',
-        role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK', 'DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
-      {
-        name: 'testing',
-        displayName: '测试验证',
-        role: 'tester',
-        requiredReports: [],
-        autoAdvance: false,
-      },
-      {
-        name: 'security_review',
-        displayName: '安全审查',
-        role: 'security',
-        requiredReports: ['TEST_REPORT'],
-        autoAdvance: false,
-      },
-      {
-        name: 'cto_review',
-        displayName: 'CTO验收',
-        role: 'cto',
-        requiredReports: ['SECURITY_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'deploying',
-        displayName: '部署上线',
-        role: 'ops',
-        requiredReports: ['CTO_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'done',
-        displayName: '已完成',
-        role: 'cto',
-        requiredReports: ['DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
+      QA_REVIEW_DEV,
+      ...STANDARD_DEV_MIDDLE,
     ],
   },
   {
     name: 'fullstack-dev',
     displayName: '全栈开发流程',
-    description: '全栈需求：开发→部署测试环境→测试→安全→CTO→部署→完成',
+    description: '全栈需求：PM审批→开发→QA审查→部署测试→测试→QA审查→安全→CTO→部署',
     steps: [
+      PM_REVIEW,
       {
         name: 'dev_self_check',
         displayName: '开发自检（前后端）',
@@ -202,25 +161,29 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      QA_REVIEW_DEV,
+      ...STANDARD_DEV_MIDDLE,
+    ],
+  },
+  {
+    name: 'security-fix',
+    displayName: '安全修复流程',
+    description: '安全漏洞修复：PM审批→修复→QA审查→安全验证→CTO→部署',
+    steps: [
+      PM_REVIEW,
       {
-        name: 'test_env_deploy',
-        displayName: '部署测试环境',
-        role: 'ops',
-        requiredReports: ['DEV_SELF_CHECK', 'DEPLOY_CONFIRM'],
-        autoAdvance: false,
-      },
-      {
-        name: 'testing',
-        displayName: '测试验证',
-        role: 'tester',
+        name: 'dev_self_check',
+        displayName: '修复自检',
+        role: 'developer',
         requiredReports: [],
         autoAdvance: false,
       },
+      QA_REVIEW_DEV,
       {
         name: 'security_review',
-        displayName: '安全审查',
+        displayName: '安全验证',
         role: 'security',
-        requiredReports: ['TEST_REPORT'],
+        requiredReports: [],
         autoAdvance: false,
       },
       {
@@ -247,43 +210,29 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     ],
   },
   {
-    name: 'security-fix',
-    displayName: '安全修复流程',
-    description: '安全漏洞修复专用：修复→安全验证→CTO→部署',
+    name: 'hotfix',
+    displayName: '紧急修复',
+    description: '紧急修复流程（跳过PM和QA）',
     steps: [
       {
         name: 'dev_self_check',
-        displayName: '修复自检',
+        displayName: '紧急修复自检',
         role: 'developer',
-        requiredReports: [],
-        autoAdvance: false,
-      },
-      {
-        name: 'security_review',
-        displayName: '安全验证',
-        role: 'security',
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       {
-        name: 'cto_review',
-        displayName: 'CTO验收',
-        role: 'cto',
-        requiredReports: ['SECURITY_REVIEW'],
-        autoAdvance: false,
-      },
-      {
-        name: 'deploying',
-        displayName: '部署上线',
+        name: 'deploy',
+        displayName: '紧急部署',
         role: 'ops',
-        requiredReports: ['CTO_REVIEW'],
+        requiredReports: ['DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
         name: 'done',
-        displayName: '已完成',
-        role: 'cto',
-        requiredReports: ['DEPLOY_CONFIRM'],
+        displayName: '完成',
+        role: 'auto',
+        requiredReports: [],
         autoAdvance: false,
       },
     ],
