@@ -4,6 +4,7 @@ import { authRequired, requireRoles } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
+import { isPlatformAdmin, getPlatformRoles } from '../lib/platform-roles.js';
 
 export const profileRouter = Router();
 
@@ -16,6 +17,7 @@ const userProfileSelect = {
   email: true,
   role: true,
   internalRole: true,
+  roles: true,
   okrRole: true,
   agentId: true,
   permissions: true,
@@ -34,8 +36,8 @@ function canManageOkr(okrRole: string | null | undefined): boolean {
   return okrRole === 'okr_admin' || okrRole === 'okr_reviewer' || okrRole === 'okr_owner';
 }
 
-function isHrManager(user: { role: string; internalRole?: string | null }): boolean {
-  return user.role === 'admin' || user.internalRole === 'cto';
+function isHrManager(user: Express.AuthUser): boolean {
+  return user.role === 'admin' || user.internalRole === 'cto' || isPlatformAdmin(user);
 }
 
 // ─── Zod schemas ──────────────────────────────────────────────
@@ -184,6 +186,11 @@ profileRouter.patch(
     if (hrBody.onboardingDate) hrData.onboardingDate = new Date(hrBody.onboardingDate);
 
     const internalRoleChanged = hrBody.internalRole !== undefined && target.internalRole !== hrBody.internalRole;
+
+    // Sync roles when internalRole changes
+    if (internalRoleChanged) {
+      hrData.roles = getPlatformRoles({ role: target.role, internalRole: hrBody.internalRole as any });
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const updatedUser = await tx.user.update({

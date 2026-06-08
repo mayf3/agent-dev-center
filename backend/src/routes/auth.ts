@@ -9,6 +9,7 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken, authRequired } f
 import { loginSchema, registerSchema, changePasswordSchema, adminResetPasswordSchema, batchRegisterSchema, forceChangePasswordSchema } from '../schemas/auth.js';
 import { env } from '../config/env.js';
 import { UserRole, InternalRole } from '@prisma/client';
+import { getPlatformRoles, isPlatformAdmin } from '../lib/platform-roles.js';
 
 export const authRouter = Router();
 
@@ -49,6 +50,7 @@ function toSafeUser(user: any): Express.AuthUser {
     email: user.email,
     role: user.role,
     internalRole: user.internalRole,
+    roles: getPlatformRoles(user),
     okrRole: user.okrRole ?? undefined,
   };
 }
@@ -73,7 +75,7 @@ authRouter.get(
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true, enabled: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, roles: true, okrRole: true, mustChangePassword: true, enabled: true }
     });
 
     if (!user || !user.enabled) {
@@ -88,15 +90,18 @@ authRouter.get(
 authRouter.post(
   '/register',
   asyncHandler(async (req, res) => {
+    // 2026-06-04: 注册入口关闭。新用户只能通过 admin POST /admin/users 创建。
+    // 原因：开放注册导致安全漏洞（任何人可注册 cto_agent/developer 角色）
+    throw new HttpError(403, '注册已关闭，请联系管理员创建账号');
+
+    /* eslint-disable no-unreachable */
     const { body } = registerSchema.parse({ body: req.body });
 
-    // e03c7b39: 邀请码校验 — 必须配置 REGISTER_INVITE_CODE 且匹配才能注册
-    // 如果未配置 REGISTER_INVITE_CODE，禁止注册（防止开放注册漏洞）
-    if (!env.REGISTER_INVITE_CODE) {
-      throw new HttpError(403, '注册已关闭，请联系管理员创建账号');
-    }
-    if (body.inviteCode !== env.REGISTER_INVITE_CODE) {
-      throw new HttpError(403, '邀请码无效，无法注册');
+    // 邀请码校验：如果配置了 REGISTER_INVITE_CODE，则必须匹配
+    if (env.REGISTER_INVITE_CODE) {
+      if (body.inviteCode !== env.REGISTER_INVITE_CODE) {
+        throw new HttpError(403, '邀请码无效，无法注册');
+      }
     }
     // Auto-generate random 24-char password only if not provided
     // bf651cbc: Respect caller-provided password (e.g. agent .env)
@@ -109,9 +114,10 @@ authRouter.post(
         email: body.email,
         password: hashedPassword,
         role: body.role,
+        roles: getPlatformRoles({ role: body.role }),
         mustChangePassword: body.password ? false : true  // 自选密码不需要强制改密
       },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, roles: true, okrRole: true, mustChangePassword: true }
     });
 
     const { mustChangePassword, ...safeUser } = user;
@@ -131,7 +137,7 @@ authRouter.post(
   '/login',
   asyncHandler(async (req, res) => {
     const { body } = loginSchema.parse({ body: req.body });
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { email: body.email }
     });
 
@@ -146,6 +152,7 @@ authRouter.post(
             password: hashedPassword,
             role: 'admin',
             internalRole: 'cto',
+            roles: ['adc:admin'],
             mustChangePassword: false,
           },
         });
@@ -169,6 +176,7 @@ authRouter.post(
       email: user.email,
       role: user.role,
       internalRole: user.internalRole,
+      roles: user.roles,
       okrRole: user.okrRole
     });
 
@@ -270,7 +278,7 @@ authRouter.post(
   authRequired,
   asyncHandler(async (req, res) => {
     // Only admin can batch register
-    if (req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
+    if (!isPlatformAdmin(req.user!)) {
       throw new HttpError(403, '只有管理员可以批量注册 Agent');
     }
 
@@ -292,6 +300,7 @@ authRouter.post(
             email: agent.email,
             password: hashedPassword,
             role: agent.role,
+            roles: getPlatformRoles({ role: agent.role, internalRole: agent.internalRole }),
             mustChangePassword: agent.password ? false : true,  // 自选密码不强制改密
             ...(agent.internalRole ? { internalRole: agent.internalRole } : {})
           }
@@ -334,7 +343,7 @@ authRouter.post(
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true, enabled: true }
+      select: { id: true, name: true, email: true, role: true, internalRole: true, roles: true, okrRole: true, mustChangePassword: true, enabled: true }
     });
 
     if (!user || !user.enabled) {
@@ -358,8 +367,8 @@ authRouter.post(
   '/admin-reset-password',
   authRequired,
   asyncHandler(async (req, res) => {
-    // c6c66d14: 铁律 #17 — 账号密码归口 admin（HR 系统），CTO 不再持有重置权限
-    if (req.user!.role !== 'admin') {
+    // Only admin/cto can use this
+    if (!isPlatformAdmin(req.user!)) {
       throw new HttpError(403, '只有管理员可以重置密码');
     }
 
