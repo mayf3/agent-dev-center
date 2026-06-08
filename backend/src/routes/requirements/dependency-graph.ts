@@ -2,16 +2,16 @@
  * GET /api/requirements/dependency-graph
  * 返回需求依赖关系图数据
  */
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { prisma } from '../../lib/prisma.js';
 import { HttpError } from '../../utils/http-error.js';
-import { authRequired, AuthRequest } from '../../middleware/auth.js';
+import { authRequired } from '../../middleware/auth.js';
 
 export function registerDependencyGraphRoutes(router: Router): void {
   router.get(
     '/dependency-graph',
-    asyncHandler(async (req: AuthRequest, res: Response) => {
+    asyncHandler(async (req: Request, res: Response) => {
       // 获取所有有依赖关系的需求
       const requirements = await prisma.requirement.findMany({
         where: {
@@ -25,7 +25,6 @@ export function registerDependencyGraphRoutes(router: Router): void {
           title: true,
           currentStep: true,
           priority: true,
-          status: true,
           dependsOnIds: true,
           blockedBy: true,
         },
@@ -36,7 +35,6 @@ export function registerDependencyGraphRoutes(router: Router): void {
         title: r.title,
         currentStep: r.currentStep,
         priority: r.priority,
-        status: r.status,
       }));
 
       const edges: Array<{ from: string; to: string; type: 'depends-on' }> = [];

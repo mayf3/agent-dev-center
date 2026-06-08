@@ -76,19 +76,19 @@ router.post(
         department: body.department,
         assignee: createAssigneeName, assigneeId: createAssigneeId,
         dueDate: body.dueDate, attachment: body.attachment,
-        dependsOnIds: body.dependsOnIds ?? []
+        dependsOnIds: (body as any).dependsOnIds ?? []
       },
       include: { tasks: true, assigneeUser: { select: { name: true } } }
     });
 
     // 反向更新被依赖的需求的 blockedBy
-    if (body.dependsOnIds && body.dependsOnIds.length > 0) {
+    if ((body as any).dependsOnIds && (body as any).dependsOnIds.length > 0) {
       // 验证依赖的需求存在
       const dependencies = await prisma.requirement.findMany({
-        where: { id: { in: body.dependsOnIds } },
+        where: { id: { in: (body as any).dependsOnIds } },
         select: { id: true, blockedBy: true },
       });
-      if (dependencies.length !== body.dependsOnIds.length) {
+      if (dependencies.length !== (body as any).dependsOnIds.length) {
         throw new HttpError(400, `部分依赖需求不存在`);
       }
       // 更新每个被依赖需求的 blockedBy
@@ -315,7 +315,7 @@ router.get(
     const dependsOn = requirement.dependsOnIds.length > 0
       ? await prisma.requirement.findMany({
           where: { id: { in: requirement.dependsOnIds } },
-          select: { id: true, title: true, currentStep: true, priority: true, status: true },
+          select: { id: true, title: true, currentStep: true, priority: true },
         })
       : [];
 
@@ -323,7 +323,7 @@ router.get(
     const blocks = requirement.blockedBy.length > 0
       ? await prisma.requirement.findMany({
           where: { id: { in: requirement.blockedBy } },
-          select: { id: true, title: true, currentStep: true, priority: true, status: true },
+          select: { id: true, title: true, currentStep: true, priority: true },
         })
       : [];
 
