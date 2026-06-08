@@ -131,6 +131,20 @@ reportsRouter.post(
     // 校验提交者角色
     await validateReportRole(req.user!.id, req.user!.role, req.user!.name, req.user!.email, body.reportType, params.id, req.user!.internalRole);
 
+    // 铁律 #37：DEV_SELF_CHECK 报告必须包含代码仓库路径和部署指引
+    if (body.reportType === 'DEV_SELF_CHECK') {
+      const content = body.content as Record<string, unknown>;
+      const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
+      const hasRepoPath = /repo|仓库|git.*remote|github|gitlab|gitee|\/opt\/git\//i.test(contentStr);
+      const hasDeployGuide = /deploy|部署|docker|dockerfile|nginx|环境变量|env/i.test(contentStr);
+      if (!hasRepoPath) {
+        throw new HttpError(400, 'DEV_SELF_CHECK 报告必须包含代码仓库路径（如 git remote URL 或服务器路径）');
+      }
+      if (!hasDeployGuide) {
+        throw new HttpError(400, 'DEV_SELF_CHECK 报告必须包含部署指引（如 Dockerfile 位置、环境变量、依赖服务）');
+      }
+    }
+
     const report = await prisma.requirementReport.create({
       data: {
         requirementId: params.id,
