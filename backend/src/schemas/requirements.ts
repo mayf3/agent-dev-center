@@ -20,7 +20,7 @@ const nullableString = z.preprocess((value) => {
   }
 
   return String(value).trim();
-}, z.string().nullable().optional());
+}, z.string().optional());
 
 export const createRequirementSchema = z.object({
   body: z.object({
@@ -33,17 +33,14 @@ export const createRequirementSchema = z.object({
     department: z.string().trim().min(2).max(80),
     assignee: nullableString,
     dueDate: optionalDate,
-    attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
-    repoPath: z.string().trim().max(500).optional(),   // 4397e6a9: 代码仓库路径
-    branch: z.string().trim().max(200).optional(),     // 4397e6a9: Git 分支名
-    workflowName: z.string().trim().max(80).optional()  // 2026-06-08: 创建时指定工作流模板
+    attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined))
   })
 });
 
 export const listRequirementsSchema = z.object({
   query: z.object({
     page: z.coerce.number().int().positive().default(1),
-    pageSize: z.coerce.number().int().min(1).transform(v => Math.min(v, 100)).default(10),
+    pageSize: z.coerce.number().int().positive().max(100).default(10),
     currentStep: z.string().trim().min(1).max(80).optional(),
     status: z.enum(requirementStatusValues).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
@@ -71,9 +68,9 @@ export const patchRequirementSchema = requirementIdSchema.extend({
       rejectReason: nullableString,
       gitHash: z.string().trim().optional(),
       deployVersion: z.string().trim().optional(),
-      repoPath: z.string().trim().max(500).optional(),   // 4397e6a9
-      branch: z.string().trim().max(200).optional(),     // 4397e6a9
-      workflowId: z.string().trim().optional()
+      workflowId: z.string().trim().optional(),
+      dependsOnIds: z.array(z.string().uuid()).optional().default([]),
+      blockedBy: z.array(z.string().uuid()).optional().default([])
     })
     .refine((body) => Object.keys(body).length > 0, {
       message: '至少提供一个要更新的字段'
@@ -94,8 +91,8 @@ export const updateRequirementSchema = requirementIdSchema.extend({
       dueDate: optionalDate,
       attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
       notes: z.string().optional(),
-      repoPath: z.string().trim().max(500).optional(),   // 4397e6a9
-      branch: z.string().trim().max(200).optional()      // 4397e6a9
+      dependsOnIds: z.array(z.string().uuid()).max(20).optional().default([]),
+      blockedBy: z.array(z.string().uuid()).max(20).optional().default([])
     })
     .refine((body) => Object.keys(body).length > 0, {
       message: '至少提供一个要更新的字段'
