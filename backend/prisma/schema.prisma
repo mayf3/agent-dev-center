@@ -82,6 +82,7 @@ model User {
   password           String
   role               UserRole      @default(requester)
   internalRole       InternalRole? @map("internal_role")
+  roles              String[]      @default([]) @map("roles")
   okrRole            OkrRole       @default(okr_member) @map("okr_role")
   // SSO Agent fields
   agentId            String?       @unique
