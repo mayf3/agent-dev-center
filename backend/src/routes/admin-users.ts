@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { authRequired } from '../middleware/auth.js';
+import { getPlatformRoles, isPlatformAdmin } from '../lib/platform-roles.js';
 
 export const adminUsersRouter = Router();
 
@@ -17,6 +18,7 @@ const userListSelect = {
   email: true,
   role: true,
   internalRole: true,
+  roles: true,
   okrRole: true,
   mustChangePassword: true,
   enabled: true,
@@ -25,10 +27,10 @@ const userListSelect = {
   createdAt: true,
 } as const;
 
-// Admin guard: only role=admin or internalRole=cto
+// Admin guard: use platform roles with legacy fallback
 function assertAdmin(req: Express.Request): void {
   if (!req.user) throw new HttpError(401, 'Authentication required');
-  if (req.user.role !== 'admin' && req.user.internalRole !== 'cto') {
+  if (!isPlatformAdmin(req.user) && req.user.role !== 'admin' && req.user.internalRole !== 'cto') {
     throw new HttpError(403, 'Admin or CTO role required');
   }
 }
@@ -307,10 +309,12 @@ adminUsersRouter.patch(
     if (internalRole !== undefined) {
       if (internalRole === null) {
         data.internalRole = null;
+        data.roles = [];
       } else if (!validInternalRoles.includes(internalRole as InternalRole)) {
         throw new HttpError(400, `Invalid internalRole. Valid values: ${validInternalRoles.join(', ')}`);
       } else {
         data.internalRole = internalRole as InternalRole;
+        data.roles = getPlatformRoles({ role: user.role, internalRole: internalRole as InternalRole });
       }
     }
 
@@ -424,9 +428,10 @@ adminUsersRouter.post(
         password: hashedPassword,
         role: userRole,
         internalRole: userInternalRole,
+        roles: getPlatformRoles({ role: userRole, internalRole: userInternalRole }),
         mustChangePassword: !password,  // 自选密码不需要强制改
       },
-      select: { id: true, name: true, email: true, role: true, internalRole: true },
+      select: { id: true, name: true, email: true, role: true, internalRole: true, roles: true },
     });
 
     await prisma.auditLog.create({

@@ -14,11 +14,10 @@ import {
   assignWorkflowSchema,
   advanceStepSchema,
   rejectStepSchema,
-  pmApproveStepSchema,
-  pmRejectStepSchema,
 } from '../../schemas/workflow.js';
 import { canReadRequirement } from './utils.js';
 import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
+import { hasPlatformRole, getPlatformRole } from '../../lib/platform-roles.js';
 
 // ── Types ────────────────────────────────────────────────
 
@@ -30,30 +29,26 @@ interface WorkflowStep {
   autoAdvance: boolean;
 }
 
-const PM_REVIEW_STEP: WorkflowStep = {
-  name: 'pm_review',
-  displayName: 'PM审批',
-  role: 'pm',
-  requiredReports: [],
-  autoAdvance: false,
-};
-
 // ── Helpers ──────────────────────────────────────────────
 
-/** Map user internalRole to workflow step role */
-function mapUserRole(internalRole: string | null | undefined, role: string): string | null {
-  if (!internalRole) return null;
+/** Map user roles to workflow step role (platform-aware) */
+function mapUserRole(user: Express.AuthUser, role: string): string | null {
+  // 先尝试基于 roles 数组匹配
+  if (hasPlatformRole(user, role)) {
+    return role;
+  }
+  // 兼容旧 internalRole
+  if (!user.internalRole) return null;
   const mapping: Record<string, string[]> = {
     cto: ['cto', 'admin'],
     admin: ['cto', 'admin'],
     developer: ['developer'],
     tester: ['tester'],
     security: ['security'],
-    qa: ['qa'],
     ops: ['ops'],
     pm: ['pm', 'requester'],
   };
-  const allowed = mapping[internalRole] || [];
+  const allowed = mapping[user.internalRole] || [];
   return allowed.includes(role) ? role : null;
 }
 
@@ -67,22 +62,6 @@ function parseSteps(stepsJson: unknown): WorkflowStep[] {
     autoAdvance: z.boolean().default(false),
   })).parse(stepsJson);
   return steps;
-}
-
-/** Dynamically add PM review without changing the stored template JSON. */
-function withPmReviewStep(steps: WorkflowStep[]): WorkflowStep[] {
-  if (steps.some(s => s.name === PM_REVIEW_STEP.name)) return steps;
-  return [{ ...PM_REVIEW_STEP }, ...steps];
-}
-
-/**
- * Existing requirements that are already past PM review should keep the original
- * template order, otherwise rejecting the first real step would unexpectedly go
- * back to pm_review.
- */
-function parseStepsForCurrentStep(stepsJson: unknown, currentStep: string): WorkflowStep[] {
-  const steps = parseSteps(stepsJson);
-  return currentStep === PM_REVIEW_STEP.name ? withPmReviewStep(steps) : steps;
 }
 
 /** Get current step definition from workflow */
@@ -104,73 +83,24 @@ function getPreviousStep(steps: WorkflowStep[], currentStepName: string): Workfl
   return steps[idx - 1];
 }
 
-/** Resolve the next workflow step, including existing auto/security skip rules. */
-function getAdvanceTarget(
-  steps: WorkflowStep[],
-  currentStepName: string,
-  requirementType: unknown,
-): { nextStep: WorkflowStep; targetStep: WorkflowStep; skippedStep: string | null } {
-  const nextStep = getNextStep(steps, currentStepName);
-  if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
-
-  let targetStep = nextStep;
-
-  // 如果下一步是 auto，自动再推进一步
-  if (nextStep.autoAdvance) {
-    const afterNext = getNextStep(steps, nextStep.name);
-    if (afterNext) {
-      targetStep = afterNext;
-    }
-  }
-
-  // 2026-06-04 铁律 #24 实现：按需求 type 跳过 security_review
-  // FEATURE/BUGFIX/INFRA/POSTMORTEM 类型不需要安全审查，直接跳过
-  // 只有 SECURITY 和安全相关需求才走安全审查
-  if (targetStep.name === 'security_review') {
-    const securityTypes = ['SECURITY'];
-    if (!securityTypes.includes(String(requirementType ?? ''))) {
-      // 跳过 security_review，直接到下一步
-      const afterSecurity = getNextStep(steps, targetStep.name);
-      if (afterSecurity) {
-        targetStep = afterSecurity;
-      }
-    }
-  }
-
-  return {
-    nextStep,
-    targetStep,
-    skippedStep: targetStep.name !== nextStep.name ? nextStep.name : null,
-  };
-}
-
 /** Check if all required reports are approved */
-/** 检查需求是否有指定类型的报告（已提交/已通过），按 mode 区分：
- * - 'submitted': 报告存在即可（pending 或 approved，排除 rejected）
- * - 'approved':  报告必须已通过（status=approved）
- */
-async function checkReports(requirementId: string, requiredReports: string[], mode: 'submitted' | 'approved' = 'approved'): Promise<{ ok: boolean; missing: string[] }> {
+async function checkReportsApproved(requirementId: string, requiredReports: string[]): Promise<{ ok: boolean; missing: string[] }> {
   if (requiredReports.length === 0) return { ok: true, missing: [] };
 
-  const statusFilter = mode === 'approved' ? 'approved' : undefined;
-
-  const existingReports = await prisma.requirementReport.findMany({
+  const approvedReports = await prisma.requirementReport.findMany({
     where: {
       requirementId,
       reportType: { in: requiredReports as any },
-      ...(statusFilter ? { status: statusFilter as any } : { status: { not: 'rejected' as any } }),
+      status: 'approved',
     },
     select: { reportType: true },
   });
 
-  const existingTypes = new Set(existingReports.map(r => r.reportType));
-  const missing = requiredReports.filter(t => !existingTypes.has(t as any));
+  const approvedTypes = new Set(approvedReports.map(r => r.reportType));
+  const missing = requiredReports.filter(t => !approvedTypes.has(t as any));
 
   return { ok: missing.length === 0, missing };
 }
-
-/** 兼容旧名称 */
-const checkReportsApproved = (id: string, reports: string[]) => checkReports(id, reports, 'approved');
 
 /** Write audit transition log */
 async function logTransition(params: {
@@ -222,48 +152,28 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       });
       if (!template) throw new HttpError(404, `工作流模板「${body.workflowName}」不存在或已停用`);
 
-      const templateSteps = parseSteps(template.steps);
-      if (templateSteps.length === 0) throw new HttpError(400, '工作流模板无有效步骤');
-      const steps = withPmReviewStep(templateSteps);
+      const steps = parseSteps(template.steps);
+      if (steps.length === 0) throw new HttpError(400, '工作流模板无有效步骤');
 
       // 支持可选的 startStep 参数，用于迁移现有数据
-      // 2026-06-08 铁律：禁止跳过 pm_review。startStep 只能用于回退到合法步骤（需求已有工作流且被 reject 回退时）
       let targetStep;
       if (body.startStep) {
-        // 如果需求从未有过工作流（新需求），禁止用 startStep 跳过第一步
-        if (!requirement.workflowId) {
-          throw new HttpError(400, `新需求必须从工作流第一步开始（pm_review），不允许用 startStep 跳过。`);
-        }
         targetStep = steps.find(s => s.name === body.startStep);
         if (!targetStep) {
           throw new HttpError(400, `工作流中不存在步骤「${body.startStep}」，可用步骤：${steps.map(s => s.name).join(', ')}`);
         }
-        // 禁止用 startStep 跳到 done 或跳过 pm_review
-        if (targetStep.name === 'done') {
-          throw new HttpError(400, `禁止通过 startStep 直接跳到 done（违反铁律 #28）`);
-        }
       } else {
-        targetStep = steps.find(s => s.name === PM_REVIEW_STEP.name) ?? steps[0];
+        targetStep = steps[0];
       }
-      const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
-
       const updateData: any = {
         workflowId: template.id,
         currentStep: targetStep.name,
-        assigneeId: newAssigneeId,
       };
-
-      // 自动解析目标步骤的 assignee（修复：assign-workflow 不设置 assignee 的 bug）
-      const resolvedAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
-      if (resolvedAssigneeId) {
-        updateData.assigneeId = resolvedAssigneeId;
-      }
 
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: updateData,
       });
-      const newAssigneeName = await getAssigneeName(newAssigneeId);
 
       await logTransition({
         requirementId: params.id,
@@ -285,8 +195,6 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           workflowDisplayName: template.displayName,
           currentStep: targetStep.name,
           currentStepDisplayName: targetStep.displayName,
-          newAssigneeId,
-          newAssigneeName,
           steps: steps.map(s => ({
             name: s.name,
             displayName: s.displayName,
@@ -316,104 +224,69 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
       if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
 
-      const steps = parseStepsForCurrentStep(requirement.workflow.steps, requirement.currentStep);
+      const steps = parseSteps(requirement.workflow.steps);
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
       // 角色校验（系统级强制约束）
-      // 35c9cea2: 移除 admin/cto 豁免，所有用户只能 advance 自己角色对应的步骤
-      const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-      if (!matchedRole) {
-        throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
+      const matchedRole = mapUserRole(req.user!, currentStep.role);
+      if (!matchedRole && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
+        const platformRole = getPlatformRole(req.user!);
+        throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${platformRole ?? req.user!.internalRole ?? req.user!.role}」`);
       }
 
-      // 0e0ea5f8: advance 时强制校验 gitHash 非空（无代码不推进）
-      if (!requirement.gitHash) {
-        throw new HttpError(400, '推进失败：需求未设置 gitHash，请先更新代码提交哈希');
-      }
-
-      // 铁律 #29：dev_self_check → test_env_deploy 时 gitHash 不能为空
-      if (requirement.currentStep === 'dev_self_check' && !requirement.gitHash) {
-        throw new HttpError(400, '该需求尚未关联代码提交（gitHash 为空），无法推进到部署阶段。请先 git push 并更新需求 gitHash');
-      }
-
-      const { nextStep, targetStep, skippedStep } = getAdvanceTarget(steps, requirement.currentStep, (requirement as any).type);
-
-      // 67b50767: 部署队列锁 — advance 到 test_env_deploy 时检查同 repoPath 是否已有需求在部署
-      if (targetStep.name === 'test_env_deploy') {
-        const reqRepoPath = (requirement as any).repoPath;
-        if (reqRepoPath) {
-          const conflicting = await prisma.requirement.findFirst({
-            where: {
-              id: { not: params.id },
-              repoPath: reqRepoPath,
-              currentStep: { in: ['test_env_deploy', 'deploying'] },
-            },
-            select: { id: true, title: true, currentStep: true },
-          });
-          if (conflicting) {
-            throw new HttpError(409, `部署队列锁：代码路径「${reqRepoPath}」已有需求「${conflicting.title}」(${conflicting.id.slice(0, 8)}) 处于 ${conflicting.currentStep} 状态，请等待其完成后再推进`);
-          }
-        }
-        // repoPath 为空时跳过锁检查（向后兼容）
-      }
-
-      // 报告校验
-      // 2026-06-06 修复：检查目标步骤的 requiredReports，而非当前步骤的
-      // 2026-06-06 修复3：跳过 security_review 步骤但保留 TEST_REPORT 检查
-      // 2026-06-06 修复4：部署确认报告（TEST_DEPLOY_CONFIRM/DEPLOY_CONFIRM）只需 submitted 模式
-      //   — Ops 自确认部署完成即可推进，不需要 CTO 审批
-      //   — CTO 审批在 cto_review/deploying 阶段统一进行
-      // 2026-06-06 修复5：autoAdvance 时目标步骤的报告用 submitted 模式
-      //   — 例如开发者提交 DEV_SELF_CHECK 后 autoAdvance 到 qa_review
-      //   — DEV_SELF_CHECK 刚提交是 pending，QA 会在 qa_review 阶段审批
-      //   — 如果要求 approved，autoAdvance 永远卡住
-      let targetRequiredReports = [...skippedSecurityReports, ...targetStep.requiredReports];
-      targetRequiredReports = targetRequiredReports.filter(r => r !== 'SECURITY_REVIEW');
-      // 部署确认报告和 CTO 自审报告只需提交就可，不需要审批
-      const autoSubmittedReports = ['TEST_DEPLOY_CONFIRM', 'DEPLOY_CONFIRM', 'CTO_REVIEW'];
-      // autoAdvance 时，目标步骤的报告也只需 submitted（提交即过，等接手的人来审批）
-      // 跳过 security 时的 TEST_REPORT 也只需 submitted（CTO 在 cto_review 统一审）
-      const submittedReports = [
-        ...autoSubmittedReports,
-        ...(currentStep.autoAdvance ? targetRequiredReports : []),
-        ...skippedSecurityReports,
-      ];
-      const needsApproval = targetRequiredReports.filter(r => !submittedReports.includes(r));
-      const needsSubmitted = targetRequiredReports.filter(r => submittedReports.includes(r));
-      const { ok: okApproved, missing: missingApproved } = await checkReports(params.id, needsApproval, 'approved');
-      const { ok: okSubmitted, missing: missingSubmitted } = await checkReports(params.id, needsSubmitted, 'submitted');
-      const ok = okApproved && okSubmitted;
-      const missing = [...missingApproved, ...missingSubmitted];
+      // 报告校验（系统级强制，不允许 pending）
+      const { ok, missing } = await checkReportsApproved(params.id, currentStep.requiredReports);
       if (!ok) {
         const reportLabels: Record<string, string> = {
           DEV_SELF_CHECK: '开发自检报告',
           TEST_REPORT: '测试报告',
           SECURITY_REVIEW: '安全检查报告',
           CTO_REVIEW: 'CTO验收报告',
-          TEST_DEPLOY_CONFIRM: '测试部署确认报告',
           DEPLOY_CONFIRM: '部署确认报告',
         };
         const labels = missing.map(t => reportLabels[t] ?? t).join('、');
         throw new HttpError(400, `推进失败：缺少已通过的报告 — ${labels}`);
       }
 
+      // 找下一步
+      const nextStep = getNextStep(steps, requirement.currentStep);
+      if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
+
+      let targetStep = nextStep;
+
+      // 如果下一步是 auto，自动再推进一步
+      if (nextStep.autoAdvance) {
+        const afterNext = getNextStep(steps, nextStep.name);
+        if (afterNext) {
+          targetStep = afterNext;
+        }
+      }
+
+      // 2026-06-04 铁律 #24 实现：按需求 type 跳过 security_review
+      // FEATURE/BUGFIX/INFRA/POSTMORTEM 类型不需要安全审查，直接跳过
+      // 只有 SECURITY 和安全相关需求才走安全审查
+      if (targetStep.name === 'security_review') {
+        const reqType = (requirement as any).type;
+        const securityTypes = ['SECURITY'];
+        if (!securityTypes.includes(reqType)) {
+          // 跳过 security_review，直接到下一步
+          const afterSecurity = getNextStep(steps, targetStep.name);
+          if (afterSecurity) {
+            targetStep = afterSecurity;
+          }
+        }
+      }
+
       // 自动解析下一步骤的 assigneeId
       const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
-      const updateData: any = {
-        currentStep: targetStep.name,
-        assigneeId: newAssigneeId,
-      };
-
-      if (currentStep.name === PM_REVIEW_STEP.name) {
-        updateData.pmApprovedAt = new Date();
-        updateData.pmApprovedBy = req.user!.name;
-        updateData.rejectReason = null;
-      }
 
       const updated = await prisma.requirement.update({
         where: { id: params.id },
-        data: updateData,
+        data: {
+          currentStep: targetStep.name,
+          assigneeId: newAssigneeId,
+        },
       });
 
       const newAssigneeName = await getAssigneeName(newAssigneeId);
@@ -425,9 +298,9 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         action: 'advance',
         actorId: req.user!.id,
         actorName: req.user!.name,
-        actorRole: req.user!.internalRole ?? req.user!.role,
+        actorRole: getPlatformRole(req.user!) ?? req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
-        metadata: { skippedAutoStep: skippedStep },
+        metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
       });
 
       res.json({
@@ -462,14 +335,13 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
       if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
 
-      const steps = parseStepsForCurrentStep(requirement.workflow.steps, requirement.currentStep);
+      const steps = parseSteps(requirement.workflow.steps);
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
       // 角色校验
-      // 35c9cea2: 移除 admin/cto 豁免
-      const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-      if (!matchedRole) {
+      const matchedRole = mapUserRole(req.user!, currentStep.role);
+      if (!matchedRole && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
         throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色才能回退`);
       }
 
@@ -477,10 +349,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       let targetStepName: string;
       let targetStepDef: WorkflowStep | undefined;
 
-      if (currentStep.name === PM_REVIEW_STEP.name) {
-        targetStepName = 'rejected';
-        targetStepDef = undefined;
-      } else if (body.targetStep) {
+      if (body.targetStep) {
         // 方案A：支持指定回退到任意前序步骤
         const target = steps.find(s => s.name === body.targetStep);
         if (!target) {
@@ -510,7 +379,6 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         data: {
           currentStep: targetStepName,
           assigneeId: newAssigneeId,
-          ...(currentStep.name === PM_REVIEW_STEP.name ? { rejectReason: body.comment } : {}),
         },
       });
 
@@ -523,9 +391,8 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         action: 'reject',
         actorId: req.user!.id,
         actorName: req.user!.name,
-        actorRole: req.user!.internalRole ?? req.user!.role,
+        actorRole: getPlatformRole(req.user!) ?? req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
-        metadata: currentStep.name === PM_REVIEW_STEP.name ? { pmReview: true } : undefined,
       });
 
       res.json({
@@ -537,104 +404,6 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           newAssigneeId,
           newAssigneeName,
           comment: body.comment,
-        },
-      });
-    }),
-  );
-
-  /**
-   * POST /:id/workflow/force-advance — 管理员强制推进（35c9cea2）
-   * 仅 admin/cto，需要 force=true + reason 参数
-   * 所有操作记录审计日志
-   */
-  router.post(
-    '/:id/workflow/force-advance',
-    requireRoles('admin', 'cto_agent'),
-    asyncHandler(async (req, res) => {
-      const { params } = requirementIdSchema.parse({ params: req.params });
-      const { force, reason } = z.object({
-        force: z.literal(true),
-        reason: z.string().trim().min(5, '必须提供强制推进原因（至少5字）'),
-      }).parse(req.body);
-
-      const requirement = await prisma.requirement.findUnique({
-        where: { id: params.id },
-        include: { workflow: true },
-      });
-      if (!requirement) throw new HttpError(404, '需求不存在');
-      if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
-      if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
-
-      const steps = parseSteps(requirement.workflow.steps);
-      const currentStep = getCurrentStep(steps, requirement.currentStep);
-      if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
-
-      const nextStep = getNextStep(steps, requirement.currentStep);
-      if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
-
-      let targetStep = nextStep;
-
-      // 跳过 autoAdvance
-      if (currentStep.autoAdvance) {
-        while (targetStep.autoAdvance) {
-          const afterNext = getNextStep(steps, targetStep.name);
-          if (afterNext) { targetStep = afterNext; } else { break; }
-        }
-      }
-
-      // 跳过 security_review（同 advance 逻辑）
-      if (targetStep.name === 'security_review') {
-        const reqType = (requirement as any).type;
-        if (reqType !== 'SECURITY') {
-          const afterSecurity = getNextStep(steps, targetStep.name);
-          if (afterSecurity) { targetStep = afterSecurity; }
-        }
-      }
-
-      const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: { currentStep: targetStep.name, assigneeId: newAssigneeId },
-      });
-      const newAssigneeName = await getAssigneeName(newAssigneeId);
-
-      // 审计日志：强制推进必须记录
-      await logTransition({
-        requirementId: params.id,
-        fromStep: requirement.currentStep,
-        toStep: targetStep.name,
-        action: 'force-advance',
-        actorId: req.user!.id,
-        actorName: req.user!.name,
-        actorRole: req.user!.internalRole ?? req.user!.role,
-        comment: `[FORCE] ${reason}`,
-        metadata: { force: true, reason, skippedRole: currentStep.role },
-      });
-
-      // 额外审计日志到 AuditLog 表
-      await prisma.auditLog.create({
-        data: {
-          action: 'WORKFLOW_FORCE_ADVANCE',
-          actorId: req.user!.id,
-          actorName: req.user!.name || req.user!.email,
-          targetId: params.id,
-          targetType: 'Requirement',
-          details: { fromStep: requirement.currentStep, toStep: targetStep.name, reason },
-        },
-      });
-
-      res.json({
-        success: true,
-        data: {
-          requirementId: updated.id,
-          fromStep: requirement.currentStep,
-          toStep: targetStep.name,
-          toStepDisplayName: targetStep.displayName,
-          newAssigneeId,
-          newAssigneeName,
-          isDone: targetStep.name === steps[steps.length - 1]?.name,
-          forced: true,
-          reason,
         },
       });
     }),
@@ -683,10 +452,10 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
   router.patch(
     '/workflow-templates/:id/activate',
     asyncHandler(async (req, res) => {
-      const id = req.params.id as string;
+      const { id } = req.params;
 
       // Admin check
-      if (req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
+      if (!hasPlatformRole(req.user!, 'admin') && req.user!.role !== 'admin' && req.user!.internalRole !== 'cto') {
         throw new HttpError(403, '需要管理员权限');
       }
 
@@ -711,7 +480,8 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         data: {
           action: 'WORKFLOW_TEMPLATE_ACTIVATED',
           actorId: req.user!.id,
-          actorName: req.user!.name || req.user!.email,
+          actorName: req.user!.name,
+          actorRole: getPlatformRole(req.user!) ?? req.user!.internalRole ?? req.user!.role,
           targetId: id,
           targetType: 'WorkflowTemplate',
           details: { templateName: updated.name, displayName: updated.displayName },
@@ -751,7 +521,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         });
       }
 
-      const steps = parseStepsForCurrentStep(requirement.workflow.steps, requirement.currentStep);
+      const steps = parseSteps(requirement.workflow.steps);
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) {
         return res.json({
@@ -765,9 +535,9 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         });
       }
 
-      // 检查当前用户是否可以操作（35c9cea2: admin/cto 不能代操作）
-      const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-      const canOperate = !!matchedRole;
+      // 检查当前用户是否可以操作
+      const matchedRole = mapUserRole(req.user!, currentStep.role);
+      const canOperate = !!matchedRole || req.user!.role === 'admin' || req.user!.role === 'cto_agent';
 
       // 检查报告完成情况
       const { ok: reportsReady, missing } = await checkReportsApproved(params.id, currentStep.requiredReports);
