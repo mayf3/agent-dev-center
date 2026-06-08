@@ -408,36 +408,54 @@ reportsRouter.patch(
     });
 
     // ─── 报告打回自动回退需求状态 + assignee ───
-    // 对于有工作流的需求：通过工作流 reject（按步骤角色自动分配）
-    // 对于无工作流的旧需求：从 revisions 历史找 assignee
+    // 2026-06-04 更新：工作流模式下也自动回退
     if (body.status === 'rejected' && reqInfo) {
       const reportType = report.reportType as string;
 
-      // 如果需求有工作流，不在这里处理回退（由 workflow reject 处理）
-      if (reqInfo.workflowId) {
-        // 工作流模式：报告打回不做状态回退，由 CTO/test-engineer 手动调 workflow reject
-      } else {
-        // 旧版非工作流模式保留原逻辑
-        let targetStep: string | null = null;
+      // 确定回退目标步骤
+      let targetStep: string | null = null;
+      switch (reportType) {
+        case 'DEV_SELF_CHECK':
+        case 'TEST_REPORT':
+        case 'SECURITY_REVIEW':
+          targetStep = 'dev_self_check';
+          break;
+        case 'CTO_REVIEW':
+          targetStep = 'testing';
+          break;
+        case 'DEPLOY_CONFIRM':
+          targetStep = 'cto_review';
+          break;
+        default:
+          break;
+      }
 
-        switch (reportType) {
-          case 'DEV_SELF_CHECK':
-          case 'TEST_REPORT':
-          case 'SECURITY_REVIEW':
-            targetStep = 'dev_self_check';
-            break;
-          case 'CTO_REVIEW':
-            targetStep = 'testing';
-            break;
-          case 'DEPLOY_CONFIRM':
-            targetStep = 'cto_review';
-            break;
-          default:
-            break;
-        }
+      if (targetStep) {
+        if (reqInfo.workflowId) {
+          // 工作流模式：解析工作流步骤找角色，用 resolveAssigneeForStep 分配
+          const { resolveAssigneeForStep } = await import('../../lib/assignee-resolver.js');
+          const workflow = await prisma.workflow.findUnique({
+            where: { id: reqInfo.workflowId },
+            select: { steps: true },
+          });
+          let targetRole = 'developer';
+          if (workflow) {
+            const steps = workflow.steps as Array<{ name: string; role: string }>;
+            const stepDef = steps.find(s => s.name === targetStep);
+            if (stepDef) targetRole = stepDef.role;
+          }
+          const newAssigneeId = await resolveAssigneeForStep(targetRole, reqInfo.assigneeId);
 
-        if (targetStep) {
-          const lastRevision = await prisma.requirementRevision.findFirst({
+          await prisma.requirement.update({
+            where: { id: params.id },
+            data: {
+              currentStep: targetStep,
+              assigneeId: newAssigneeId,
+            },
+          });
+        } else {
+        // 旧版非工作流模式：从 revisions 历史找 assignee
+        const lastRevision = await prisma.requirementRevision.findFirst({
             where: {
               requirementId: params.id,
               assignee: { not: null },
