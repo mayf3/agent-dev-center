@@ -7,7 +7,6 @@
  * - 工作流 advance/reject 时自动查找下一步骤 role 对应的用户
  */
 import { prisma } from './prisma.js';
-import { getPlatformRoles, hasPlatformRole } from './platform-roles.js';
 
 /** 工作流步骤 role → InternalRole 映射 */
 const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
@@ -19,78 +18,47 @@ const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
   ops: 'ops',
   pm: 'pm',
   requester: 'pm',
-  qa: 'qa',
-};
-
-/** 工作流步骤 role → ADC 平台角色映射 */
-const WORKFLOW_ROLE_TO_PLATFORM: Record<string, string> = {
-  developer: 'adc:developer',
-  tester: 'adc:tester',
-  security: 'adc:security',
-  cto: 'adc:admin',
-  admin: 'adc:admin',
-  ops: 'adc:ops',
-  pm: 'adc:pm',
-  requester: 'adc:pm',
+  qa: 'qa',  // 2026-06-05 新增 QA 步骤支持
 };
 
 /**
  * 根据工作流步骤的 role 找到对应的用户 ID
  *
  * 优先级：
- * 1. 如果传入 currentAssigneeId 且该用户 roles 匹配 → 保持不变
- * 2. 从 users 表找 roles 匹配的第一个活跃用户
- * 3. 兼容期 fallback 到 internalRole
+ * 1. 如果传入 currentAssigneeId 且该用户的 internalRole 匹配 → 保持不变
+ * 2. 从 users 表找 internalRole 匹配的第一个活跃用户
  */
 export async function resolveAssigneeForStep(
   stepRole: string,
   currentAssigneeId?: string | null,
 ): Promise<string | null> {
   const internalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
-  const platformRole = WORKFLOW_ROLE_TO_PLATFORM[stepRole];
-  if (!internalRole || !platformRole) return currentAssigneeId ?? null;
+  if (!internalRole) return currentAssigneeId ?? null;
 
   // 如果当前 assignee 的角色匹配，保持不变
   if (currentAssigneeId) {
     const current = await prisma.user.findUnique({
       where: { id: currentAssigneeId },
-      select: { role: true, internalRole: true, roles: true },
+      select: { internalRole: true },
     });
-    if (current && hasPlatformRole(current, platformRole)) {
+    if (current?.internalRole === internalRole) {
       return currentAssigneeId;
     }
   }
 
-  // 先按平台 roles 查找匹配用户（按创建时间排序，保证确定性）
-  const roleMatch = await prisma.user.findFirst({
-    where: { roles: { has: platformRole } },
-    orderBy: { createdAt: 'asc' },
-    select: { id: true, roles: true },
-  });
-
-  if (roleMatch?.id) return roleMatch.id;
-
-  // 兼容期 fallback：按旧 internalRole 查找
+  // 查找匹配角色的用户（按创建时间排序，保证确定性）
   const match = await prisma.user.findFirst({
     where: { internalRole: internalRole as any },
     orderBy: { createdAt: 'asc' },
-    select: { id: true, roles: true },
+    select: { id: true },
   });
 
   if (match?.id) return match.id;
 
   // 兜底：找不到匹配用户时分配给 CTO（避免 assignee 为空导致任务无人处理）
-  const platformCto = await prisma.user.findFirst({
-    where: { roles: { has: 'adc:admin' } },
-    orderBy: { createdAt: 'asc' },
-    select: { id: true, roles: true },
-  });
-  if (platformCto?.id) return platformCto.id;
-
   const cto = await prisma.user.findFirst({
     where: { internalRole: 'cto' },
-    orderBy: { createdAt: 'asc' },
-    select: { id: true, roles: true },
+    select: { id: true },
   });
   return cto?.id ?? null;
 }
@@ -109,7 +77,7 @@ export async function getAssigneeName(assigneeId: string | null): Promise<string
 
 /**
  * 验证 assigneeId 是否匹配需求当前工作流步骤的角色
- * 如果需求有工作流，assigneeId 指向的用户必须拥有该步骤所需的平台角色
+ * 如果需求有工作流，assigneeId 指向的用户必须拥有该步骤所需的 internalRole
  * 
  * @returns { ok: true } 或 { ok: false, message: string }
  */
@@ -138,22 +106,20 @@ export async function validateAssigneeRoleMatch(
 
   const stepRole = currentStepDef.role;
   const expectedInternalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
-  const expectedPlatformRole = WORKFLOW_ROLE_TO_PLATFORM[stepRole];
-  if (!expectedInternalRole || !expectedPlatformRole) return { ok: true };
+  if (!expectedInternalRole) return { ok: true };
 
-  // 检查被分配用户的平台角色；roles 为空时 helper 会 fallback 到 internalRole
+  // 检查被分配用户的 internalRole
   const assigneeUser = await prisma.user.findUnique({
     where: { id: assigneeUserId },
-    select: { name: true, role: true, internalRole: true, roles: true },
+    select: { name: true, internalRole: true },
   });
   if (!assigneeUser) return { ok: false, message: `用户 ${assigneeUserId} 不存在` };
 
-  if (!hasPlatformRole(assigneeUser, expectedPlatformRole)) {
-    const actualRoles = getPlatformRoles(assigneeUser).join(', ') || assigneeUser.internalRole || '(未设置)';
+  if (assigneeUser.internalRole !== expectedInternalRole) {
     return {
       ok: false,
       message: `当前需求处于步骤「${currentStepDef.displayName}」（需要 ${stepRole} 角色），`
-        + `但被分配用户「${assigneeUser.name}」的角色是 ${actualRoles}，不匹配需求当前步骤的角色要求`,
+        + `但被分配用户「${assigneeUser.name}」的 internalRole 是 ${assigneeUser.internalRole ?? '(未设置)'}，不匹配需求当前步骤的角色要求`,
     };
   }
 
