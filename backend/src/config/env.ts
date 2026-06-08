@@ -16,6 +16,8 @@ const envSchema = z.object({
   AUTH_JWT_SECRET: z.string().min(16).default('dev-only-auth-service-secret-16'),
   AUTH_JWT_ISSUER: z.string().default('auth-service'),
   AUTH_JWT_AUDIENCE: z.string().default('agent-platform'),
+  // auth-service SSO login endpoint (906e46ab)
+  AUTH_SERVICE_URL: z.string().default('http://localhost:4010/api'),
   FRONTEND_ORIGIN: z.string().default('http://localhost:5173'),
   REGISTER_INVITE_CODE: z.string().optional(),
   FEISHU_WEBHOOK_URL: z.string().optional(),
