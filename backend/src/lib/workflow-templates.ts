@@ -63,7 +63,7 @@ const STANDARD_DEV_MIDDLE: StepDef[] = [
     name: 'qa_review_test',
     displayName: 'QA审查(测试报告)',
     role: 'qa',
-    requiredReports: ['TEST_REPORT'],
+    requiredReports: [],  // 不前置检查，QA 在此步骤审批报告，解除 testing→QA 死锁
     autoAdvance: false,
   },
   {
