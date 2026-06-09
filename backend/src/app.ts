@@ -16,6 +16,7 @@ import { marketplaceUploadsRouter } from './routes/marketplace/marketplace-uploa
 import { marketplaceAutomationRouter } from './routes/marketplace/marketplace-automation.js';
 import { goalsRouter } from './routes/goals/index.js';
 import { postmortemsRouter } from './routes/postmortems.js';
+import { commentsRouter } from './routes/comments.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { gatewayGuard } from './middleware/ip-whitelist.js';
 import { HttpError } from './utils/http-error.js';
@@ -131,6 +132,7 @@ app.use('/api/auth', authLimiter, authRouter);
 app.use('/api', mustChangePasswordGuard);
 app.use('/api/requirements', requirementsRouter);
 app.use('/api/requirements/:id/reports', reportsRouter);
+app.use('/api/requirements', commentsRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/notifications', notificationsRouter);
