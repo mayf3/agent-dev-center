@@ -163,18 +163,23 @@ reportsRouter.post(
     let report;
 
     if (existingReport) {
-      // 如果已存在且为 approved/rejected，拒绝提交
-      if (existingReport.status === 'approved' || existingReport.status === 'rejected') {
-        throw new HttpError(409, `该需求当前步骤已存在 ${body.reportType} 报告（状态：${existingReport.status}），无法重复提交`);
+      // 如果已存在且为 approved，拒绝提交（已通过的报告不能覆盖）
+      if (existingReport.status === 'approved') {
+        throw new HttpError(409, `该需求当前步骤已存在 ${body.reportType} 报告（状态：approved），无法重复提交`);
       }
 
-      // 如果是 pending 或 changes_requested，则更新内容（upsert）
+      // pending / changes_requested / rejected → 更新内容重新提交（upsert）
       report = await prisma.requirementReport.update({
         where: { id: existingReport.id },
         data: {
           content: body.content as Prisma.InputJsonValue,
           submittedBy: body.submittedBy ?? req.user!.name,
           submittedById: req.user!.id,
+          status: 'pending',  // rejected 报告重新提交时重置为 pending
+          qaReviewedAt: null,  // 清除 QA 审查记录
+          qaReviewedBy: null,
+          reviewComment: null,
+          reviewedAt: null,
           updatedAt: new Date(),
         },
       });
