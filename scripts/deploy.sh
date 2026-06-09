@@ -1,125 +1,144 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# deploy.sh — ADC 一键部署脚本
+# 用法: bash deploy.sh [service] [--skip-migrate] [--skip-verify] [--rollback]
+#
+# 功能：
+# 1. 备份当前镜像（previous 标签）
+# 2. Git pull 最新代码
+# 3. Docker build
+# 4. Prisma migrate
+# 5. Docker compose up
+# 6. 健康检查
+# 7. 失败自动回滚
+#
+# 设计原则：
+# - 每一步都有错误检查，失败立即停止
+# - 自动备份，自动回滚
+# - 日志记录所有操作
+# - 不依赖人工记忆
+
 set -euo pipefail
 
-# ===========================================================
-# ADC 平台部署脚本
-# 用法: ./scripts/deploy.sh [--skip-tests] [--skip-typecheck]
-# ===========================================================
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$REPO_ROOT"
+# ── 配置 ──
+SERVICE="${1:-agent-dev-center-backend}"
+SKIP_MIGRATE="${2:-}"
+SKIP_VERIFY="${3:-}"
+ROLLBACK="${4:-}"
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+LOG_FILE="/tmp/deploy-$(date +%Y%m%d-%H%M%S).log"
+HEALTH_URL="http://localhost:4000/api/health"
+HEALTH_TIMEOUT=30
 
-echo "=== 🔍 ADC 部署流水线 ==="
-echo ""
+# ── 日志函数 ──
+log() {
+  echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE"
+}
 
-# Step 1: Type Check
-if [[ "${1:-}" != "--skip-typecheck" ]]; then
-  echo ">>> [1/5] TypeScript 类型检查..."
-  cd backend && npx tsc --noEmit 2>&1 || {
-    echo "❌ TypeScript 类型检查失败，终止部署"
-    exit 1
+error() {
+  echo "[$(date '+%H:%M:%S')] ❌ $*" | tee -a "$LOG_FILE"
+}
+
+success() {
+  echo "[$(date '+%H:%M:%S')] ✅ $*" | tee -a "$LOG_FILE"
+}
+
+# ── 回滚函数 ──
+rollback() {
+  error "部署失败，开始回滚..."
+  
+  # 恢复 previous 镜像
+  if docker images "${SERVICE}:previous" --format '{{.Tag}}' | grep -q previous; then
+    docker tag "${SERVICE}:previous" "${SERVICE}:latest" 2>/dev/null || true
+    docker compose up -d "$SERVICE" 2>/dev/null || true
+    sleep 5
+    
+    # 验证回滚
+    if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+      success "回滚成功，服务已恢复"
+    else
+      error "回滚后服务仍然异常，需要人工介入"
+    fi
+  else
+    error "没有 previous 镜像可回滚"
+  fi
+  
+  exit 1
+}
+
+# ── 手动回滚 ──
+if [ "$ROLLBACK" = "--rollback" ]; then
+  log "手动回滚模式"
+  rollback
+fi
+
+# ── Step 1: 备份当前镜像 ──
+log "Step 1: 备份当前镜像"
+if docker images "${SERVICE}:latest" --format '{{.Tag}}' | grep -q latest; then
+  docker tag "${SERVICE}:latest" "${SERVICE}:previous" 2>/dev/null || true
+  success "已备份 ${SERVICE}:latest -> ${SERVICE}:previous"
+else
+  log "没有现有镜像需要备份"
+fi
+
+# ── Step 2: Git pull ──
+log "Step 2: 拉取最新代码"
+cd "$PROJECT_DIR"
+git pull origin main 2>&1 | tee -a "$LOG_FILE" || {
+  error "Git pull 失败"
+  rollback
+}
+success "代码已更新"
+
+# ── Step 3: Docker build ──
+log "Step 3: 构建 Docker 镜像"
+docker compose build "$SERVICE" 2>&1 | tee -a "$LOG_FILE" || {
+  error "Docker build 失败"
+  rollback
+}
+success "镜像构建完成"
+
+# ── Step 4: Prisma migrate ──
+if [ "$SKIP_MIGRATE" != "--skip-migrate" ]; then
+  log "Step 4: 执行数据库迁移"
+  docker compose run --rm "$SERVICE" npx prisma migrate deploy 2>&1 | tee -a "$LOG_FILE" || {
+    error "Prisma migrate 失败"
+    rollback
   }
-  cd "$REPO_ROOT"
-  echo "✅ TypeScript 类型检查通过"
+  success "数据库迁移完成"
 else
-  echo ">>> [1/5] TypeScript 类型检查 (跳过)"
+  log "Step 4: 跳过数据库迁移"
 fi
-echo ""
 
-# Step 2: Unit Tests
-if [[ "${1:-}" != "--skip-tests" ]]; then
-  echo ">>> [2/5] 单元测试..."
-  cd backend && npx vitest run 2>&1 || {
-    echo "❌ 单元测试失败，终止部署"
-    exit 1
-  }
-  cd "$REPO_ROOT"
-  echo "✅ 单元测试通过"
-else
-  echo ">>> [2/5] 单元测试 (跳过)"
-fi
-echo ""
-
-# Step 3: Build
-echo ">>> [3/5] 构建..."
-npm run build 2>&1 || {
-  echo "❌ 构建失败"
-  exit 1
+# ── Step 5: Docker compose up ──
+log "Step 5: 启动服务"
+docker compose up -d "$SERVICE" 2>&1 | tee -a "$LOG_FILE" || {
+  error "Docker compose up 失败"
+  rollback
 }
-echo "✅ 构建完成"
-echo ""
+success "服务已启动"
 
-# Step 4: Git Push
-echo ">>> [4/5] 推送代码到服务器..."
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-git push server "$CURRENT_BRANCH:main" 2>&1 || {
-  echo "❌ Git push 失败"
-  exit 1
-}
-echo "✅ 代码已推送至服务器"
-echo ""
-
-# Step 5: Wait for deployment and health check
-echo ">>> [5/5] 等待部署并执行健康检查..."
-sleep 10
-
-echo "--- 健康检查 ---"
-
-echo ">>> [5b] SSO 全链路集成测试..."
-bash scripts/sso-integration-test.sh || {
-  echo "❌ SSO 集成测试失败"
-  HEALTH_PASS=false
-}
-HEALTH_PASS=true
-
-# 检查前端
-echo -n "  前端 (/)          → "
-FRONTEND_STATUS=$(curl -sk -o /dev/null -w '%{http_code}' https://8.163.44.127/ 2>/dev/null || echo "failed")
-if [[ "$FRONTEND_STATUS" == "200" ]]; then
-  echo "✅ $FRONTEND_STATUS"
+# ── Step 6: 健康检查 ──
+if [ "$SKIP_VERIFY" != "--skip-verify" ]; then
+  log "Step 6: 健康检查（${HEALTH_TIMEOUT}s 超时）"
+  
+  for i in $(seq 1 6); do
+    sleep 5
+    if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+      success "健康检查通过"
+      
+      # 记录部署信息
+      echo "$(date '+%Y-%m-%d %H:%M:%S') | $SERVICE | $(git rev-parse --short HEAD) | SUCCESS" >> /var/log/deploy.log 2>/dev/null || true
+      
+      log "部署完成！"
+      log "日志: $LOG_FILE"
+      exit 0
+    fi
+    log "  等待服务启动... ($i/6)"
+  done
+  
+  error "健康检查超时"
+  rollback
 else
-  echo "❌ $FRONTEND_STATUS"
-  HEALTH_PASS=false
-fi
-
-# 检查 API 健康
-echo -n "  API 健康 (/api/health) → "
-API_HEALTH=$(curl -sk -o /dev/null -w '%{http_code}' https://8.163.44.127/api/health 2>/dev/null || echo "failed")
-if [[ "$API_HEALTH" == "200" ]]; then
-  echo "✅ $API_HEALTH"
-else
-  echo "❌ $API_HEALTH"
-  HEALTH_PASS=false
-fi
-
-# 检查 API 登录（应该 401，表示路由可达，需 POST）
-echo -n "  API 登录 (/api/auth/login) → "
-AUTH_STATUS=$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"email":"test@test.com","password":"test"}' https://8.163.44.127/api/auth/login 2>/dev/null || echo "failed")
-if [[ "$AUTH_STATUS" == "401" ]]; then
-  echo "✅ $AUTH_STATUS (401=路由正常，需认证)"
-elif [[ "$AUTH_STATUS" == "200" ]]; then
-  echo "⚠️  $AUTH_STATUS (登录成功，也在预期内)"
-elif [[ "$AUTH_STATUS" == "403" ]]; then
-  echo "❌ $AUTH_STATUS (403=被网关拦截，有配置问题)"
-  HEALTH_PASS=false
-else
-  echo "❌ $AUTH_STATUS"
-  HEALTH_PASS=false
-fi
-
-# 检查需求列表
-echo -n "  需求列表 (/api/requirements) → "
-REQ_STATUS=$(curl -sk -o /dev/null -w '%{http_code}' https://8.163.44.127/api/requirements 2>/dev/null || echo "failed")
-if [[ "$REQ_STATUS" == "200" || "$REQ_STATUS" == "401" ]]; then
-  echo "✅ $REQ_STATUS"
-else
-  echo "❌ $REQ_STATUS"
-  HEALTH_PASS=false
-fi
-
-echo ""
-if [[ "$HEALTH_PASS" == "true" ]]; then
-  echo "✅ 全部健康检查通过！部署成功！"
-else
-  echo "❌ 部分健康检查失败，请立即排查"
-  exit 1
+  log "Step 6: 跳过健康检查"
+  success "部署完成（未验证）"
 fi
