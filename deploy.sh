@@ -9,6 +9,7 @@ SSH_TARGET="${SERVER_USER}@${SERVER_HOST}"
 REMOTE_ARCHIVE="/tmp/agent-dev-center-prod.tar.gz"
 COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env.production"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"  # main=生产, develop=测试环境
 
 trap 'echo "Deployment failed at line ${LINENO}." >&2' ERR
 
@@ -102,18 +103,26 @@ scp \
   "${archive}" \
   "${SSH_TARGET}:${REMOTE_ARCHIVE}"
 
-log "Building images and starting services on remote host"
-ssh_cmd "REMOTE_DIR='${REMOTE_DIR}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' COMPOSE_FILE='${COMPOSE_FILE}' ENV_FILE='${ENV_FILE}' bash -s" <<'REMOTE_SCRIPT'
+log "Building images and starting services on remote host (branch=${DEPLOY_BRANCH})"
+ssh_cmd "REMOTE_DIR='${REMOTE_DIR}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' COMPOSE_FILE='${COMPOSE_FILE}' ENV_FILE='${ENV_FILE}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash -s" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
 cd "${REMOTE_DIR}"
 tar -xzf "${REMOTE_ARCHIVE}" -C "${REMOTE_DIR}"
 rm -f "${REMOTE_ARCHIVE}"
 chmod 600 "${ENV_FILE}"
+
+# Checkout the target branch (main for production, develop for test)
+git fetch origin 2>/dev/null || true
+git checkout "${DEPLOY_BRANCH}" 2>/dev/null || true
+git reset --hard "origin/${DEPLOY_BRANCH}" 2>/dev/null || true
+DEPLOY_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+echo "[deploy] Branch: ${DEPLOY_BRANCH} @ ${DEPLOY_COMMIT}"
+
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build --pull
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --remove-orphans
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps
 REMOTE_SCRIPT
 
-log "Deployment complete"
+log "Deployment complete (branch=${DEPLOY_BRANCH})"
 log "Frontend: http://${SERVER_HOST}"
 log "Backend health: http://${SERVER_HOST}/api/health"

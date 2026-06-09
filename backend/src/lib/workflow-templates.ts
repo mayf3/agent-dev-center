@@ -14,6 +14,7 @@ interface StepDef {
   role: string;
   requiredReports: string[];
   autoAdvance: boolean;
+  targetBranch?: string; // 部署目标分支: 'develop' (测试) | 'main' (生产)
 }
 
 interface TemplateDef {
@@ -51,6 +52,7 @@ const STANDARD_DEV_MIDDLE: StepDef[] = [
     role: 'ops',
     requiredReports: ['DEV_SELF_CHECK'],  // QA 审批 DSC 后才能部署
     autoAdvance: false,
+    targetBranch: 'develop',
   },
   {
     name: 'testing',
@@ -86,6 +88,7 @@ const STANDARD_DEV_MIDDLE: StepDef[] = [
     role: 'ops',
     requiredReports: ['CTO_REVIEW'],
     autoAdvance: false,
+    targetBranch: 'main',
   },
   {
     name: 'done',
