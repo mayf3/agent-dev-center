@@ -86,7 +86,7 @@ async function checkReportsApproved(requirementId: string, requiredReports: stri
     where: {
       requirementId,
       reportType: { in: requiredReports as any },
-      status: 'approved',
+      status: { in: ['submitted', 'approved'] },
     },
     select: { reportType: true },
   });
