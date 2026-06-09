@@ -144,6 +144,11 @@ reportsRouter.post(
     });
     if (!requirement) throw new HttpError(404, '需求不存在');
 
+    // df1e4527: 已完成或已拒绝的需求不能提交报告
+    if (['done', 'rejected'].includes(requirement.currentStep ?? '')) {
+      throw new HttpError(400, '需求已完成或已拒绝，无法提交新报告');
+    }
+
     // 校验提交者角色
     await validateReportRole(req.user!, body.reportType, params.id);
 

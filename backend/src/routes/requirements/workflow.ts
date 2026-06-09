@@ -5,6 +5,7 @@
  * 系统级强制约束：角色匹配 + 报告审批 + 审计日志
  */
 import { z } from 'zod';
+import { ReportType, ReportStatus } from '@prisma/client';
 import { requireRoles } from '../../middleware/auth.js';
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
@@ -120,6 +121,33 @@ async function logTransition(params: {
       actorRole: params.actorRole,
       comment: params.comment,
       metadata: params.metadata ?? undefined,
+    },
+  });
+}
+
+/**
+ * df1e4527: 自动 reject 需求的 pending 报告
+ * advance 到 done / reject 需求时调用，清理 QA 队列中的垃圾报告
+ */
+async function autoRejectPendingReports(requirementId: string) {
+  const pending = await prisma.requirementReport.findMany({
+    where: {
+      requirementId,
+      status: 'pending',
+    },
+    select: { id: true },
+  });
+
+  if (pending.length === 0) return;
+
+  await prisma.requirementReport.updateMany({
+    where: {
+      requirementId,
+      status: 'pending',
+    },
+    data: {
+      status: 'rejected',
+      reviewComment: '需求已完成或已回退，pending 报告自动关闭',
     },
   });
 }
@@ -327,6 +355,13 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           isDone: targetStep.name === steps[steps.length - 1]?.name,
         },
       });
+
+      // df1e4527: 到达最终步骤时自动清理 pending 报告
+      if (targetStep.name === steps[steps.length - 1]?.name) {
+        autoRejectPendingReports(params.id).catch(err => {
+          console.error('[df1e4527] auto-reject pending reports on advance failed:', err);
+        });
+      }
     }),
   );
 
@@ -417,6 +452,11 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           newAssigneeName,
           comment: body.comment,
         },
+      });
+
+      // df1e4527: 回退时自动清理 pending 报告
+      autoRejectPendingReports(params.id).catch(err => {
+        console.error('[df1e4527] auto-reject pending reports on reject failed:', err);
       });
     }),
   );
