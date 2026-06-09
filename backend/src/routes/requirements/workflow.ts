@@ -298,6 +298,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         data: {
           currentStep: targetStep.name,
           assigneeId: newAssigneeId,
+          transitionCount: { increment: 1 }, // 567e2c51: 流转计数
         },
       });
 
@@ -391,6 +392,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         data: {
           currentStep: targetStepName,
           assigneeId: newAssigneeId,
+          transitionCount: { increment: 1 }, // 567e2c51: 流转计数
         },
       });
 
