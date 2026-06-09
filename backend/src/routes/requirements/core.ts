@@ -466,6 +466,20 @@ router.patch(
     if (!existing) throw new HttpError(404, '需求不存在');
     if (!canEditRequirement(req.user!, existing)) throw new HttpError(403, '无权编辑该需求');
 
+    // 5c76bb65: PM 审核时字段级权限控制
+    if (existing.currentStep === 'pm_review') {
+      const user = req.user!;
+      const isPmRole = user.internalRole === 'pm' || user.role === 'pm';
+      const isAdmin = user.role === 'admin';
+      if (isPmRole && !isAdmin) {
+        const pmProtectedFields = ['title', 'description', 'priority', 'department'];
+        const blockedFields = pmProtectedFields.filter(f => (body as any)[f] !== undefined);
+        if (blockedFields.length > 0) {
+          throw new HttpError(403, `PM 审核时不能修改以下字段：${blockedFields.join('、')}。只能打回（rejectReason）或写审核意见（notes）`);
+        }
+      }
+    }
+
     let assigneeId = existing.assigneeId;
     let assigneeName: string | null = existing.assignee;
 
