@@ -136,19 +136,19 @@ export async function enforceReportReviewFlow(req: Request, _res: Response, next
 
   const report = await prisma.requirementReport.findUnique({
     where: { id: reportId },
-    select: { reportType: true, qaReviewedAt: true, qaReviewedBy: true, qaBypass: true, status: true },
+    select: { reportType: true, qaReviewedAt: true, qaReviewedBy: true, status: true },
   });
 
   if (!report) {
     return next(new HttpError(404, '报告不存在'));
   }
 
-  // TEST_REPORT 和 SECURITY_REVIEW 必须先经 QA 审查
+  // TEST_REPORT 和 SECURITY_REVIEW 必须先经 QA 审查（qa_bypass 已删除）
   const requiresQaReview = report.reportType === ReportType.TEST_REPORT ||
                           report.reportType === ReportType.SECURITY_REVIEW;
 
   if (requiresQaReview) {
-    const hasQaClearance = Boolean(report.qaReviewedAt || report.qaBypass);
+    const hasQaClearance = Boolean(report.qaReviewedAt);
 
     // 非 QA 角色尝试审批
     if (!hasPlatformRole(req.user, InternalRole.qa) && !hasQaClearance) {
