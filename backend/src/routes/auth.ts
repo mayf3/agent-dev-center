@@ -164,7 +164,8 @@ authRouter.post(
           });
         }
 
-        // 用 auth-service 返回的 token 或签发 ADC 自己的 token
+        // 7dfea143: 透传 auth-service 签发的 JWT（iss=auth-service, aud=unified-platform）
+        const accessToken = data.accessToken!;
         const safeUser = {
           id: localUser.id,
           name: localUser.name,
@@ -173,8 +174,6 @@ authRouter.post(
           internalRole: localUser.internalRole,
           okrRole: localUser.okrRole,
         };
-
-        const accessToken = signAccessToken(safeUser as any);
         const refreshToken = signRefreshToken(safeUser as any);
 
         // 更新最后登录时间
@@ -248,16 +247,54 @@ authRouter.post(
       throw new HttpError(401, '用户不存在或已被禁用');
     }
 
+    // 7dfea143: 优先通过 auth-service 统一签发 JWT（iss=auth-service, aud=unified-platform）
+    // 用于下游服务（todo、OKR 等）的跨服务认证
+    let accessToken: string;
+    let tokenSource = 'local';
+
+    try {
+      const authServiceUrl = env.AUTH_SERVICE_URL;
+      const response = await fetch(`${authServiceUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: body.email, password: body.password }),
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (response.ok) {
+        const data = await response.json() as { accessToken?: string };
+        if (data.accessToken) {
+          accessToken = data.accessToken;
+          tokenSource = 'auth-service';
+        } else {
+          throw new Error('auth-service 返回了空 token');
+        }
+      } else {
+        throw new Error(`auth-service 返回 ${response.status}`);
+      }
+    } catch (err) {
+      // auth-service 不可用 → fallback 到 ADC 本地签发
+      console.warn('[Auth] auth-service unavailable, falling back to local token:', (err as Error).message);
+      const safeUser = toSafeUser({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        internalRole: user.internalRole,
+        okrRole: user.okrRole,
+      });
+      accessToken = signAccessToken(safeUser);
+    }
+
     const safeUser = toSafeUser({
       id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
       internalRole: user.internalRole,
-      okrRole: user.okrRole
+      okrRole: user.okrRole,
     });
 
-    const accessToken = signAccessToken(safeUser);
     const refreshToken = signRefreshToken(safeUser);
 
     // IP-based login anomaly detection (d3ae001f)
@@ -282,7 +319,8 @@ authRouter.post(
     res.json({
       accessToken,
       refreshToken,
-      user: { ...safeUser, mustChangePassword }
+      user: { ...safeUser, mustChangePassword },
+      tokenSource, // 调试用：标识 token 签发来源
     });
   })
 );
