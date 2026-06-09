@@ -177,6 +177,7 @@ model Requirement {
   deployVersion       String?
   dependsOnIds        String[]              @default([]) @map("depends_on_ids")
   blockedBy           String[]              @default([]) @map("blocked_by")
+  transitionCount     Int                   @default(0) @map("transition_count")
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   tasks               Task[]
