@@ -43,7 +43,14 @@ const QA_REVIEW_DEV: StepDef = {
   autoAdvance: false,
 };
 
-/** 标准开发中段：test_env_deploy → testing → qa_review → security_review → cto_review → deploying → done */
+/** Merge-to-main 步骤：代码合并到 main 后验证 */
+const MERGE_TO_MAIN: StepDef = {
+  name: 'merge_to_main',
+  displayName: '合并到 main',
+  role: 'developer',
+  requiredReports: ['MERGE_REPORT'],
+  autoAdvance: false,
+};
 const STANDARD_DEV_MIDDLE: StepDef[] = [
   {
     name: 'test_env_deploy',
@@ -110,6 +117,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -127,6 +135,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -144,6 +153,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -161,6 +171,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -178,6 +189,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       {
         name: 'security_review',
