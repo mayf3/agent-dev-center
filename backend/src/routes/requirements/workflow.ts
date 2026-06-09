@@ -36,7 +36,7 @@ function mapUserRole(internalRole: string | null | undefined, role: string): str
   const mapping: Record<string, string[]> = {
     cto: ['cto', 'admin'],
     admin: ['cto', 'admin'],
-    developer: ['developer', 'backend_developer', 'frontend_developer', 'mobile_developer', 'miniapp_developer', 'game_developer'],
+    developer: ['developer'],
     tester: ['tester'],
     security: ['security'],
     ops: ['ops'],
