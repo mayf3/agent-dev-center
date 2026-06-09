@@ -121,11 +121,6 @@ export async function validateAssigneeRoleMatch(
   if (!assigneeUser) return { ok: false, message: `用户 ${assigneeUserId} 不存在` };
 
   if (assigneeUser.internalRole !== expectedInternalRole) {
-    // 2026-06-10: developer 可作为所有具体开发角色的 fallback
-    const SPECIFIC_DEV_ROLES = new Set(['backend_developer', 'frontend_developer', 'mobile_developer', 'miniapp_developer', 'game_developer']);
-    if (assigneeUser.internalRole === 'developer' && SPECIFIC_DEV_ROLES.has(expectedInternalRole)) {
-      return { ok: true };
-    }
     return {
       ok: false,
       message: `当前需求处于步骤「${currentStepDef.displayName}」（需要 ${stepRole} 角色），`
