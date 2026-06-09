@@ -45,8 +45,6 @@ const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role' | 'any'; platf
   POSTMORTEM:        { mode: 'any', allowAdmin: true },
 };
 
-const QA_BYPASS_MIN_WAIT_MS = 2 * 60 * 60 * 1000;
-
 const WORKFLOW_STEP_PLATFORM_ROLES: Record<string, string[]> = {
   cto: ['adc:admin'],
   admin: ['adc:admin'],
@@ -412,20 +410,11 @@ reportsRouter.patch(
       throw new HttpError(403, '审核者和提交者不能为同一人，报告不能自己审自己');
     }
 
-    // DEV_SELF_CHECK / TEST_REPORT / SECURITY_REVIEW 必须先经 QA 审查
+    // DEV_SELF_CHECK / TEST_REPORT / SECURITY_REVIEW 必须先经 QA 审查（qa_bypass 已删除，不可跳过）
     const requiresQaReview = report.reportType === ReportType.DEV_SELF_CHECK || report.reportType === ReportType.TEST_REPORT || report.reportType === ReportType.SECURITY_REVIEW;
-    const shouldBypassQa = requiresQaReview && body.qa_bypass === true;
     const reviewedAt = new Date();
 
-    if (shouldBypassQa) {
-      if (report.status !== 'pending') throw new HttpError(400, '该报告已审核，不能执行 QA Bypass');
-      if (!body.qa_bypass_reason) throw new HttpError(400, 'qa_bypass=true 时必须提供 qa_bypass_reason');
-
-      const elapsedMs = reviewedAt.getTime() - report.createdAt.getTime();
-      if (elapsedMs < QA_BYPASS_MIN_WAIT_MS) {
-        throw new HttpError(403, '报告提交未满 2 小时，不能执行 QA Bypass');
-      }
-    } else if (requiresQaReview && !report.qaReviewedAt) {
+    if (requiresQaReview && !report.qaReviewedAt) {
       throw new HttpError(403, '测试报告和安全审查必须先经 QA 审查，再由 CTO 最终审批');
     }
 
@@ -437,12 +426,6 @@ reportsRouter.patch(
         status: body.status,
         reviewComment: body.reviewComment,
         reviewedAt,
-        ...(shouldBypassQa ? {
-          qaBypass: true,
-          qaBypassReason: body.qa_bypass_reason,
-          qaBypassAt: reviewedAt,
-          qaBypassBy: req.user!.name,
-        } : {}),
       },
     });
 

@@ -157,6 +157,21 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         if (!targetStep) {
           throw new HttpError(400, `工作流中不存在步骤「${body.startStep}」，可用步骤：${steps.map(s => s.name).join(', ')}`);
         }
+
+        // CTO 硬约束：startStep 只允许回退（index 更小），不能往前跳
+        // 如果需求已有 currentStep，startStep 必须是更早的步骤
+        if (requirement.currentStep) {
+          const currentIdx = steps.findIndex(s => s.name === requirement.currentStep);
+          const targetIdx = steps.findIndex(s => s.name === body.startStep);
+          if (currentIdx !== -1 && targetIdx > currentIdx) {
+            throw new HttpError(403, `startStep 只能回退到更早的步骤。当前步骤「${requirement.currentStep}」(index=${currentIdx})，不能跳到「${body.startStep}」(index=${targetIdx})`);
+          }
+          // 禁止跳到 done（最后一步）
+          const lastStep = steps[steps.length - 1];
+          if (body.startStep === lastStep!.name) {
+            throw new HttpError(403, '禁止通过 startStep 直接跳到最终步骤');
+          }
+        }
       } else {
         targetStep = steps[0];
       }

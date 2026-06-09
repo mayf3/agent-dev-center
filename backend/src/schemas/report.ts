@@ -39,16 +39,6 @@ export const reviewReportSchema = z.object({
   body: z.object({
     status: z.enum(['approved', 'rejected', 'changes_requested']),
     reviewComment: z.string().max(2000).optional(),
-    qa_bypass: z.boolean().optional(),
-    qa_bypass_reason: z.string().trim().min(10).max(500).optional(),
-  }).superRefine((body, ctx) => {
-    if (body.qa_bypass === true && !body.qa_bypass_reason) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['qa_bypass_reason'],
-        message: 'qa_bypass=true 时必须提供 qa_bypass_reason',
-      });
-    }
   }),
 });
 

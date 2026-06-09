@@ -371,6 +371,11 @@ router.put(
     if (!existing) throw new HttpError(404, '需求不存在');
     if (!canEditRequirement(req.user!, existing)) throw new HttpError(403, '无权编辑该需求');
 
+    // CTO 硬约束：禁止通过 PUT 直接修改 currentStep，状态流转只能通过 advance/reject
+    if ('currentStep' in req.body && req.body.currentStep !== existing.currentStep) {
+      throw new HttpError(403, '禁止通过 PUT 修改 currentStep，状态流转请使用 advance/reject API');
+    }
+
     let assigneeId = existing.assigneeId;
     let assigneeName: string | null = existing.assignee;
     if (body.assignee !== undefined) {
@@ -505,6 +510,10 @@ router.patch(
     // 处理步骤变更
     let newStep = existing.currentStep;
     if (body.currentStep !== undefined) {
+      // CTO 硬约束：有工作流的需求不能直接修改 currentStep，必须通过 advance/reject API
+      if (existing.workflowId && body.currentStep !== existing.currentStep) {
+        throw new HttpError(403, '有工作流的需求不能直接修改 currentStep，请使用 advance/reject API 进行状态流转');
+      }
       newStep = body.currentStep;
     } else if (body.status !== undefined) {
       newStep = body.status;
