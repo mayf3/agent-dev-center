@@ -282,35 +282,6 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
       },
     ],
   },
-  {
-    name: 'lightweight',
-    displayName: '轻量审批流程',
-    description: '巡检/清理/配置/BUG确认类需求：PM审批→CTO确认→done（无开发自检、无测试）',
-    steps: [
-      PM_REVIEW,
-      {
-        name: 'cto_review',
-        displayName: 'CTO确认',
-        role: 'cto',
-        requiredReports: [],
-        autoAdvance: false,
-      },
-      {
-        name: 'deploying',
-        displayName: '部署执行',
-        role: 'ops',
-        requiredReports: [],
-        autoAdvance: true,
-      },
-      {
-        name: 'done',
-        displayName: '已完成',
-        role: 'cto',
-        requiredReports: [],
-        autoAdvance: false,
-      },
-    ],
-  },
 ];
 
 /**
