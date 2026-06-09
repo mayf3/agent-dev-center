@@ -55,7 +55,7 @@ const updateProfileSchema = z.object({
 
 const updateHrInfoSchema = z.object({
   body: z.object({
-    internalRole: z.enum(['cto', 'pm', 'developer', 'tester', 'security', 'ops', 'qa']).optional().nullable(),
+    internalRole: z.enum(['cto', 'pm', 'developer', 'backend_developer', 'frontend_developer', 'mobile_developer', 'miniapp_developer', 'game_developer', 'tester', 'security', 'ops', 'qa']).optional().nullable(),
     department: z.string().trim().max(100).optional().nullable(),
     title: z.string().trim().max(100).optional().nullable(),
     employeeNo: z.string().trim().max(50).optional().nullable(),
