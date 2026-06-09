@@ -19,6 +19,11 @@ enum InternalRole {
   cto
   pm
   developer
+  backend_developer
+  frontend_developer
+  mobile_developer
+  miniapp_developer
+  game_developer
   tester
   security
   ops
