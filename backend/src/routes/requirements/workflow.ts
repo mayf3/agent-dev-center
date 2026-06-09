@@ -291,7 +291,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       }
 
       // 自动解析下一步骤的 assigneeId
-      const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
+      const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId, requirement.id);
 
       const updated = await prisma.requirement.update({
         where: { id: params.id },
@@ -383,7 +383,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
 
       // 自动解析回退步骤的 assigneeId
       const newAssigneeId = targetStepDef
-        ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
+        ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId, requirement.id)
         : requirement.assigneeId;
 
       const updated = await prisma.requirement.update({

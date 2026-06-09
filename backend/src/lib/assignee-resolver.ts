@@ -22,6 +22,42 @@ const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
 };
 
 /**
+ * 模板名称 → (步骤 role) → 具体的 internalRole
+ * 6c70be0a: 按模板名称细分开发者角色
+ */
+const TEMPLATE_ROLE_TO_INTERNAL: Record<string, Record<string, string>> = {
+  'backend-dev': { dev_self_check: 'backend_developer' },
+  'frontend-dev': { dev_self_check: 'frontend_developer' },
+  'mobile-dev': { dev_self_check: 'mobile_developer' },
+  'miniapp-dev': { dev_self_check: 'miniapp_developer' },
+  'game-dev': { dev_self_check: 'game_developer' },
+};
+
+/**
+ * 根据工作流模板名解析细分角色
+ */
+async function resolveInternalRoleByTemplate(
+  workflowId: string | null,
+  stepRole: string,
+): Promise<string | null> {
+  if (!workflowId) return WORKFLOW_ROLE_TO_INTERNAL[stepRole] ?? null;
+
+  const template = await prisma.workflowTemplate.findUnique({
+    where: { id: workflowId },
+    select: { name: true },
+  });
+  if (!template) return WORKFLOW_ROLE_TO_INTERNAL[stepRole] ?? null;
+
+  // 检查是否有模板特定的角色映射
+  const templateMap = TEMPLATE_ROLE_TO_INTERNAL[template.name];
+  if (templateMap?.[stepRole]) {
+    return templateMap[stepRole]!;
+  }
+
+  return WORKFLOW_ROLE_TO_INTERNAL[stepRole] ?? null;
+}
+
+/**
  * 根据工作流步骤的 role 找到对应的用户 ID
  *
  * 优先级：
@@ -31,8 +67,21 @@ const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
 export async function resolveAssigneeForStep(
   stepRole: string,
   currentAssigneeId?: string | null,
+  requirementId?: string | null,
 ): Promise<string | null> {
-  const internalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
+  let internalRole: string | null;
+
+  // 如果提供了 requirementId，按模板名细分角色
+  if (requirementId) {
+    const requirement = await prisma.requirement.findUnique({
+      where: { id: requirementId },
+      select: { workflowId: true },
+    });
+    internalRole = await resolveInternalRoleByTemplate(requirement?.workflowId ?? null, stepRole);
+  } else {
+    internalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole] ?? null;
+  }
+
   if (!internalRole) return currentAssigneeId ?? null;
 
   // 如果当前 assignee 的角色匹配，保持不变
