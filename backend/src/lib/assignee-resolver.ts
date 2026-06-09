@@ -26,12 +26,19 @@ const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
   qa: 'qa',  // 2026-06-05 新增 QA 步骤支持
 };
 
+/** developer 角色族谱：当 stepRole=developer 时匹配所有开发者变体 */
+const DEVELOPER_FAMILY = [
+  'developer', 'backend_developer', 'frontend_developer',
+  'mobile_developer', 'miniapp_developer', 'game_developer',
+];
+
 /**
  * 根据工作流步骤的 role 找到对应的用户 ID
  *
  * 优先级：
  * 1. 如果传入 currentAssigneeId 且该用户的 internalRole 匹配 → 保持不变
  * 2. 从 users 表找 internalRole 匹配的第一个活跃用户
+ *    - developer 族角色模糊匹配（developer/backend_developer/frontend_developer/...）
  */
 export async function resolveAssigneeForStep(
   stepRole: string,
@@ -40,20 +47,24 @@ export async function resolveAssigneeForStep(
   const internalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
   if (!internalRole) return currentAssigneeId ?? null;
 
+  // developer 族角色：匹配所有开发者变体
+  const isDeveloperFamily = stepRole === 'developer' || internalRole === 'developer';
+  const matchRoles = isDeveloperFamily ? DEVELOPER_FAMILY : [internalRole];
+
   // 如果当前 assignee 的角色匹配，保持不变
   if (currentAssigneeId) {
     const current = await prisma.user.findUnique({
       where: { id: currentAssigneeId },
       select: { internalRole: true },
     });
-    if (current?.internalRole === internalRole) {
+    if (current?.internalRole && matchRoles.includes(current.internalRole)) {
       return currentAssigneeId;
     }
   }
 
   // 查找匹配角色的用户（按创建时间排序，保证确定性）
   const match = await prisma.user.findFirst({
-    where: { internalRole: internalRole as any },
+    where: { internalRole: { in: matchRoles as any[] } },
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   });

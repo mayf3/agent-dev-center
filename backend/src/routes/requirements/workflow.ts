@@ -33,17 +33,24 @@ interface WorkflowStep {
 /** Map user internalRole to workflow step role */
 function mapUserRole(internalRole: string | null | undefined, role: string): string | null {
   if (!internalRole) return null;
+  // developer 族角色互通：backend_developer/frontend_developer/... 都能匹配 developer 步骤
+  const developerFamily = ['developer', 'backend_developer', 'frontend_developer', 'mobile_developer', 'miniapp_developer', 'game_developer'];
   const mapping: Record<string, string[]> = {
     cto: ['cto', 'admin'],
     admin: ['cto', 'admin'],
-    developer: ['developer'],
+    developer: developerFamily,
+    backend_developer: developerFamily,
+    frontend_developer: developerFamily,
+    mobile_developer: developerFamily,
+    miniapp_developer: developerFamily,
+    game_developer: developerFamily,
     tester: ['tester'],
     security: ['security'],
     ops: ['ops'],
     pm: ['pm', 'requester'],
     qa: ['qa'],
   };
-  const allowed = mapping[internalRole] || [];
+  const allowed = mapping[internalRole] || [internalRole];
   return allowed.includes(role) ? role : null;
 }
 
