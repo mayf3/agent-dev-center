@@ -18,6 +18,7 @@ import path from 'node:path';
  * 2026-06-04 安全更新：需求可见性与操作权限控制（P1 需求 ef8419f2）
  * - developer（internalRole 或 role）按 assigneeId 判断
  */
+/** 权限判断：是否可读该需求 */
 export function canReadRequirement(user: Express.AuthUser, requirement: { requesterId: string | null; requester: string; assigneeId: string | null; assignee: string | null }) {
   if (user.role === 'admin' || user.role === 'cto_agent' || user.internalRole === 'cto') {
     return true;
@@ -28,10 +29,19 @@ export function canReadRequirement(user: Express.AuthUser, requirement: { reques
     return true;
   }
 
-  // 开发者：只看分配给自己的
-  if (user.internalRole === 'developer' || user.role === 'developer') {
+  // PM 可看所有需求
+  if (user.internalRole === 'pm') {
+    return true;
+  }
+
+  // 开发者（含细分角色）：可看分配给自己的 + 自己提的
+  if (user.internalRole?.endsWith('_developer') || user.internalRole === 'developer' || user.role === 'developer') {
     return requirement.assigneeId === user.id ||
-           (requirement.assignee === user.name || requirement.assignee === user.email);
+           requirement.assignee === user.name ||
+           requirement.assignee === user.email ||
+           requirement.requesterId === user.id ||
+           requirement.requester === user.name ||
+           requirement.requester === user.email;
   }
 
   // 纯 requester：只看自己提的
@@ -41,9 +51,13 @@ export function canReadRequirement(user: Express.AuthUser, requirement: { reques
            requirement.requester === user.email;
   }
 
-  // 默认：按 assignee 判断
+  // 默认：看自己提的或分配给自己的
   return requirement.assigneeId === user.id ||
-         (requirement.assignee === user.name || requirement.assignee === user.email);
+         requirement.assignee === user.name ||
+         requirement.assignee === user.email ||
+         requirement.requesterId === user.id ||
+         requirement.requester === user.name ||
+         requirement.requester === user.email;
 }
 
 /** 权限判断：是否可编辑该需求（基于 user.id） */
@@ -97,10 +111,13 @@ export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.Requir
     return {};
   }
 
-  // 开发者（internalRole=developer 或 role=developer）：只看分配给自己的
-  if (user.internalRole === 'developer' || user.role === 'developer') {
+  // 开发者（含细分角色）：只看分配给自己的 + 自己提的
+  if (user.internalRole?.endsWith('_developer') || user.internalRole === 'developer' || user.role === 'developer') {
     return {
-      OR: [{ assigneeId: user.id }, { assignee: user.name }, { assignee: user.email }]
+      OR: [
+        { assigneeId: user.id }, { assignee: user.name }, { assignee: user.email },
+        { requesterId: user.id }, { requester: user.name }, { requester: user.email },
+      ]
     };
   }
 
