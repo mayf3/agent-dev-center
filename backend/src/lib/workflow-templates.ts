@@ -98,15 +98,15 @@ const STANDARD_DEV_MIDDLE: StepDef[] = [
 
 const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
-    name: 'standard-dev',
-    displayName: '标准开发流程',
-    description: 'PM审批→开发自检→QA审查→部署测试→测试→QA审查→安全→CTO→部署→完成',
+    name: 'backend-dev',
+    displayName: '后端开发流程',
+    description: '后端需求：PM审批→后端开发→QA审查→部署测试→测试→QA审查→安全→CTO→部署',
     steps: [
       PM_REVIEW,
       {
         name: 'dev_self_check',
-        displayName: '开发自检',
-        role: 'developer',
+        displayName: '后端开发自检',
+        role: 'backend_developer',
         requiredReports: [],
         autoAdvance: false,
       },
@@ -123,7 +123,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
       {
         name: 'dev_self_check',
         displayName: '前端开发自检',
-        role: 'developer',
+        role: 'frontend_developer',
         requiredReports: [],
         autoAdvance: false,
       },
@@ -132,15 +132,15 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     ],
   },
   {
-    name: 'backend-dev',
-    displayName: '后端开发流程',
-    description: '后端需求：PM审批→后端开发→QA审查→部署测试→测试→QA审查→安全→CTO→部署',
+    name: 'mobile-dev',
+    displayName: '移动端开发流程',
+    description: '移动端需求（iOS/Android/RN）：PM审批→移动端开发→QA审查→部署测试→测试→QA审查→安全→CTO→部署',
     steps: [
       PM_REVIEW,
       {
         name: 'dev_self_check',
-        displayName: '后端开发自检',
-        role: 'developer',
+        displayName: '移动端开发自检',
+        role: 'mobile_developer',
         requiredReports: [],
         autoAdvance: false,
       },
@@ -149,15 +149,32 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     ],
   },
   {
-    name: 'fullstack-dev',
-    displayName: '全栈开发流程',
-    description: '全栈需求：PM审批→开发→QA审查→部署测试→测试→QA审查→安全→CTO→部署',
+    name: 'miniapp-dev',
+    displayName: '小程序开发流程',
+    description: '微信/支付宝小程序需求：PM审批→小程序开发→QA审查→部署测试→测试→QA审查→安全→CTO→部署',
     steps: [
       PM_REVIEW,
       {
         name: 'dev_self_check',
-        displayName: '开发自检（前后端）',
-        role: 'developer',
+        displayName: '小程序开发自检',
+        role: 'miniapp_developer',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      QA_REVIEW_DEV,
+      ...STANDARD_DEV_MIDDLE,
+    ],
+  },
+  {
+    name: 'game-dev',
+    displayName: '游戏开发流程',
+    description: '游戏/Unity/Cocos需求：PM审批→游戏开发→QA审查→部署测试→测试→QA审查→安全→CTO→部署',
+    steps: [
+      PM_REVIEW,
+      {
+        name: 'dev_self_check',
+        displayName: '游戏开发自检',
+        role: 'game_developer',
         requiredReports: [],
         autoAdvance: false,
       },
@@ -174,7 +191,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
       {
         name: 'dev_self_check',
         displayName: '修复自检',
-        role: 'developer',
+        role: 'backend_developer',
         requiredReports: [],
         autoAdvance: false,
       },
@@ -217,7 +234,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
       {
         name: 'dev_self_check',
         displayName: '紧急修复自检',
-        role: 'developer',
+        role: 'backend_developer',
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
@@ -270,6 +287,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
 /**
  * Upsert all default workflow templates.
  * Safe to call on every startup — will only insert if missing, update if changed.
+ * Deactivated templates: standard-dev, fullstack-dev (replaced by role-specific templates).
  */
 export async function ensureWorkflowTemplates(): Promise<void> {
   for (const tmpl of DEFAULT_TEMPLATES) {
@@ -290,5 +308,14 @@ export async function ensureWorkflowTemplates(): Promise<void> {
       },
     });
   }
+
+  // 停用已废弃的模板
+  for (const deprecated of ['standard-dev', 'fullstack-dev']) {
+    await prisma.workflowTemplate.updateMany({
+      where: { name: deprecated, isActive: true },
+      data: { isActive: false },
+    });
+  }
+
   console.log(`[workflow-templates] Ensured ${DEFAULT_TEMPLATES.length} default templates`);
 }
