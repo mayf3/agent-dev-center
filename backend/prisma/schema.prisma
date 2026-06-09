@@ -120,6 +120,7 @@ model User {
   linkedAgent           MarketplaceAgent?     @relation("AgentUserLink")
   marketplaceTasks      MarketplaceTask[]     @relation("MarketplaceRequester")
   ownedProjects         Project[]             @relation("ProjectOwner")
+  requirementComments   RequirementComment[]  @relation("CommentAuthor")
 
   @@index([lastLoginAt])
   @@map("users")
@@ -190,6 +191,7 @@ model Requirement {
   serviceLinks        ServiceRequirement[]
   postmortems         Postmortem[]
   workflowTransitions WorkflowTransition[]
+  comments            RequirementComment[]
 
   // Workflow engine fields
   workflowId  String?           @db.Uuid
@@ -207,6 +209,20 @@ model Requirement {
   @@index([assignee])
   @@index([assigneeId])
   @@map("requirements")
+}
+
+model RequirementComment {
+  id             String       @id @default(uuid()) @db.Uuid
+  requirementId  String       @db.Uuid
+  requirement    Requirement  @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  authorId       String       @db.Uuid
+  author         User         @relation("CommentAuthor", fields: [authorId], references: [id])
+  content        String       @db.Text
+  createdAt      DateTime     @default(now())
+
+  @@index([requirementId])
+  @@index([authorId])
+  @@map("requirement_comments")
 }
 
 model Task {

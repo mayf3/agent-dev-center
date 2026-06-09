@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import { env } from './config/env.js';
 import { authRouter } from './routes/auth.js';
 import { requirementsRouter } from './routes/requirements/index.js';
+import { commentRouter } from './routes/comments.js';
 import { tasksRouter } from './routes/tasks.js';
 import { reportsRouter } from './routes/reports.js';
 import { notificationsRouter } from './routes/notifications.js';
@@ -130,6 +131,7 @@ app.use('/api/auth', authLimiter, authRouter);
 // mustChangePassword 拦截：认证后检查是否需要强制改密码
 app.use('/api', mustChangePasswordGuard);
 app.use('/api/requirements', requirementsRouter);
+app.use('/api/requirements', commentRouter);
 app.use('/api/requirements/:id/reports', reportsRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/tasks', tasksRouter);
