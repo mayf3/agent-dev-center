@@ -120,6 +120,7 @@ model User {
   linkedAgent           MarketplaceAgent?     @relation("AgentUserLink")
   marketplaceTasks      MarketplaceTask[]     @relation("MarketplaceRequester")
   ownedProjects         Project[]             @relation("ProjectOwner")
+  comments              RequirementComment[]  @relation("CommentAuthor")
 
   @@index([lastLoginAt])
   @@map("users")
@@ -198,6 +199,8 @@ model Requirement {
 
   requesterUser User? @relation("RequesterRequirements", fields: [requesterId], references: [id])
   assigneeUser  User? @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
+
+  comments RequirementComment[] @relation("CommentRequirement")
 
   @@index([currentStep])
   @@index([priority])
@@ -787,4 +790,35 @@ model Project {
   updatedAt   DateTime @updatedAt
 
   @@map("projects")
+}
+
+// 488bb834: 协作评论系统
+model RequirementComment {
+  id             String   @id @default(uuid()) @db.Uuid
+  requirementId  String   @db.Uuid
+  requirement    Requirement @relation("CommentRequirement", fields: [requirementId], references: [id], onDelete: Cascade)
+
+  // Thread support
+  parentId       String?  @db.Uuid
+  parent         RequirementComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies        RequirementComment[] @relation("CommentReplies")
+
+  // Content
+  content        String   @db.Text
+  authorId       String   @db.Uuid
+  author         User     @relation("CommentAuthor", fields: [authorId], references: [id])
+
+  // Metadata
+  type           String   @default("discussion")  // discussion | review | status_change | system
+  status         String   @default("open")         // open | resolved | archived
+  mentions       String[] @default([])              // @mentioned agent IDs
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([requirementId])
+  @@index([authorId])
+  @@index([parentId])
+  @@index([status])
+  @@map("requirement_comments")
 }
