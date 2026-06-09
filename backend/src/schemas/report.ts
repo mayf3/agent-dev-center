@@ -8,6 +8,7 @@ export const reportTypeValues = [
   'TEST_DEPLOY_CONFIRM',
   'DEPLOY_CONFIRM',
   'POSTMORTEM',
+  'MERGE_REPORT',
 ] as const;
 
 export const reportStatusValues = [
