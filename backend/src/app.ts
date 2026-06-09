@@ -48,8 +48,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// d7e0a85d: 生产环境禁止 localhost CORS，需显式配置 FRONTEND_ORIGIN
+// d7e0a85d: 生产环境禁止本地 CORS
+// 9e3a0319: 生产环境必须显式配置 FRONTEND_ORIGIN，拒绝默认 localhost
 const corsOrigin = env.FRONTEND_ORIGIN === '*' ? true : env.FRONTEND_ORIGIN;
+if (env.NODE_ENV === 'production' && typeof corsOrigin === 'string' && corsOrigin.includes('localhost')) {
+  console.error('[CORS] FATAL: 生产环境禁止使用 localhost CORS 配置，请在 .env 中设置 FRONTEND_ORIGIN=https://8.163.44.127');
+  process.exit(1);
+}
 if (!corsOrigin && env.NODE_ENV === 'production') {
   console.warn('[CORS] FRONTEND_ORIGIN not set in production — CORS disabled, only same-origin allowed');
 }
