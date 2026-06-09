@@ -78,21 +78,24 @@ function getPreviousStep(steps: WorkflowStep[], currentStepName: string): Workfl
   return steps[idx - 1];
 }
 
-/** Check if all required reports are approved */
-async function checkReportsApproved(requirementId: string, requiredReports: string[]): Promise<{ ok: boolean; missing: string[] }> {
+/** Check if all required reports are approved (or submitted for non-QA steps) */
+async function checkReportsApproved(requirementId: string, requiredReports: string[], mode: 'approved' | 'submitted' = 'approved'): Promise<{ ok: boolean; missing: string[] }> {
   if (requiredReports.length === 0) return { ok: true, missing: [] };
 
-  const approvedReports = await prisma.requirementReport.findMany({
+  // 0b28ad97: submitted 模式只需要报告已提交即可（不要求 approved）
+  const statusFilter = mode === 'submitted' ? { in: ['submitted', 'approved'] } : 'approved';
+
+  const matchedReports = await prisma.requirementReport.findMany({
     where: {
       requirementId,
       reportType: { in: requiredReports as any },
-      status: 'approved',
+      status: statusFilter as any,
     },
     select: { reportType: true },
   });
 
-  const approvedTypes = new Set(approvedReports.map(r => r.reportType));
-  const missing = requiredReports.filter(t => !approvedTypes.has(t as any));
+  const matchedTypes = new Set(matchedReports.map(r => r.reportType));
+  const missing = requiredReports.filter(t => !matchedTypes.has(t as any));
 
   return { ok: missing.length === 0, missing };
 }
@@ -231,7 +234,8 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
 
       // 当前步骤的报告校验（离开当前步骤也需要通过该步骤要求的报告）
       if (currentStep.requiredReports.length > 0) {
-        const { ok, missing } = await checkReportsApproved(params.id, currentStep.requiredReports);
+        // 0b28ad97: 当前步骤报告只需 submitted（开发者自检），不强制 approved
+        const { ok, missing } = await checkReportsApproved(params.id, currentStep.requiredReports, 'submitted');
         if (!ok) {
           const reportLabels: Record<string, string> = {
             DEV_SELF_CHECK: '开发自检报告',
