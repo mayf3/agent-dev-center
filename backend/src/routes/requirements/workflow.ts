@@ -392,6 +392,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         data: {
           currentStep: targetStepName,
           assigneeId: newAssigneeId,
+          transitionCount: { increment: 1 },
         },
       });
 
