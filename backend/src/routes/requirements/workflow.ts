@@ -422,6 +422,120 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
   );
 
   /**
+   * POST /:id/workflow/abandon — 放弃需求（rejected → abandoned）
+   * 被驳回的需求可以标记为放弃，不再出现在活跃列表
+   * 权限：admin 或 requester（需求提出者）
+   */
+  router.post(
+    '/:id/workflow/abandon',
+    asyncHandler(async (req, res) => {
+      const { params } = requirementIdSchema.parse({ params: req.params });
+
+      const requirement = await prisma.requirement.findUnique({
+        where: { id: params.id },
+        select: { id: true, currentStep: true, requesterId: true, assigneeId: true },
+      });
+      if (!requirement) throw new HttpError(404, '需求不存在');
+
+      const user = req.user!;
+      const isOwner = requirement.requesterId === user.id;
+      const isAdmin = user.role === 'admin' || user.role === 'cto_agent';
+      if (!isOwner && !isAdmin) {
+        throw new HttpError(403, '只有需求提出者或管理员可以放弃需求');
+      }
+
+      const abandonableSteps = ['rejected', 'pm_review', 'dev_self_check', 'qa_review', 'testing'];
+      if (!abandonableSteps.includes(requirement.currentStep ?? '')) {
+        throw new HttpError(400, `当前步骤「${requirement.currentStep}」不允许放弃，只能放弃处于 ${abandonableSteps.join('/')} 的需求`);
+      }
+
+      const updated = await prisma.requirement.update({
+        where: { id: params.id },
+        data: {
+          currentStep: 'abandoned',
+          assigneeId: null,
+        },
+      });
+
+      await logTransition({
+        requirementId: params.id,
+        fromStep: requirement.currentStep ?? '',
+        toStep: 'abandoned',
+        action: 'abandon',
+        actorId: user.id,
+        actorName: user.name,
+        actorRole: user.internalRole ?? user.role,
+        comment: req.body?.comment,
+      });
+
+      res.json({
+        success: true,
+        data: {
+          requirementId: updated.id,
+          fromStep: requirement.currentStep,
+          toStep: 'abandoned',
+        },
+      });
+    }),
+  );
+
+  /**
+   * POST /:id/workflow/to-draft — 重新激活需求（abandoned → draft）
+   * 放弃的需求可以重新激活为草稿，修改后再提交
+   * 权限：admin 或 requester
+   */
+  router.post(
+    '/:id/workflow/to-draft',
+    asyncHandler(async (req, res) => {
+      const { params } = requirementIdSchema.parse({ params: req.params });
+
+      const requirement = await prisma.requirement.findUnique({
+        where: { id: params.id },
+        select: { id: true, currentStep: true, requesterId: true },
+      });
+      if (!requirement) throw new HttpError(404, '需求不存在');
+      if (requirement.currentStep !== 'abandoned') {
+        throw new HttpError(400, '只有 abandoned 状态的需求可以重新激活为草稿');
+      }
+
+      const user = req.user!;
+      const isOwner = requirement.requesterId === user.id;
+      const isAdmin = user.role === 'admin' || user.role === 'cto_agent';
+      if (!isOwner && !isAdmin) {
+        throw new HttpError(403, '只有需求提出者或管理员可以重新激活需求');
+      }
+
+      const updated = await prisma.requirement.update({
+        where: { id: params.id },
+        data: {
+          currentStep: 'draft',
+          assigneeId: null,
+        },
+      });
+
+      await logTransition({
+        requirementId: params.id,
+        fromStep: 'abandoned',
+        toStep: 'draft',
+        action: 'reactivate',
+        actorId: user.id,
+        actorName: user.name,
+        actorRole: user.internalRole ?? user.role,
+        comment: req.body?.comment,
+      });
+
+      res.json({
+        success: true,
+        data: {
+          requirementId: updated.id,
+          fromStep: 'abandoned',
+          toStep: 'draft',
+        },
+      });
+    }),
+  );
+
+  /**
    * GET /workflow-templates — 列出所有工作流模板
    * 任何已登录用户可查看（方便前端展示和 CTO 分配）
    * 2026-06-04: 修改为返回所有模板（包括非活跃），以便诊断和修复
