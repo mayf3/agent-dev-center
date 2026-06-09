@@ -76,6 +76,25 @@ if (env.NODE_ENV === 'production') {
 }
 app.use(express.json({ limit: '10mb' }));
 
+// 6f5879d5: 禁止访问敏感文件（.DS_Store, .sql, .env, .git 等）
+app.use((req, res, next) => {
+  const path = req.path.toLowerCase();
+  const blockedPatterns = [
+    '/.ds_store', '.ds_store',
+    '/.env', '.env.local', '.env.production',
+    '/.git/', '/.gitignore',
+    '.sql', '.dump', '.backup',
+    '/.htaccess', '/.htpasswd',
+    '/wp-admin', '/wp-config',
+    '/phpmyadmin',
+  ];
+  if (blockedPatterns.some(p => path.includes(p))) {
+    res.status(404).json({ error: 'Not Found' });
+    return;
+  }
+  next();
+});
+
 // Initialize archive directory on startup
 import { ensureArchiveRoot } from './lib/archive.js';
 ensureArchiveRoot();
