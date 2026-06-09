@@ -413,7 +413,8 @@ router.put(
         requester: body.requester, department: body.department,
         assignee: assigneeName, assigneeId, dueDate: body.dueDate, attachment: body.attachment,
         notes: body.notes,
-        dependsOnIds: body.dependsOnIds
+        dependsOnIds: body.dependsOnIds,
+        gitHash: body.gitHash, branch: body.branch,
       },
       include: { tasks: true, assigneeUser: { select: { name: true } } }
     });

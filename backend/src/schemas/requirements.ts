@@ -92,7 +92,9 @@ export const updateRequirementSchema = requirementIdSchema.extend({
       attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
       notes: z.string().optional(),
       dependsOnIds: z.array(z.string().uuid()).max(20).optional().default([]),
-      blockedBy: z.array(z.string().uuid()).max(20).optional().default([])
+      blockedBy: z.array(z.string().uuid()).max(20).optional().default([]),
+      gitHash: z.string().trim().max(40).optional(),
+      branch: z.string().trim().max(200).optional(),
     })
     .refine((body) => Object.keys(body).length > 0, {
       message: '至少提供一个要更新的字段'
