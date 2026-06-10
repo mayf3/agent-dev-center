@@ -71,6 +71,7 @@ enum ReportType {
   TEST_DEPLOY_CONFIRM
   DEPLOY_CONFIRM
   POSTMORTEM
+  MERGE_REPORT
 }
 
 enum ReportStatus {
