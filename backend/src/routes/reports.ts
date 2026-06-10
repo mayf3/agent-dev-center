@@ -43,6 +43,7 @@ const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role' | 'any'; platf
   CTO_REVIEW:        { mode: 'role', platformRoles: ['adc:admin'], allowAdmin: true },
   DEPLOY_CONFIRM:    { mode: 'role', platformRoles: ['adc:ops'], allowAdmin: false },
   POSTMORTEM:        { mode: 'any', allowAdmin: true },
+  MERGE_REPORT:      { mode: 'assignee', allowAdmin: false },
 };
 
 const QA_BYPASS_MIN_WAIT_MS = 2 * 60 * 60 * 1000;

@@ -246,6 +246,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         if (!ok) {
           const reportLabels: Record<string, string> = {
             DEV_SELF_CHECK: '开发自检报告',
+            MERGE_REPORT: '合并报告',
             TEST_REPORT: '测试报告',
             SECURITY_REVIEW: '安全检查报告',
             CTO_REVIEW: 'CTO验收报告',
@@ -253,6 +254,20 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           };
           const labels = missing.map(t => reportLabels[t] ?? t).join('、');
           throw new HttpError(400, `推进失败：当前步骤缺少已通过的报告 — ${labels}`);
+        }
+      }
+
+      // 7d7620e9: merge_to_main 步骤的自动验证
+      if (currentStep.name === 'merge_to_main') {
+        const req = await prisma.requirement.findUnique({
+          where: { id: params.id },
+          select: { gitHash: true, branch: true, repoPath: true },
+        });
+        const errors: string[] = [];
+        if (!req?.gitHash) errors.push('缺少 gitHash，请先提交代码并更新 gitHash');
+        if (!req?.branch) errors.push('缺少 branch，请指定代码分支名');
+        if (errors.length > 0) {
+          throw new HttpError(400, `merge_to_main 验证失败：\n${errors.join('\n')}`);
         }
       }
 
