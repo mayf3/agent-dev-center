@@ -270,18 +270,25 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         }
       }
 
-      // 2026-06-04 铁律 #24 实现：按需求 type 跳过 security_review
-      // FEATURE/BUGFIX/INFRA/POSTMORTEM 类型不需要安全审查，直接跳过
-      // 只有 SECURITY 和安全相关需求才走安全审查
+      // 2026-06-10 v3: 按需求 type 跳过 security_review + qa_review_security
+      // FEATURE/BUGFIX/INFRA/POSTMORTEM 类型不需要安全审查，跳过两个步骤
+      // 只有 SECURITY 类型才走安全审查
       let securitySkipped = false;
+      const skippedSteps: string[] = [];
       if (targetStep.name === 'security_review') {
         const reqType = (requirement as any).type;
         const securityTypes = ['SECURITY'];
         if (!securityTypes.includes(reqType)) {
-          // 跳过 security_review，直接到下一步
-          const afterSecurity = getNextStep(steps, targetStep.name);
-          if (afterSecurity) {
-            targetStep = afterSecurity;
+          // 跳过 security_review
+          skippedSteps.push(targetStep.name);
+          let afterSkip = getNextStep(steps, targetStep.name);
+          // v3: 同时跳过 qa_review_security（如果紧随其后）
+          if (afterSkip && afterSkip.name === 'qa_review_security') {
+            skippedSteps.push(afterSkip.name);
+            afterSkip = getNextStep(steps, afterSkip.name);
+          }
+          if (afterSkip) {
+            targetStep = afterSkip;
             securitySkipped = true;
           }
         }
