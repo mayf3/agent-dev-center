@@ -77,7 +77,7 @@ const STANDARD_DEV_MIDDLE: StepDef[] = [
     name: 'cto_review',
     displayName: 'CTO验收',
     role: 'cto',
-    requiredReports: ['SECURITY_REVIEW'],
+    requiredReports: [],
     autoAdvance: false,
   },
   {
@@ -207,7 +207,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'cto_review',
         displayName: 'CTO验收',
         role: 'cto',
-        requiredReports: ['SECURITY_REVIEW'],
+        requiredReports: [],
         autoAdvance: false,
       },
       {
