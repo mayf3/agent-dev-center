@@ -101,6 +101,18 @@ ssh_cmd "echo ok" >/dev/null
 log "Checking Docker Compose on remote host"
 ssh_cmd "command -v docker >/dev/null && docker compose version >/dev/null"
 
+# ── 冒烟测试：部署前验证核心工作流 ──
+log "Running smoke tests before deployment"
+if [ -f "scripts/smoke-test.sh" ]; then
+  if ! bash scripts/smoke-test.sh "${SERVER_HOST}"; then
+    echo "[deploy] ❌ Smoke tests FAILED — aborting deployment." >&2
+    exit 1
+  fi
+  log "Smoke tests passed"
+else
+  log "⚠️  scripts/smoke-test.sh not found — skipping smoke tests"
+fi
+
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-dev-center-prod.XXXXXX")"
 archive="${tmp_dir}/agent-dev-center-prod.tar.gz"
 
