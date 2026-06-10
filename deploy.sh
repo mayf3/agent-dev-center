@@ -12,9 +12,41 @@ ENV_FILE=".env.production"
 
 trap 'echo "Deployment failed at line ${LINENO}." >&2' ERR
 
+LOCK_FILE="/tmp/agent-dev-center-deploy.lock"
+
 log() {
   printf '[deploy] %s\n' "$*"
 }
+
+acquire_lock() {
+  if ! mkdir "${LOCK_FILE}" 2>/dev/null; then
+    local pid
+    if [ -f "${LOCK_FILE}/pid" ]; then
+      pid=$(cat "${LOCK_FILE}/pid" 2>/dev/null)
+    fi
+    echo "[deploy] Deploy lock held by PID ${pid:-unknown}. Waiting up to 300s..." >&2
+    for i in $(seq 1 60); do
+      sleep 5
+      if mkdir "${LOCK_FILE}" 2>/dev/null; then
+        echo "[deploy] Lock acquired after ${i}x5s wait" >&2
+        echo "$$" > "${LOCK_FILE}/pid"
+        return 0
+      fi
+      # Check if previous holder is dead
+      if [ -n "${pid:-}" ] && ! kill -0 "${pid}" 2>/dev/null; then
+        rmdir "${LOCK_FILE}" 2>/dev/null || true
+      fi
+    done
+    echo "[deploy] Failed to acquire deploy lock after 300s" >&2
+    exit 1
+  fi
+  echo "$$" > "${LOCK_FILE}/pid"
+}
+
+release_lock() {
+  rm -rf "${LOCK_FILE}" 2>/dev/null || true
+}
+trap 'release_lock; rm -rf "${tmp_dir:-}" 2>/dev/null || true; echo "Deployment failed at line ${LINENO}." >&2' EXIT
 
 need_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -60,6 +92,9 @@ if grep -Eq 'JWT_SECRET=(replace|change|dev-only|changeme)' "${ENV_FILE}"; then
   exit 1
 fi
 
+log "Acquiring deploy lock"
+acquire_lock
+
 log "Checking SSH access to ${SSH_TARGET}:${SERVER_PORT}"
 ssh_cmd "echo ok" >/dev/null
 
@@ -68,10 +103,6 @@ ssh_cmd "command -v docker >/dev/null && docker compose version >/dev/null"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-dev-center-prod.XXXXXX")"
 archive="${tmp_dir}/agent-dev-center-prod.tar.gz"
-cleanup() {
-  rm -rf "${tmp_dir}"
-}
-trap cleanup EXIT
 
 log "Creating deployment archive"
 tar \
