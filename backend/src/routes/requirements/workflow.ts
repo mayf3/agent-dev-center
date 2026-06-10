@@ -267,6 +267,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       // 2026-06-04 铁律 #24 实现：按需求 type 跳过 security_review
       // FEATURE/BUGFIX/INFRA/POSTMORTEM 类型不需要安全审查，直接跳过
       // 只有 SECURITY 和安全相关需求才走安全审查
+      let securitySkipped = false;
       if (targetStep.name === 'security_review') {
         const reqType = (requirement as any).type;
         const securityTypes = ['SECURITY'];
@@ -275,13 +276,18 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           const afterSecurity = getNextStep(steps, targetStep.name);
           if (afterSecurity) {
             targetStep = afterSecurity;
+            securitySkipped = true;
           }
         }
       }
 
       // 目标步骤的报告校验（进入下一步必须满足该步骤的 requiredReports）
-      if (targetStep.requiredReports.length > 0) {
-        const { ok: targetOk, missing: targetMissing } = await checkReportsApproved(params.id, targetStep.requiredReports);
+      // 2026-06-10：如果安全步骤被跳过，自动过滤 SECURITY_REVIEW 要求
+      const targetReports = securitySkipped
+        ? targetStep.requiredReports.filter(r => r !== 'SECURITY_REVIEW')
+        : targetStep.requiredReports;
+      if (targetReports.length > 0) {
+        const { ok: targetOk, missing: targetMissing } = await checkReportsApproved(params.id, targetReports);
         if (!targetOk) {
           const reportLabels: Record<string, string> = {
             DEV_SELF_CHECK: '开发自检报告',
