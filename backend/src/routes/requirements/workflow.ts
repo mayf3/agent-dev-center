@@ -235,8 +235,14 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       }
 
       // 当前步骤的报告校验（离开当前步骤也需要通过该步骤要求的报告）
-      if (currentStep.requiredReports.length > 0) {
-        const { ok, missing } = await checkReportsApproved(params.id, currentStep.requiredReports);
+      // 2026-06-10：非 SECURITY 类型需求过滤掉 SECURITY_REVIEW（因为安全步骤被跳过了）
+      const reqType = (requirement as any).type;
+      const isNonSecurityType = reqType !== 'SECURITY';
+      const currentReports = (isNonSecurityType)
+        ? currentStep.requiredReports.filter(r => r !== 'SECURITY_REVIEW')
+        : currentStep.requiredReports;
+      if (currentReports.length > 0) {
+        const { ok, missing } = await checkReportsApproved(params.id, currentReports);
         if (!ok) {
           const reportLabels: Record<string, string> = {
             DEV_SELF_CHECK: '开发自检报告',
