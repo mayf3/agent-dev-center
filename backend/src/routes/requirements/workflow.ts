@@ -91,7 +91,7 @@ async function checkReportsApproved(requirementId: string, requiredReports: stri
     where: {
       requirementId,
       reportType: { in: requiredReports as any },
-      status: { in: ['pending', 'approved'] },
+      status: 'approved',  // 2026-06-10: 只认 approved，pending 不算通过（防止报告提交=审批通过）
     },
     select: { reportType: true },
   });
