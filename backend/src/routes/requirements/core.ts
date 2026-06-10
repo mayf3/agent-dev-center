@@ -72,7 +72,7 @@ router.post(
       data: {
         title: body.title, description: body.description, priority: body.priority,
         type: body.type, tags: body.tags,
-        requester: body.requester ?? actor.name, requesterId: actor.id,
+        requester: actor.name, requesterId: actor.id,
         department: body.department,
         assignee: createAssigneeName, assigneeId: createAssigneeId,
         dueDate: body.dueDate, attachment: body.attachment,
