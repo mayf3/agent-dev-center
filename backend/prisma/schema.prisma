@@ -47,6 +47,8 @@ enum RequirementStatus {
   review
   deploying
   done
+  abandoned   // e1d273f5: 放弃 — rejected 后不再跟进
+  draft       // e1d273f5: 草稿 — abandoned 后重新激活修改
 }
 
 enum RequirementType {
