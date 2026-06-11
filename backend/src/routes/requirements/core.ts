@@ -12,7 +12,7 @@ import {
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { serializeRequirement } from '../../utils/status.js';
-import { validateAssigneeRoleMatch } from '../../lib/assignee-resolver.js';
+import { validateAssigneeRoleMatch, resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
 import { findOverdueRequirements, runOverdueCheck } from '../../utils/overdue-check.js';
@@ -525,6 +525,27 @@ router.patch(
       newStep = body.currentStep;
     } else if (body.status !== undefined) {
       newStep = body.status;
+    }
+
+    // 如果步骤发生了变化，自动解析 assignee（防止漂移）
+    if (newStep !== existing.currentStep && !body.assignee) {
+      // 查找目标步骤的 role（如果有工作流）
+      if (existing.workflowId) {
+        const workflow = await prisma.workflowTemplate.findUnique({
+          where: { id: existing.workflowId },
+          select: { steps: true },
+        });
+        if (workflow) {
+          const targetStep = (workflow.steps as any[]).find((s: any) => s.name === newStep);
+          if (targetStep?.role) {
+            const resolvedId = await resolveAssigneeForStep(targetStep.role, existing.assigneeId);
+            if (resolvedId) {
+              assigneeId = resolvedId;
+              assigneeName = await getAssigneeName(resolvedId);
+            }
+          }
+        }
+      }
     }
 
     const updated = await prisma.requirement.update({
