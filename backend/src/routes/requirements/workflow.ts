@@ -26,6 +26,7 @@ interface WorkflowStep {
   role: string;
   requiredReports: string[];
   autoAdvance: boolean;
+  wipLimit?: number; // WIP 上限：该步骤同时处理的需求数量上限（undefined = 无限制）
 }
 
 // ── Helpers ──────────────────────────────────────────────
@@ -60,6 +61,7 @@ function parseSteps(stepsJson: unknown): WorkflowStep[] {
     role: z.string(),
     requiredReports: z.array(z.string()),
     autoAdvance: z.boolean().default(false),
+    wipLimit: z.number().int().positive().optional(),
   })).parse(stepsJson);
   return steps;
 }
@@ -100,6 +102,15 @@ async function checkReportsApproved(requirementId: string, requiredReports: stri
   const missing = requiredReports.filter(t => !approvedTypes.has(t as any));
 
   return { ok: missing.length === 0, missing };
+}
+
+/** Check WIP limit for a step — returns current count of requirements sitting at that step */
+async function getStepWipCount(stepName: string, excludeRequirementId?: string): Promise<number> {
+  const where: any = { currentStep: stepName };
+  if (excludeRequirementId) {
+    where.id = { not: excludeRequirementId };
+  }
+  return prisma.requirement.count({ where });
 }
 
 /** Write audit transition log */
@@ -326,6 +337,14 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           };
           const labels = targetMissing.map(t => reportLabels[t] ?? t).join('、');
           throw new HttpError(400, `推进失败：进入「${targetStep.displayName}」需要已通过的报告 — ${labels}`);
+        }
+      }
+
+      // WIP 上限检查：如果目标步骤设置了 wipLimit，检查当前该步骤的 WIP 数量
+      if (targetStep.wipLimit && targetStep.wipLimit > 0) {
+        const currentWip = await getStepWipCount(targetStep.name, params.id);
+        if (currentWip >= targetStep.wipLimit) {
+          throw new HttpError(409, `步骤「${targetStep.displayName}」WIP 已达上限（${currentWip}/${targetStep.wipLimit}），请等待现有任务完成后重试`);
         }
       }
 
@@ -634,6 +653,136 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
             displayName: s.displayName,
             role: s.role,
           })),
+        },
+      });
+    }),
+  );
+
+  /**
+   * GET /workflow/wip-status — 查询各步骤 WIP 状态
+   * 返回所有工作流模板中设置了 wipLimit 的步骤，以及当前排队数量
+   */
+  router.get(
+    '/workflow/wip-status',
+    asyncHandler(async (_req, res) => {
+      const templates = await prisma.workflowTemplate.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, displayName: true, steps: true },
+      });
+
+      const result: Array<{
+        templateId: string;
+        templateName: string;
+        templateDisplayName: string;
+        steps: Array<{
+          stepName: string;
+          stepDisplayName: string;
+          wipLimit: number;
+          currentCount: number;
+          isOverLimit: boolean;
+          requirements: Array<{ id: string; title: string; priority: string }>;
+        }>;
+      }> = [];
+
+      for (const template of templates) {
+        const steps = parseSteps(template.steps);
+        const wipSteps = steps.filter(s => s.wipLimit && s.wipLimit > 0);
+
+        if (wipSteps.length === 0) continue;
+
+        const stepStats = [];
+        for (const step of wipSteps) {
+          const requirements = await prisma.requirement.findMany({
+            where: { currentStep: step.name },
+            select: { id: true, title: true, priority: true },
+            orderBy: { createdAt: 'asc' },
+          });
+
+          stepStats.push({
+            stepName: step.name,
+            stepDisplayName: step.displayName,
+            wipLimit: step.wipLimit!,
+            currentCount: requirements.length,
+            isOverLimit: requirements.length >= step.wipLimit!,
+            requirements: requirements.map(r => ({
+              id: r.id,
+              title: r.title,
+              priority: r.priority,
+            })),
+          });
+        }
+
+        result.push({
+          templateId: template.id,
+          templateName: template.name,
+          templateDisplayName: template.displayName,
+          steps: stepStats,
+        });
+      }
+
+      res.json({ success: true, data: result });
+    }),
+  );
+
+  /**
+   * PATCH /workflow-templates/:id/step-wip — 更新工作流步骤的 WIP 上限
+   * admin/cto only
+   * body: { stepName: string, wipLimit: number | null }
+   */
+  router.patch(
+    '/workflow-templates/:id/step-wip',
+    requireRoles('admin', 'cto_agent'),
+    asyncHandler(async (req, res) => {
+      const templateId = req.params.id as string;
+      const { stepName, wipLimit } = req.body as { stepName?: string; wipLimit?: number | null };
+
+      if (!stepName || typeof stepName !== 'string') {
+        throw new HttpError(400, 'stepName 必填');
+      }
+      if (wipLimit !== null && wipLimit !== undefined && (!Number.isInteger(wipLimit) || wipLimit < 1)) {
+        throw new HttpError(400, 'wipLimit 必须为正整数或 null（移除限制）');
+      }
+
+      const template = await prisma.workflowTemplate.findUnique({ where: { id: templateId } });
+      if (!template) throw new HttpError(404, '模板不存在');
+
+      const steps = parseSteps(template.steps);
+      const targetStep = steps.find(s => s.name === stepName);
+      if (!targetStep) {
+        throw new HttpError(400, `步骤「${stepName}」不存在，可用步骤：${steps.map(s => s.name).join(', ')}`);
+      }
+
+      // Update the step's wipLimit
+      const updatedSteps = steps.map(s => {
+        if (s.name === stepName) {
+          return { ...s, wipLimit: wipLimit ?? undefined };
+        }
+        return s;
+      });
+
+      await prisma.workflowTemplate.update({
+        where: { id: templateId },
+        data: { steps: updatedSteps as any },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          action: 'WORKFLOW_STEP_WIP_UPDATED',
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          targetId: templateId,
+          targetType: 'WorkflowTemplate',
+          details: { stepName, wipLimit, templateName: template.name } as any,
+        },
+      });
+
+      res.json({
+        success: true,
+        data: {
+          templateId,
+          stepName,
+          wipLimit: wipLimit ?? null,
+          previousWipLimit: targetStep.wipLimit ?? null,
         },
       });
     }),
