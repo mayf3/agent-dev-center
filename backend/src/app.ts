@@ -49,14 +49,18 @@ app.use((req, res, next) => {
 });
 
 // d7e0a85d: 生产环境禁止本地 CORS
-// 9e3a0319: 生产环境必须显式配置 FRONTEND_ORIGIN，拒绝默认 localhost
-const corsOrigin = env.FRONTEND_ORIGIN === '*' ? true : env.FRONTEND_ORIGIN;
-if (env.NODE_ENV === 'production' && typeof corsOrigin === 'string' && corsOrigin.includes('localhost')) {
-  console.error('[CORS] FATAL: 生产环境禁止使用 localhost CORS 配置，请在 .env 中设置 FRONTEND_ORIGIN=https://8.163.44.127');
-  process.exit(1);
+// 9e3a0319: 生产环境防御 — 拒绝不安全 origin，防止 env 配置回退
+let corsOrigin = env.FRONTEND_ORIGIN === '*' ? true : env.FRONTEND_ORIGIN;
+if (corsOrigin && typeof corsOrigin === 'string' && env.NODE_ENV === 'production') {
+  const origin = corsOrigin;
+  const blocked = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '10.', '172.', '192.168.'];
+  if (blocked.some(p => origin.includes(p))) {
+    console.error(`[CORS-SECURITY] Blocked unsafe origin "${origin}" in production — falling back to same-origin`);
+    corsOrigin = false;
+  }
 }
 if (!corsOrigin && env.NODE_ENV === 'production') {
-  console.warn('[CORS] FRONTEND_ORIGIN not set in production — CORS disabled, only same-origin allowed');
+  console.warn('[CORS] FRONTEND_ORIGIN not set or invalid in production — CORS disabled, only same-origin allowed');
 }
 app.use(
   cors({
