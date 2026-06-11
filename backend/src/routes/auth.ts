@@ -257,7 +257,33 @@ authRouter.post(
       okrRole: user.okrRole
     });
 
-    const accessToken = signAccessToken(safeUser);
+    // 18e9c0d2: 优先走 auth-service 统一签发 JWT（iss=auth-service, aud=unified-platform）
+    // 下游服务（todo/OKR）期望统一发证，否则 401
+    let accessToken: string;
+    let tokenSource = 'local';
+    try {
+      const authServiceUrl = env.AUTH_SERVICE_URL;
+      const asResponse = await fetch(`${authServiceUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: body.email, password: body.password }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (asResponse.ok) {
+        const asData = await asResponse.json() as { accessToken?: string };
+        if (asData.accessToken) {
+          accessToken = asData.accessToken;
+          tokenSource = 'auth-service';
+        } else {
+          accessToken = signAccessToken(safeUser);
+        }
+      } else {
+        accessToken = signAccessToken(safeUser);
+      }
+    } catch {
+      // auth-service 不可用，fallback 到本地签发
+      accessToken = signAccessToken(safeUser);
+    }
     const refreshToken = signRefreshToken(safeUser);
 
     // IP-based login anomaly detection (d3ae001f)
@@ -282,7 +308,8 @@ authRouter.post(
     res.json({
       accessToken,
       refreshToken,
-      user: { ...safeUser, mustChangePassword }
+      user: { ...safeUser, mustChangePassword },
+      tokenSource,
     });
   })
 );
