@@ -5,6 +5,7 @@
  * 系统级强制约束：角色匹配 + 报告审批 + 审计日志
  */
 import { z } from 'zod';
+import { execSync } from 'child_process';
 import { requireRoles } from '../../middleware/auth.js';
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
@@ -257,17 +258,78 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         }
       }
 
-      // 7d7620e9: merge_to_main 步骤的自动验证
+      // 7d7620e9: merge_to_main 步骤的自动验证（硬约束）
+      // 1. gitHash 必须存在于 main 分支
+      // 2. 代码能编译通过（npm run build）
+      // 3. 验证失败自动打回 dev_self_check
       if (currentStep.name === 'merge_to_main') {
-        const req = await prisma.requirement.findUnique({
+        const mergeReq = await prisma.requirement.findUnique({
           where: { id: params.id },
-          select: { gitHash: true, branch: true, repoPath: true },
+          select: { gitHash: true, branch: true, branchName: true, repoPath: true },
         });
         const errors: string[] = [];
-        if (!req?.gitHash) errors.push('缺少 gitHash，请先提交代码并更新 gitHash');
-        if (!req?.branch) errors.push('缺少 branch，请指定代码分支名');
+        if (!mergeReq?.gitHash) errors.push('缺少 gitHash，请先提交代码并更新 gitHash');
+        if (!mergeReq?.branchName && !mergeReq?.branch) errors.push('缺少 branchName，请指定关联的 feat 分支名');
+
+        // Git 验证：检查 gitHash 是否在 main 分支上
+        if (mergeReq?.gitHash && mergeReq?.repoPath) {
+          try {
+            const repoPath = mergeReq.repoPath;
+            // 验证 gitHash 存在于 main 分支
+            const result = execSync(
+              `git branch --contains ${mergeReq.gitHash} main`,
+              { cwd: repoPath, timeout: 10000, encoding: 'utf-8' }
+            ).trim();
+            if (!result.includes('main')) {
+              errors.push(`gitHash ${mergeReq.gitHash} 不在 main 分支上，请先合并代码到 main`);
+            }
+          } catch (gitErr: any) {
+            // git 命令失败（非零退出码）= commit 不在 main 分支上
+            errors.push(`gitHash ${mergeReq.gitHash} 不在 main 分支上，请先合并代码到 main`);
+          }
+        }
+
+        // 编译验证：npm run build
+        if (errors.length === 0 && mergeReq?.repoPath) {
+          try {
+            execSync('npm run build', {
+              cwd: mergeReq.repoPath,
+              timeout: 120000,  // 2 分钟超时
+              encoding: 'utf-8',
+              stdio: 'pipe',
+            });
+          } catch (buildErr: any) {
+            const output = (buildErr.stdout || '') + (buildErr.stderr || '');
+            errors.push(`编译失败：${output.slice(0, 500)}`);
+          }
+        }
+
+        // 验证失败 → 自动打回 dev_self_check
         if (errors.length > 0) {
-          throw new HttpError(400, `merge_to_main 验证失败：\n${errors.join('\n')}`);
+          // 找到 dev_self_check 步骤位置
+          const devSelfCheckStep = steps.find(s => s.name === 'dev_self_check');
+          if (devSelfCheckStep) {
+            const newAssigneeId = await resolveAssigneeForStep(devSelfCheckStep.role, requirement.assigneeId);
+            await prisma.requirement.update({
+              where: { id: params.id },
+              data: {
+                currentStep: 'dev_self_check',
+                assigneeId: newAssigneeId,
+              },
+            });
+            await logTransition({
+              requirementId: params.id,
+              fromStep: 'merge_to_main',
+              toStep: 'dev_self_check',
+              action: 'auto-reject',
+              actorId: req.user!.id,
+              actorName: req.user!.name,
+              actorRole: 'system',
+              comment: `merge_to_main 验证失败，自动打回：${errors.join('；')}`,
+              metadata: { errors },
+            });
+          }
+          throw new HttpError(400, `merge_to_main 验证失败，已自动打回 dev_self_check：\n${errors.join('\n')}`);
         }
       }
 
@@ -276,6 +338,22 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
 
       let targetStep = nextStep;
+
+      // 7d7620e9: 无 branchName 的需求跳过 merge_to_main 步骤
+      // 老需求没有 branchName → 跳过 merge 步骤，直接进 qa_review
+      if (targetStep.name === 'merge_to_main') {
+        const reqData = await prisma.requirement.findUnique({
+          where: { id: params.id },
+          select: { branchName: true, branch: true },
+        });
+        if (!reqData?.branchName && !reqData?.branch) {
+          // 跳过 merge_to_main
+          const afterMerge = getNextStep(steps, 'merge_to_main');
+          if (afterMerge) {
+            targetStep = afterMerge;
+          }
+        }
+      }
 
       // 如果下一步是 auto，自动再推进一步
       if (nextStep.autoAdvance) {

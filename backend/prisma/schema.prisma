@@ -181,6 +181,7 @@ model Requirement {
   gitHash             String?
   repoPath            String?             // 4397e6a9: 代码仓库本地路径
   branch              String?             // 4397e6a9: Git 分支名
+  branchName          String?             // 7d7620e9: 工作流关联的 feat 分支名（feat/<需求ID>-<简述>）
   deployVersion       String?
   dependsOnIds        String[]              @default([]) @map("depends_on_ids")
   blockedBy           String[]              @default([]) @map("blocked_by")

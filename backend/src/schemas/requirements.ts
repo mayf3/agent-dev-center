@@ -67,6 +67,7 @@ export const patchRequirementSchema = requirementIdSchema.extend({
       assignee: nullableString,
       rejectReason: nullableString,
       gitHash: z.string().trim().optional(),
+      branchName: z.string().trim().optional(),   // 7d7620e9: 工作流关联的 feat 分支名
       deployVersion: z.string().trim().optional(),
       workflowId: z.string().trim().optional(),
       dependsOnIds: z.array(z.string().uuid()).optional().default([]),

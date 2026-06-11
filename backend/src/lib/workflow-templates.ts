@@ -229,6 +229,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],

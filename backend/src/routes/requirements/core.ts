@@ -532,6 +532,7 @@ router.patch(
         assigneeId,
         rejectReason: body.rejectReason,
         gitHash: body.gitHash,
+        branchName: body.branchName,
         deployVersion: body.deployVersion,
         ...(body.workflowId ? { workflowId: body.workflowId } : {}),
       },
