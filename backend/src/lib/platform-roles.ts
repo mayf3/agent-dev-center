@@ -26,6 +26,8 @@ const LEGACY_INTERNAL_TO_ADC: Partial<Record<string, string>> = {
   security: 'adc:security',
   ops: 'adc:ops',
   qa: 'adc:qa',
+  efficiency_manager: 'adc:efficiency_manager',
+  lobster_partner: 'adc:lobster_partner',
 };
 
 const LEGACY_USER_ROLE_TO_ADC: Partial<Record<string, string>> = {
@@ -43,6 +45,8 @@ const ADC_TO_LEGACY: Partial<Record<string, LegacyRolePair>> = {
   'adc:security': { role: 'developer', internalRole: 'security' },
   'adc:ops': { role: 'developer', internalRole: 'ops' },
   'adc:qa': { role: 'developer', internalRole: 'qa' },
+  'adc:efficiency_manager': { role: 'developer', internalRole: 'efficiency_manager' },
+  'adc:lobster_partner': { role: 'developer', internalRole: 'lobster_partner' },
   'adc:viewer': { role: 'requester', internalRole: null },
 };
 

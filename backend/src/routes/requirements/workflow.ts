@@ -47,6 +47,8 @@ function mapUserRole(internalRole: string | null | undefined, role: string): str
     ops: ['ops'],
     pm: ['pm', 'requester'],
     qa: ['qa'],
+    efficiency_manager: ['efficiency_manager'],
+    lobster_partner: ['lobster_partner'],
   };
   const allowed = mapping[internalRole] || [];
   return allowed.includes(role) ? role : null;

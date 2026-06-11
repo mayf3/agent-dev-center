@@ -24,6 +24,8 @@ enum InternalRole {
   mobile_developer
   miniapp_developer
   game_developer
+  efficiency_manager
+  lobster_partner
   tester
   security
   ops
@@ -197,6 +199,10 @@ model Requirement {
   workflowId  String?           @db.Uuid
   workflow    WorkflowTemplate? @relation(fields: [workflowId], references: [id])
   currentStep String?
+  reviewVerdicts Json @default("{\"efficiency_manager\":null,\"lobster_partner\":null}")
+  acceptanceVerdicts Json @default("{\"efficiency_manager\":null,\"lobster_partner\":null}")
+  reviewReviewedAt DateTime?
+  acceptanceReviewedAt DateTime?
 
   requesterUser User? @relation("RequesterRequirements", fields: [requesterId], references: [id])
   assigneeUser  User? @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
