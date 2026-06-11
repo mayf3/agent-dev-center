@@ -6,6 +6,7 @@ import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { notifyEvent } from '../utils/notifications.js';
 import { archiveRecord } from '../lib/archive.js';
+import { resolveAssigneeForStep, getAssigneeName } from '../lib/assignee-resolver.js';
 import { ReportType } from '@prisma/client';
 import { requireInternalRole } from '../middleware/internal-workflow.js';
 import { getPlatformRoles, hasPlatformRole, isPlatformAdmin } from '../lib/platform-roles.js';
@@ -17,6 +18,16 @@ import {
 } from '../schemas/report.js';
 
 export const reportsRouter = Router({ mergeParams: true });
+
+// ── Workflow step parser (shared logic with workflow.ts) ──
+interface WorkflowStepDef { name: string; displayName: string; role: string; requiredReports: string[]; autoAdvance: boolean; }
+function parseWorkflowSteps(stepsJson: unknown): WorkflowStepDef[] {
+  if (!stepsJson) return [];
+  try {
+    const parsed = typeof stepsJson === 'string' ? JSON.parse(stepsJson) : stepsJson;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
 
 // 所有接口需要认证
 reportsRouter.use(authRequired);
@@ -466,14 +477,59 @@ reportsRouter.patch(
     });
 
     // ─── 报告打回自动回退需求状态 + assignee ───
-    // 对于有工作流的需求：通过工作流 reject（按步骤角色自动分配）
-    // 对于无工作流的旧需求：从 revisions 历史找 assignee
+    // ef888077: 修复报告驳回不回退 — 有工作流的需求，驳回时自动执行 workflow reject
+    // 无工作流的旧需求：从 revisions 历史找 assignee
     if (body.status === 'rejected' && reqInfo) {
       const reportType = report.reportType as string;
 
-      // 如果需求有工作流，不在这里处理回退（由 workflow reject 处理）
       if (reqInfo.workflowId) {
-        // 工作流模式：报告打回不做状态回退，由 CTO/test-engineer 手动调 workflow reject
+        // ── 工作流模式：自动回退一步 + 重新分配 assignee ──
+        const workflow = await prisma.workflowTemplate.findUnique({
+          where: { id: reqInfo.workflowId },
+        });
+        if (workflow && reqInfo.currentStep) {
+          const steps = parseWorkflowSteps(workflow.steps);
+          const currentIdx = steps.findIndex(s => s.name === reqInfo.currentStep);
+          // 回退到前一步（至少保留在第 0 步）
+          const targetIdx = Math.max(0, currentIdx - 1);
+          const targetStep = steps[targetIdx];
+
+          if (targetStep && targetIdx < currentIdx) {
+            const newAssigneeId = await resolveAssigneeForStep(targetStep.role, reqInfo.assigneeId);
+
+            await prisma.requirement.update({
+              where: { id: params.id },
+              data: {
+                currentStep: targetStep.name,
+                assigneeId: newAssigneeId,
+              },
+            });
+
+            const newAssigneeName = await getAssigneeName(newAssigneeId);
+
+            // 写工作流审计日志
+            await prisma.workflowTransition.create({
+              data: {
+                requirementId: params.id,
+                fromStep: reqInfo.currentStep,
+                toStep: targetStep.name,
+                action: 'reject',
+                actorId: req.user!.id,
+                actorName: req.user!.name,
+                actorRole: req.user!.internalRole ?? req.user!.role,
+                comment: `${reportType} 报告被驳回，自动回退至 ${targetStep.displayName}（${targetStep.name}）`,
+              },
+            });
+
+            void notifyEvent('requirement.step_changed' as any, {
+              id: params.id,
+              title: reqInfo.title ?? '',
+              currentStep: targetStep.name,
+              actor: req.user!.name,
+              assignee: newAssigneeName,
+            });
+          }
+        }
       } else {
         // 旧版非工作流模式保留原逻辑
         let targetStep: string | null = null;
