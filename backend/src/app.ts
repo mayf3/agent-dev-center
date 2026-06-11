@@ -31,6 +31,7 @@ import { healthRecordsRouter } from './routes/health-records.js';
 import { familyRouter } from './routes/family.js';
 import projectsRouter from './routes/projects.js';
 import { adminUsersRouter } from './routes/admin-users.js';
+import { adminAuditRouter } from './routes/admin-audit.js';
 import { dailyLogsRouter } from './routes/daily-logs.js';
 import { mustChangePasswordGuard } from './middleware/must-change-password.js';
 
@@ -152,6 +153,7 @@ app.use('/api/health-records', healthRecordsRouter);
 app.use('/api/family', familyRouter);
 app.use('/api/identities', identitiesRouter);
 app.use('/api/admin/users', adminUsersRouter);
+app.use('/api/admin', adminAuditRouter);
 app.use('/api/daily-logs', dailyLogsRouter);
 app.use('/api/projects', projectsRouter);
 
