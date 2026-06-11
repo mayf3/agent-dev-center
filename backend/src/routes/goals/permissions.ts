@@ -36,25 +36,26 @@ export function parseMonthlyGoals(val: unknown): MonthlyGoalGroup[] {
 
 export const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// ─── Helper: resolve agentId (UUID or name) to marketplaceAgent ───
+// ─── Helper: resolve agentId (UUID or name) to User ───
 
 import { prisma } from '../../lib/prisma.js';
 
+/** 3e274d90: 解析 agent 参数（User 查找替代 marketplaceAgent） */
 export async function resolveAgentParam(param: string): Promise<{ id: string; name: string }> {
   if (UUID_REGEX.test(param)) {
-    const agent = await prisma.marketplaceAgent.findUnique({
+    const user = await prisma.user.findUnique({
       where: { id: param },
       select: { id: true, name: true },
     });
-    if (agent) return agent;
+    if (user) return user;
   }
 
-  const agent = await prisma.marketplaceAgent.findFirst({
+  const user = await prisma.user.findFirst({
     where: { name: { equals: param, mode: 'insensitive' } },
     select: { id: true, name: true },
   });
-  if (!agent) {
-    throw new HttpError(404, `Agent 不存在: "${param}"`);
+  if (!user) {
+    throw new HttpError(404, `用户不存在: "${param}"`);
   }
-  return agent;
+  return user;
 }

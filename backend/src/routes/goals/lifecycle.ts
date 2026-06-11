@@ -1,5 +1,4 @@
 import { authRequired } from '../../middleware/auth.js';
-import { agentTokenRequired } from '../../middleware/marketplace-auth.js';
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
@@ -10,11 +9,7 @@ export function registerLifecycleRoutes(router: import('express').Router): void 
 // PATCH /:agentId/monthly-goals/:month/:goalIndex - 更新月度目标状态
 router.patch(
   '/:agentId/monthly-goals/:month/:goalIndex',
-  asyncHandler(async (req, res, next) => {
-    const authHeader = req.header('authorization')?.replace(/^Bearer\s+/i, '');
-    if (authHeader?.startsWith('agent_')) return agentTokenRequired(req, res, next);
-    return authRequired(req, res, next);
-  }),
+  authRequired,
   asyncHandler(async (req, res) => {
     const { month, goalIndex } = req.params as { month: string; goalIndex: string };
     const agent = await resolveAgentParam(String(req.params.agentId));
