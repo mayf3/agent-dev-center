@@ -85,45 +85,11 @@ authRouter.get(
   })
 );
 
+// 31f0d24f: 公开注册接口已禁用 — 使用 batch-register (admin) 或 auth-service SSO 创建账号
 authRouter.post(
   '/register',
-  asyncHandler(async (req, res) => {
-    const { body } = registerSchema.parse({ body: req.body });
-
-    // e03c7b39: 邀请码校验 — 必须配置 REGISTER_INVITE_CODE 且匹配才能注册
-    // 如果未配置 REGISTER_INVITE_CODE，禁止注册（防止开放注册漏洞）
-    if (!env.REGISTER_INVITE_CODE) {
-      throw new HttpError(403, '注册已关闭，请联系管理员创建账号');
-    }
-    if (body.inviteCode !== env.REGISTER_INVITE_CODE) {
-      throw new HttpError(403, '邀请码无效，无法注册');
-    }
-    // Auto-generate random 24-char password only if not provided
-    // bf651cbc: Respect caller-provided password (e.g. agent .env)
-    const plainPassword = body.password || generatePassword();
-    const hashedPassword = await bcrypt.hash(plainPassword, 10);
-
-    const user = await prisma.user.create({
-      data: {
-        name: body.name,
-        email: body.email,
-        password: hashedPassword,
-        role: body.role,
-        mustChangePassword: body.password ? false : true  // 自选密码不需要强制改密
-      },
-      select: { id: true, name: true, email: true, role: true, internalRole: true, okrRole: true, mustChangePassword: true }
-    });
-
-    const { mustChangePassword, ...safeUser } = user;
-    const accessToken = signAccessToken(safeUser as Express.AuthUser);
-    const refreshToken = signRefreshToken(safeUser as Express.AuthUser);
-
-    res.status(201).json({
-      accessToken,
-      refreshToken,
-      user: { ...toSafeUser(safeUser), mustChangePassword },
-      generatedPassword: body.password ? undefined : plainPassword  // 自选密码不返回
-    });
+  asyncHandler(async (_req, _res) => {
+    throw new HttpError(403, '注册已关闭，请联系管理员通过 batch-register 创建账号');
   })
 );
 
