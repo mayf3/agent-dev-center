@@ -168,6 +168,16 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         currentStep: targetStep.name,
       };
 
+      // 自动解析第一步的 assigneeId（和 advance 逻辑一致）
+      const firstStepAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
+      if (firstStepAssigneeId) {
+        updateData.assigneeId = firstStepAssigneeId;
+        const firstStepAssigneeName = await getAssigneeName(firstStepAssigneeId);
+        if (firstStepAssigneeName) {
+          updateData.assignee = firstStepAssigneeName;
+        }
+      }
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: updateData,

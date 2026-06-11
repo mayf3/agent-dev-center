@@ -23,6 +23,8 @@ enum InternalRole {
   security
   ops
   qa
+  efficiency_manager
+  lobster_partner
 }
 
 enum RequirementPriority {
@@ -177,11 +179,13 @@ model Requirement {
   deployVersion       String?
   dependsOnIds        String[]              @default([]) @map("depends_on_ids")
   blockedBy           String[]              @default([]) @map("blocked_by")
+  reviewVerdicts      Json                  @default("{\"efficiency_manager\":null,\"lobster_partner\":null}")
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   tasks               Task[]
   revisions           RequirementRevision[]
   reports             RequirementReport[]
+  comments            RequirementComment[]
   serviceLinks        ServiceRequirement[]
   postmortems         Postmortem[]
   workflowTransitions WorkflowTransition[]
@@ -202,6 +206,24 @@ model Requirement {
   @@index([assignee])
   @@index([assigneeId])
   @@map("requirements")
+}
+
+model RequirementComment {
+  id            String      @id @default(uuid()) @db.Uuid
+  requirementId String      @db.Uuid
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  type          String
+  content       String?     @db.Text
+  authorId      String?     @db.Uuid
+  authorName    String
+  authorRole    String?
+  metadata      Json?
+  createdAt     DateTime    @default(now())
+
+  @@index([requirementId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("requirement_comments")
 }
 
 model Task {
