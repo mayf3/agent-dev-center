@@ -32,6 +32,7 @@ import { familyRouter } from './routes/family.js';
 import projectsRouter from './routes/projects.js';
 import { adminUsersRouter } from './routes/admin-users.js';
 import { dailyLogsRouter } from './routes/daily-logs.js';
+import { operationsRouter } from './routes/operations.js';
 import { mustChangePasswordGuard } from './middleware/must-change-password.js';
 
 export const app = express();
@@ -154,6 +155,7 @@ app.use('/api/identities', identitiesRouter);
 app.use('/api/admin/users', adminUsersRouter);
 app.use('/api/daily-logs', dailyLogsRouter);
 app.use('/api/projects', projectsRouter);
+app.use('/api/operations', operationsRouter);
 
 app.use((_req, _res, next) => {
   next(new HttpError(404, '接口不存在'));

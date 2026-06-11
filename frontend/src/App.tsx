@@ -25,6 +25,13 @@ import { ServicesPage } from './pages/ServicesPage';
 import { ServiceDetailPage } from './pages/ServiceDetailPage';
 import { SsoPortalPage } from './pages/SsoPortalPage';
 import AgentSsoPage from './pages/AgentSsoPage';
+import { OperationsCenterPage } from './pages/operations/OperationsCenterPage';
+import { CustomerListPage } from './pages/operations/CustomerListPage';
+import { CustomerDetailPage } from './pages/operations/CustomerDetailPage';
+import { OrderListPage } from './pages/operations/OrderListPage';
+import { OrderDetailPage } from './pages/operations/OrderDetailPage';
+import { RevenueSummaryPage } from './pages/operations/RevenueSummaryPage';
+import { AgentPerformancePage } from './pages/operations/AgentPerformancePage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { lazy, Suspense } from 'react';
@@ -114,6 +121,34 @@ const router = createBrowserRouter([
           {
             path: 'services/:id',
             element: <ServiceDetailPage />
+          },
+          {
+            path: 'operations',
+            element: <OperationsCenterPage />
+          },
+          {
+            path: 'operations/customers',
+            element: <CustomerListPage />
+          },
+          {
+            path: 'operations/customers/:id',
+            element: <CustomerDetailPage />
+          },
+          {
+            path: 'operations/orders',
+            element: <OrderListPage />
+          },
+          {
+            path: 'operations/orders/:id',
+            element: <OrderDetailPage />
+          },
+          {
+            path: 'operations/revenue',
+            element: <RevenueSummaryPage />
+          },
+          {
+            path: 'operations/agent-performance',
+            element: <AgentPerformancePage />
           },
           {
             path: 'portal',

@@ -485,6 +485,86 @@ model ServiceRequirement {
   @@map("service_requirements")
 }
 
+// ─── Operations Platform ───────────────────────────────────────
+
+enum CustomerStatus {
+  active
+  inactive
+  lead
+  churned
+}
+
+enum OrderStatus {
+  pending
+  confirmed
+  in_progress
+  completed
+  cancelled
+}
+
+enum RevenueType {
+  one_time
+  recurring
+  refund
+}
+
+model Customer {
+  id        String         @id @default(uuid()) @db.Uuid
+  name      String
+  email     String?
+  phone     String?
+  source    String?
+  status    CustomerStatus @default(lead)
+  notes     String?        @db.Text
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  orders    Order[]
+
+  @@index([status])
+  @@index([source])
+  @@index([createdAt])
+  @@map("customers")
+}
+
+model Order {
+  id          String          @id @default(uuid()) @db.Uuid
+  customerId  String          @db.Uuid
+  customer    Customer        @relation(fields: [customerId], references: [id])
+  agentId     String?         @db.Uuid
+  serviceType String
+  amount      Decimal         @db.Decimal(10, 2)
+  status      OrderStatus     @default(pending)
+  description String?         @db.Text
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  revenues    RevenueRecord[]
+
+  @@index([customerId])
+  @@index([agentId])
+  @@index([status])
+  @@index([serviceType])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model RevenueRecord {
+  id        String      @id @default(uuid()) @db.Uuid
+  orderId   String      @db.Uuid
+  order     Order       @relation(fields: [orderId], references: [id])
+  agentId   String?     @db.Uuid
+  amount    Decimal     @db.Decimal(10, 2)
+  type      RevenueType @default(one_time)
+  month     String?
+  createdAt DateTime    @default(now())
+
+  @@index([orderId])
+  @@index([agentId])
+  @@index([type])
+  @@index([month])
+  @@index([createdAt])
+  @@map("revenue_records")
+}
+
 // ─── Agent Goal Card ─────────────────────────────────────────
 
 enum GoalStatus {

@@ -16,7 +16,8 @@ import {
   TeamOutlined,
   KeyOutlined,
   RocketOutlined,
-  SettingOutlined
+  SettingOutlined,
+  ShopOutlined
 } from '@ant-design/icons';
 import { Button, Drawer, Layout, Menu, Space, Tag, Typography, Popover } from 'antd';
 import type { MenuProps } from 'antd';
@@ -72,13 +73,15 @@ export function AppLayout() {
                 ? '/kanban'
                 : location.pathname.startsWith('/marketplace')
                   ? '/marketplace'
-                  : location.pathname.startsWith('/services')
-                    ? '/services'
-                    : location.pathname.startsWith('/tasks/kanban')
-                      ? '/tasks/kanban'
-                      : location.pathname.startsWith('/tasks')
-                        ? '/tasks'
-                        : '/';
+                  : location.pathname.startsWith('/operations')
+                    ? '/operations'
+                    : location.pathname.startsWith('/services')
+                      ? '/services'
+                      : location.pathname.startsWith('/tasks/kanban')
+                        ? '/tasks/kanban'
+                        : location.pathname.startsWith('/tasks')
+                          ? '/tasks'
+                          : '/';
 
   const handleMenuClick = ({ key }: { key: string }) => {
     navigate(key);
@@ -94,7 +97,11 @@ export function AppLayout() {
   // Full menu items for sidebar / drawer
   // 精简导航：合并重复页面（开发看板=任务看板，需求列表含"我的"筛选）
   // 任务详情通过 API 提供给 Agent，人类用户看需求管理 + 开发看板即可
-  const fullMenuItems: MenuProps['items'] = [
+  const adminMenuItems: NonNullable<MenuProps['items']> = user?.role === 'admin' || user?.internalRole === 'cto'
+    ? [{ type: 'divider' as const }, { key: '/admin/users', icon: <SettingOutlined />, label: '用户管理' }]
+    : [];
+
+  const fullMenuItems: NonNullable<MenuProps['items']> = [
     { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
     { key: '/requirements', icon: <UnorderedListOutlined />, label: '需求管理' },
     ...(!isPublicMode ? [{ key: '/requirements/new', icon: <PlusCircleOutlined />, label: '提交需求' }] : []),
@@ -103,10 +110,9 @@ export function AppLayout() {
     { key: '/goals', icon: <AimOutlined />, label: '目标卡' },
     { key: '/postmortems', icon: <BugOutlined />, label: '验尸报告' },
     { key: '/marketplace', icon: <AppstoreOutlined />, label: '能力集市' },
+    { key: '/operations', icon: <ShopOutlined />, label: '运营中心' },
     { key: '/services', icon: <CloudServerOutlined />, label: '服务监控' },
-    ...(user?.role === 'admin' || user?.internalRole === 'cto'
-      ? [{ type: 'divider' as const }, { key: '/admin/users', icon: <SettingOutlined />, label: '用户管理' }]
-      : []),
+    ...adminMenuItems,
     { key: '/game-dashboard', icon: <RocketOutlined />, label: '进展之城 🏙️' },
   ];
 
