@@ -8,6 +8,7 @@ import { HttpError } from '../utils/http-error.js';
 import { prismaTaskStatus, serializeTask } from '../utils/status.js';
 import { notifyEvent } from '../utils/notifications.js';
 import { archiveRecord } from '../lib/archive.js';
+import { resolveAssigneeForStep, getAssigneeName } from '../lib/assignee-resolver.js';
 
 export const tasksRouter = Router();
 
@@ -162,9 +163,26 @@ tasksRouter.patch(
       });
 
       if (body.status === 'in-progress') {
+        // 查工作流获取步骤 role 并解析 assignee
+        let resolvedAssigneeId: string | null = null;
+        let resolvedAssigneeName: string | null = null;
+        if (existing.requirement.workflowId) {
+          const wf = await tx.workflowTemplate.findUnique({
+            where: { id: existing.requirement.workflowId },
+            select: { steps: true },
+          });
+          const step = wf ? (wf.steps as any[]).find((s: any) => s.name === 'in_progress') : null;
+          if (step?.role) {
+            resolvedAssigneeId = await resolveAssigneeForStep(step.role, existing.requirement.assigneeId);
+            if (resolvedAssigneeId) resolvedAssigneeName = await getAssigneeName(resolvedAssigneeId);
+          }
+        }
         await tx.requirement.update({
           where: { id: existing.requirementId },
-          data: { currentStep: 'in_progress' }
+          data: {
+            currentStep: 'in_progress',
+            ...(resolvedAssigneeId ? { assigneeId: resolvedAssigneeId, assignee: resolvedAssigneeName } : {}),
+          }
         });
       }
 
@@ -177,9 +195,29 @@ tasksRouter.patch(
           }
         });
 
+        const targetStepName = unfinishedCount === 0 ? 'cto_review' : 'in_progress';
+
+        // 解析目标步骤的 assignee（防止漂移）
+        let resolvedAssigneeId: string | null = null;
+        let resolvedAssigneeName: string | null = null;
+        if (existing.requirement.workflowId && unfinishedCount === 0) {
+          const wf = await tx.workflowTemplate.findUnique({
+            where: { id: existing.requirement.workflowId },
+            select: { steps: true },
+          });
+          const step = wf ? (wf.steps as any[]).find((s: any) => s.name === targetStepName) : null;
+          if (step?.role) {
+            resolvedAssigneeId = await resolveAssigneeForStep(step.role, existing.requirement.assigneeId);
+            if (resolvedAssigneeId) resolvedAssigneeName = await getAssigneeName(resolvedAssigneeId);
+          }
+        }
+
         await tx.requirement.update({
           where: { id: existing.requirementId },
-          data: { currentStep: unfinishedCount === 0 ? 'cto_review' : 'in_progress' }
+          data: {
+            currentStep: targetStepName,
+            ...(resolvedAssigneeId ? { assigneeId: resolvedAssigneeId, assignee: resolvedAssigneeName } : {}),
+          }
         });
       }
 

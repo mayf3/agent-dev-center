@@ -6,6 +6,7 @@ import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { notifyEvent } from '../utils/notifications.js';
 import { archiveRecord } from '../lib/archive.js';
+import { resolveAssigneeForStep, getAssigneeName } from '../lib/assignee-resolver.js';
 import { ReportType } from '@prisma/client';
 import { requireInternalRole } from '../middleware/internal-workflow.js';
 import { getPlatformRoles, hasPlatformRole, isPlatformAdmin } from '../lib/platform-roles.js';
@@ -495,25 +496,43 @@ reportsRouter.patch(
         }
 
         if (targetStep) {
-          const lastRevision = await prisma.requirementRevision.findFirst({
-            where: {
-              requirementId: params.id,
-              assignee: { not: null },
-              status: { in: ['in_progress', 'testing'] },
-            },
-            orderBy: { createdAt: 'desc' },
-            select: { assignee: true },
-          });
+          // 用 resolveAssigneeForStep 确保回退步骤的 assignee 角色正确（防止漂移）
+          let rollbackAssigneeId: string | null = null;
+          let rollbackAssigneeName: string | null = null;
 
-          const rollbackAssigneeName = lastRevision?.assignee ?? reqInfo.assignee;
-
-          let rollbackAssigneeId: string | null = reqInfo.assigneeId;
-          if (rollbackAssigneeName) {
-            const assigneeUser = await prisma.user.findFirst({
-              where: { OR: [{ name: rollbackAssigneeName }, { email: rollbackAssigneeName }] },
-              select: { id: true },
+          if (reqInfo.workflowId) {
+            const wf = await prisma.workflowTemplate.findUnique({
+              where: { id: reqInfo.workflowId },
+              select: { steps: true },
             });
-            rollbackAssigneeId = assigneeUser?.id ?? rollbackAssigneeId;
+            const targetStepDef = wf ? (wf.steps as any[]).find((s: any) => s.name === targetStep) : null;
+            if (targetStepDef?.role) {
+              rollbackAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
+              if (rollbackAssigneeId) {
+                rollbackAssigneeName = await getAssigneeName(rollbackAssigneeId);
+              }
+            }
+          }
+
+          // fallback: 如果 resolveAssigneeForStep 没找到（无工作流），用历史 assignee
+          if (!rollbackAssigneeId) {
+            const lastRevision = await prisma.requirementRevision.findFirst({
+              where: {
+                requirementId: params.id,
+                assignee: { not: null },
+                status: { in: ['in_progress', 'testing'] },
+              },
+              orderBy: { createdAt: 'desc' },
+              select: { assignee: true },
+            });
+            rollbackAssigneeName = lastRevision?.assignee ?? reqInfo.assignee;
+            if (rollbackAssigneeName) {
+              const assigneeUser = await prisma.user.findFirst({
+                where: { OR: [{ name: rollbackAssigneeName }, { email: rollbackAssigneeName }] },
+                select: { id: true },
+              });
+              rollbackAssigneeId = assigneeUser?.id ?? reqInfo.assigneeId;
+            }
           }
 
           await prisma.requirement.update({
