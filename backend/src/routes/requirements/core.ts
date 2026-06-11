@@ -208,7 +208,7 @@ router.get(
       if (filterValue === 'active') {
         where.AND = [
           ...(Array.isArray(where.AND) ? where.AND : []),
-          { currentStep: { not: 'done' } },
+          { currentStep: { notIn: ['done', 'abandoned'] } },
         ];
       } else {
         where.AND = [
