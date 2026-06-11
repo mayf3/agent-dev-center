@@ -41,12 +41,12 @@ const PM_REVIEW: StepDef = {
   autoAdvance: false,
 };
 
-/** QA 审查 DEV_SELF_CHECK 报告 */
+/** QA 审查 DEV_SELF_CHECK 报告 — 门禁：开发自检报告必须已通过 */
 const QA_REVIEW_DEV: StepDef = {
   name: 'qa_review',
   displayName: 'QA审查(开发自检)',
   role: 'qa',
-  requiredReports: [],
+  requiredReports: ['DEV_SELF_CHECK'],
   autoAdvance: false,
 };
 
@@ -112,7 +112,7 @@ const STANDARD_DEV_MIDDLE: StepDef[] = [
     name: 'qa_review_test',
     displayName: 'QA审查(测试报告)',
     role: 'qa',
-    requiredReports: [],
+    requiredReports: ['TEST_REPORT'],
     autoAdvance: false,
   },
   {
@@ -126,7 +126,7 @@ const STANDARD_DEV_MIDDLE: StepDef[] = [
     name: 'qa_review_security',
     displayName: 'QA审查(安全报告)',
     role: 'qa',
-    requiredReports: [],
+    requiredReports: ['SECURITY_REVIEW'],
     autoAdvance: false,
   },
   {
@@ -149,7 +149,7 @@ const STANDARD_DEV_MIDDLE: StepDef[] = [
     name: 'qa_review_deploy',
     displayName: 'QA验证部署',
     role: 'qa',
-    requiredReports: [],
+    requiredReports: ['DEPLOY_CONFIRM'],
     autoAdvance: false,
   },
   {
@@ -172,7 +172,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'dev_self_check',
         displayName: '后端开发自检',
         role: 'backend_developer',
-        requiredReports: [],
+        requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       MERGE_TO_MAIN,
@@ -190,7 +190,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'dev_self_check',
         displayName: '前端开发自检',
         role: 'frontend_developer',
-        requiredReports: [],
+        requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       MERGE_TO_MAIN,
@@ -208,7 +208,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'dev_self_check',
         displayName: '移动端开发自检',
         role: 'mobile_developer',
-        requiredReports: [],
+        requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       MERGE_TO_MAIN,
@@ -226,7 +226,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'dev_self_check',
         displayName: '小程序开发自检',
         role: 'miniapp_developer',
-        requiredReports: [],
+        requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       QA_REVIEW_DEV,
@@ -243,7 +243,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'dev_self_check',
         displayName: '游戏开发自检',
         role: 'game_developer',
-        requiredReports: [],
+        requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       MERGE_TO_MAIN,
@@ -261,7 +261,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'dev_self_check',
         displayName: '修复自检',
         role: 'backend_developer',
-        requiredReports: [],
+        requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       MERGE_TO_MAIN,
@@ -277,7 +277,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'qa_review_security',
         displayName: 'QA审查(安全报告)',
         role: 'qa',
-        requiredReports: [],
+        requiredReports: ['SECURITY_REVIEW'],
         autoAdvance: false,
       },
       {
@@ -298,7 +298,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'qa_review_deploy',
         displayName: 'QA验证部署',
         role: 'qa',
-        requiredReports: [],
+        requiredReports: ['DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
@@ -319,7 +319,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'dev_self_check',
         displayName: '紧急修复自检',
         role: 'backend_developer',
-        requiredReports: [],
+        requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
       {
@@ -333,7 +333,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'qa_review_deploy',
         displayName: 'QA验证部署',
         role: 'qa',
-        requiredReports: [],
+        requiredReports: ['DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
@@ -368,7 +368,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'qa_review_deploy',
         displayName: 'QA验证部署',
         role: 'qa',
-        requiredReports: [],
+        requiredReports: ['DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
       {
