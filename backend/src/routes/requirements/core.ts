@@ -280,6 +280,9 @@ router.get(
         }
       ];
     }
+    if (query.assigneeId) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { assigneeId: query.assigneeId }];
+    }
 
     const skip = (query.page - 1) * query.pageSize;
     const [requirements, total] = await prisma.$transaction([
