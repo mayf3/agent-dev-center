@@ -49,7 +49,8 @@ export const listRequirementsSchema = z.object({
       (v) => (typeof v === 'string' ? v.split(',').map((s: string) => s.trim()).filter(Boolean) : v),
       z.array(z.string()).optional()
     ),
-    search: z.string().trim().max(100).optional()
+    search: z.string().trim().max(100).optional(),
+    assigneeId: z.string().uuid().optional()
   })
 });
 
