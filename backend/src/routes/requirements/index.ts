@@ -8,6 +8,7 @@ import { registerPipelineRoutes } from './pipeline.js';
 import { registerDecomposeRoutes } from './decompose.js';
 import { registerWorkflowRoutes } from './workflow.js';
 import { registerDependencyGraphRoutes } from './dependency-graph.js';
+import { registerTransitionRoutes } from './transitions.js';
 
 export const requirementsRouter = Router();
 
@@ -23,3 +24,4 @@ registerReviewRoutes(requirementsRouter);
 registerPipelineRoutes(requirementsRouter);
 registerDecomposeRoutes(requirementsRouter);
 registerDependencyGraphRoutes(requirementsRouter);
+registerTransitionRoutes(requirementsRouter);
