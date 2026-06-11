@@ -28,10 +28,13 @@ export function canReadRequirement(user: Express.AuthUser, requirement: { reques
     return true;
   }
 
-  // 开发者：只看分配给自己的
+  // 开发者：看分配给自己的 + 自己提交的（2026-06-12 Bug fix c1467550）
   if (user.internalRole === 'developer' || user.role === 'developer') {
     return requirement.assigneeId === user.id ||
-           (requirement.assignee === user.name || requirement.assignee === user.email);
+           (requirement.assignee === user.name || requirement.assignee === user.email) ||
+           requirement.requesterId === user.id ||
+           requirement.requester === user.name ||
+           requirement.requester === user.email;
   }
 
   // 纯 requester：只看自己提的
@@ -97,10 +100,17 @@ export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.Requir
     return {};
   }
 
-  // 开发者（internalRole=developer 或 role=developer）：只看分配给自己的
+  // 开发者（internalRole=developer 或 role=developer）：看分配给自己的 + 自己提交的（2026-06-12 Bug fix c1467550）
   if (user.internalRole === 'developer' || user.role === 'developer') {
     return {
-      OR: [{ assigneeId: user.id }, { assignee: user.name }, { assignee: user.email }]
+      OR: [
+        { assigneeId: user.id },
+        { assignee: user.name },
+        { assignee: user.email },
+        { requesterId: user.id },
+        { requester: user.name },
+        { requester: user.email }
+      ]
     };
   }
 
