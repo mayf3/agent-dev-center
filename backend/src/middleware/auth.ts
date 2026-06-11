@@ -42,6 +42,7 @@ export function signAccessToken(user: Express.AuthUser): string {
       sub: user.id,
       name: user.name,
       role: user.role,
+      internalRole: user.internalRole,  // 6aacf9ab: 添加 internalRole 供工作流角色校验使用
       roles: getPlatformRoles(user),
       okrRole: user.okrRole,
       iss: JWT_ISSUER,
