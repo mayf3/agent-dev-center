@@ -84,14 +84,14 @@ const QA_REVIEW_DEV: StepDef = {
  * done             — 门禁：DEPLOY_CONFIRM approved
  */
 
-/** Merge-to-main 步骤：代码合并到 main 后验证 */
-const MERGE_TO_MAIN: StepDef = {
+/** Merge-to-main 步骤：代码合并到 main 后验证。role 取上游 dev_self_check 的角色 */
+const mergeToMain = (role: string): StepDef => ({
   name: 'merge_to_main',
   displayName: '合并到 main',
-  role: 'developer',
+  role,
   requiredReports: ['MERGE_REPORT'],
   autoAdvance: false,
-};
+});
 
 const STANDARD_DEV_MIDDLE: StepDef[] = [
   {
@@ -175,7 +175,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
-      MERGE_TO_MAIN,
+      mergeToMain('backend_developer'),
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -193,7 +193,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
-      MERGE_TO_MAIN,
+      mergeToMain('frontend_developer'),
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -211,7 +211,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
-      MERGE_TO_MAIN,
+      mergeToMain('mobile_developer'),
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -246,7 +246,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
-      MERGE_TO_MAIN,
+      mergeToMain('game_developer'),
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -264,7 +264,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
-      MERGE_TO_MAIN,
+      mergeToMain('backend_developer'),
       QA_REVIEW_DEV,
       {
         name: 'security_review',
