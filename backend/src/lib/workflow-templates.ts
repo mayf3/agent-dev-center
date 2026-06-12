@@ -38,7 +38,16 @@ interface TemplateDef {
 
 // ── 通用步骤块 ─────────────────────────────────────────
 
-/** PM 审批步骤 — 所有开发类需求第一步 */
+/** 草稿步骤 — 所有开发类需求第一步，提出者准备好后提交 PM 审批 */
+const DRAFT: StepDef = {
+  name: 'draft',
+  displayName: '草稿',
+  role: 'requester',
+  requiredReports: [],
+  autoAdvance: false,
+};
+
+/** PM 审批步骤 — 所有开发类需求第二步 */
 const PM_REVIEW: StepDef = {
   name: 'pm_review',
   displayName: 'PM审批',
@@ -173,8 +182,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'backend-dev',
     displayName: '后端开发流程',
-    description: 'PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
+    description: '草稿→PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
     steps: [
+      DRAFT,
       PM_REVIEW,
       {
         name: 'dev_self_check',
@@ -190,8 +200,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'frontend-dev',
     displayName: '前端开发流程',
-    description: 'PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
+    description: '草稿→PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
     steps: [
+      DRAFT,
       PM_REVIEW,
       {
         name: 'dev_self_check',
@@ -207,8 +218,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'mobile-dev',
     displayName: '移动端开发流程',
-    description: 'PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
+    description: '草稿→PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
     steps: [
+      DRAFT,
       PM_REVIEW,
       {
         name: 'dev_self_check',
@@ -224,8 +236,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'miniapp-dev',
     displayName: '小程序开发流程',
-    description: 'PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
+    description: '草稿→PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
     steps: [
+      DRAFT,
       PM_REVIEW,
       {
         name: 'dev_self_check',
@@ -241,8 +254,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'game-dev',
     displayName: '游戏开发流程',
-    description: 'PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
+    description: '草稿→PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
     steps: [
+      DRAFT,
       PM_REVIEW,
       {
         name: 'dev_self_check',
@@ -258,8 +272,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'security-fix',
     displayName: '安全修复流程',
-    description: 'PM审批→修复→QA审→安全验证→QA审安全→CTO→部署→QA验证→完成',
+    description: '草稿→PM审批→修复→QA审→安全验证→QA审安全→CTO→部署→QA验证→完成',
     steps: [
+      DRAFT,
       PM_REVIEW,
       {
         name: 'dev_self_check',
