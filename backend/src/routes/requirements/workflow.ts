@@ -594,7 +594,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         throw new HttpError(403, '只有需求提出者或管理员可以放弃需求');
       }
 
-      const abandonableSteps = ['rejected', 'pm_review', 'dev_self_check', 'qa_review', 'testing'];
+      const abandonableSteps = ['rejected', 'draft', 'pm_review', 'dev_self_check', 'qa_review', 'testing'];
       if (!abandonableSteps.includes(requirement.currentStep ?? '')) {
         throw new HttpError(400, `当前步骤「${requirement.currentStep}」不允许放弃，只能放弃处于 ${abandonableSteps.join('/')} 的需求`);
       }
