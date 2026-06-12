@@ -180,7 +180,11 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           throw new HttpError(400, `工作流中不存在步骤「${body.startStep}」，可用步骤：${steps.map(s => s.name).join(', ')}`);
         }
       } else {
+        // 默认第一步；如果是 draft，自动跳到 pm_review（CTO 确认后直接进审批）
         targetStep = steps[0];
+        if (targetStep.name === 'draft' && steps.length > 1) {
+          targetStep = steps[1];
+        }
       }
       const updateData: any = {
         workflowId: template.id,
