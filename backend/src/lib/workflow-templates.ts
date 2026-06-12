@@ -4,6 +4,12 @@
  * 应用启动时自动 upsert，确保每个环境都有标准工作流模板。
  * 如需新增模板，在此文件添加即可。
  *
+ * 2026-06-12 v4: merge_to_main 移到 cto_review 之后
+ *   - merge 前所有质量门禁必须通过（测试、安全、QA、CTO）
+ *   - 测试环境部署 feature 分支，不需要先 merge
+ *   - main 始终保持 tested 状态
+ *   - merge_to_main role 固定为 cto
+ *
  * 2026-06-10 v3: 工作流链路重构
  *   核心原则：每一步只要求「前一步交付的东西」
  *   - QA 是全链路质检员：开发自检→QA审、测试→QA审、安全→QA审、部署→QA验证
@@ -84,14 +90,14 @@ const QA_REVIEW_DEV: StepDef = {
  * done             — 门禁：DEPLOY_CONFIRM approved
  */
 
-/** Merge-to-main 步骤：代码合并到 main 后验证。role 取上游 dev_self_check 的角色 */
-const mergeToMain = (role: string): StepDef => ({
+/** Merge-to-main 步骤：所有质量门禁通过后，CTO 负责合并到 main */
+const MERGE_TO_MAIN: StepDef = {
   name: 'merge_to_main',
   displayName: '合并到 main',
-  role,
+  role: 'cto',
   requiredReports: ['MERGE_REPORT'],
   autoAdvance: false,
-});
+};
 
 const STANDARD_DEV_MIDDLE: StepDef[] = [
   {
@@ -138,11 +144,13 @@ const STANDARD_DEV_MIDDLE: StepDef[] = [
     requiredReports: ['TEST_REPORT'],
     autoAdvance: false,
   },
+  // merge_to_main: 所有质量门禁通过后，CTO 合并到 main
+  MERGE_TO_MAIN,
   {
     name: 'deploying',
     displayName: '部署上线',
     role: 'ops',
-    requiredReports: ['CTO_REVIEW'],
+    requiredReports: ['CTO_REVIEW', 'MERGE_REPORT'],
     autoAdvance: false,
   },
   {
@@ -175,7 +183,6 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
-      mergeToMain('backend_developer'),
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -193,7 +200,6 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
-      mergeToMain('frontend_developer'),
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -211,7 +217,6 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
-      mergeToMain('mobile_developer'),
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -246,7 +251,6 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
-      mergeToMain('game_developer'),
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
     ],
@@ -264,7 +268,6 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
       },
-      mergeToMain('backend_developer'),
       QA_REVIEW_DEV,
       {
         name: 'security_review',
@@ -287,11 +290,12 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      MERGE_TO_MAIN,
       {
         name: 'deploying',
         displayName: '部署上线',
         role: 'ops',
-        requiredReports: ['CTO_REVIEW'],
+        requiredReports: ['CTO_REVIEW', 'MERGE_REPORT'],
         autoAdvance: false,
       },
       {
