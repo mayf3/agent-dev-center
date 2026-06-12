@@ -328,6 +328,33 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         }
       }
 
+      // ── 测试环境锁（mutex）：同时只有一个需求占用测试环境 ──
+      // 进入 test_env_deploy 时加锁，进入 deploying 时释放
+      let lockReleased = false;
+      if (targetStep.name === 'test_env_deploy') {
+        const existingLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
+        if (existingLock && existingLock.requirementId !== params.id) {
+          throw new HttpError(
+            409,
+            `测试环境已被占用：需求「${existingLock.requirementTitle || existingLock.requirementId}」（锁定于 ${existingLock.acquiredAt.toISOString().replace('T', ' ').slice(0, 16)}），请等待其部署完成后重试`,
+          );
+        }
+        // 加锁
+        await prisma.testEnvLock.upsert({
+          where: { id: 'singleton' },
+          create: { id: 'singleton', requirementId: params.id, requirementTitle: requirement.title, branch: requirement.branch },
+          update: { requirementId: params.id, requirementTitle: requirement.title, branch: requirement.branch, acquiredAt: new Date() },
+        });
+      }
+      // 离开 deploying（正式部署）时释放锁，并自动推进队列中下一条
+      if (currentStep.name === 'deploying') {
+        const existingLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
+        if (existingLock) {
+          await prisma.testEnvLock.delete({ where: { id: 'singleton' } });
+          lockReleased = true;
+        }
+      }
+
       // 自动解析下一步骤的 assigneeId
       const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
 
@@ -364,6 +391,62 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           newAssigneeName,
           isDone: targetStep.name === steps[steps.length - 1]?.name,
         },
+      });
+
+      // ── 锁释放后：自动推进队列中下一条等待 test_env_deploy 的需求 ──
+      // 异步执行，不阻塞当前响应
+      if (lockReleased) {
+        void (async () => {
+          try {
+            // 找最早进入 test_env_deploy 的需求（FIFO）
+            const next = await prisma.requirement.findFirst({
+              where: { currentStep: 'test_env_deploy' },
+              orderBy: { updatedAt: 'asc' },
+            });
+            if (!next) return;
+            // 验证它的工作流包含 test_env_deploy
+            const wf = next.workflowId
+              ? await prisma.workflowTemplate.findUnique({ where: { id: next.workflowId } })
+              : null;
+            if (!wf) return;
+            const wfSteps = (wf.steps as any[]) || [];
+            const hasStep = wfSteps.some((s: any) => s.name === 'test_env_deploy');
+            if (!hasStep) return;
+            // 加锁给下一条
+            await prisma.testEnvLock.upsert({
+              where: { id: 'singleton' },
+              create: { id: 'singleton', requirementId: next.id, requirementTitle: next.title, branch: next.branch },
+              update: { requirementId: next.id, requirementTitle: next.title, branch: next.branch, acquiredAt: new Date() },
+            });
+            console.log(`[test-env-lock] 🔓 锁已释放，自动分配给下一个需求: ${next.id.slice(0, 8)} (${next.title?.slice(0, 30)})`);
+          } catch (err) {
+            console.error('[test-env-lock] 自动推进失败:', err);
+          }
+        })();
+      }
+    }),
+  );
+
+  /**
+   * GET /workflow/test-env-lock — 查看测试环境锁状态
+   */
+  router.get(
+    '/workflow/test-env-lock',
+    asyncHandler(async (_req, res) => {
+      const lock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
+      // 统计等待队列
+      const queueCount = await prisma.requirement.count({
+        where: { currentStep: 'test_env_deploy' },
+      });
+      res.json({
+        locked: !!lock,
+        lock: lock ? {
+          requirementId: lock.requirementId,
+          requirementTitle: lock.requirementTitle,
+          branch: lock.branch,
+          acquiredAt: lock.acquiredAt,
+        } : null,
+        queueLength: queueCount,
       });
     }),
   );
