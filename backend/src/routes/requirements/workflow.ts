@@ -166,6 +166,12 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       const steps = parseSteps(template.steps);
       if (steps.length === 0) throw new HttpError(400, '工作流模板无有效步骤');
 
+      // 校验：禁止使用泛角色 'developer'（必须用 backend_developer 等具体角色）
+      const genericDevSteps = steps.filter(s => s.role === 'developer');
+      if (genericDevSteps.length > 0) {
+        throw new HttpError(400, `工作流模板「${body.workflowName}」使用了已废弃的泛角色 'developer'（步骤：${genericDevSteps.map(s => s.name).join(', ')}），请改用具体角色模板如 backend-dev / frontend-dev`);
+      }
+
       // 支持可选的 startStep 参数，用于迁移现有数据
       let targetStep;
       if (body.startStep) {
