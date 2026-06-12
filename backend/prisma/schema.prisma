@@ -759,6 +759,18 @@ model WorkflowTransition {
   @@map("workflow_transitions")
 }
 
+// ─── Test Environment Lock (mutex) ──────────────────────────
+
+model TestEnvLock {
+  id              String   @id @default("singleton")
+  requirementId   String   @db.Uuid
+  requirementTitle String?
+  branch          String?  // 部署的分支名
+  acquiredAt      DateTime @default(now())
+
+  @@map("test_env_lock")
+}
+
 // ─── Daily Log ──────────────────────────────────────────
 
 model DailyLog {
