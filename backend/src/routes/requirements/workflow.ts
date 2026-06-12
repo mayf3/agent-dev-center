@@ -187,6 +187,11 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         currentStep: targetStep.name,
       };
 
+      // draft 步骤：assignee 设为需求提出者（requester 需要提交草稿到 PM 审批）
+      if (targetStep.name === 'draft' && requirement.requesterId) {
+        updateData.assigneeId = requirement.requesterId;
+      }
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: updateData,
@@ -245,10 +250,19 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
-      // 角色校验（系统级强制约束）
-      const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-      if (!matchedRole && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
-        throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
+      // 特殊处理：draft 步骤允许需求提出者 advance（无论 internalRole）
+      if (currentStep.name === 'draft') {
+        const isRequester = requirement.requesterId === req.user!.id;
+        if (!isRequester && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
+          throw new HttpError(403, '只有需求提出者可以提交草稿到 PM 审批');
+        }
+        // 通过，跳过角色校验
+      } else {
+        // 角色校验（系统级强制约束）
+        const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
+        if (!matchedRole && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
+          throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
+        }
       }
 
       // 当前步骤的报告校验（离开当前步骤也需要通过该步骤要求的报告）
@@ -509,9 +523,14 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       }
 
       // 自动解析回退步骤的 assigneeId
-      const newAssigneeId = targetStepDef
+      let newAssigneeId = targetStepDef
         ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
         : requirement.assigneeId;
+
+      // 回退到 draft 时 assignee 设为需求提出者（requester 需要修改后重新提交）
+      if (targetStepName === 'draft' && requirement.requesterId) {
+        newAssigneeId = requirement.requesterId;
+      }
 
       const updated = await prisma.requirement.update({
         where: { id: params.id },
