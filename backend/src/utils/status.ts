@@ -16,7 +16,9 @@ export const requirementStatusValues = [
   'testing',
   'review',
   'deploying',
-  'done'
+  'done',
+  'abandoned',
+  'draft'
 ] as const;
 
 export const taskStatusValues = ['todo', 'in-progress', 'done'] as const;
