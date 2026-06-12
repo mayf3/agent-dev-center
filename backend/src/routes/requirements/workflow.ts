@@ -42,7 +42,7 @@ function mapUserRole(internalRole: string | null | undefined, role: string): str
     mobile_developer: ['mobile_developer'],
     miniapp_developer: ['miniapp_developer'],
     game_developer: ['game_developer'],
-    developer: ['developer'],
+    // developer: deprecated — 各具体角色用自己的名称
     tester: ['tester'],
     security: ['security'],
     ops: ['ops'],
