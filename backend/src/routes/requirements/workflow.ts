@@ -320,26 +320,6 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         }
       }
 
-      // 目标步骤的报告校验（进入下一步必须满足该步骤的 requiredReports）
-      // 2026-06-10：如果安全步骤被跳过，自动过滤 SECURITY_REVIEW 要求
-      const targetReports = securitySkipped
-        ? targetStep.requiredReports.filter(r => r !== 'SECURITY_REVIEW')
-        : targetStep.requiredReports;
-      if (targetReports.length > 0) {
-        const { ok: targetOk, missing: targetMissing } = await checkReportsApproved(params.id, targetReports);
-        if (!targetOk) {
-          const reportLabels: Record<string, string> = {
-            DEV_SELF_CHECK: '开发自检报告',
-            TEST_REPORT: '测试报告',
-            SECURITY_REVIEW: '安全检查报告',
-            CTO_REVIEW: 'CTO验收报告',
-            DEPLOY_CONFIRM: '部署确认报告',
-          };
-          const labels = targetMissing.map(t => reportLabels[t] ?? t).join('、');
-          throw new HttpError(400, `推进失败：进入「${targetStep.displayName}」需要已通过的报告 — ${labels}`);
-        }
-      }
-
       // WIP 上限检查：如果目标步骤设置了 wipLimit，检查当前该步骤的 WIP 数量
       if (targetStep.wipLimit && targetStep.wipLimit > 0) {
         const currentWip = await getStepWipCount(targetStep.name, params.id);
