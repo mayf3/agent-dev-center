@@ -16,7 +16,6 @@ export interface LegacyRolePair {
 const LEGACY_INTERNAL_TO_ADC: Partial<Record<string, string>> = {
   cto: 'adc:admin',
   pm: 'adc:pm',
-  developer: 'adc:developer',
   backend_developer: 'adc:developer',
   frontend_developer: 'adc:developer',
   mobile_developer: 'adc:developer',
@@ -38,7 +37,7 @@ const LEGACY_USER_ROLE_TO_ADC: Partial<Record<string, string>> = {
 const ADC_TO_LEGACY: Partial<Record<string, LegacyRolePair>> = {
   'adc:admin': { role: 'admin', internalRole: 'cto' },
   'adc:pm': { role: 'developer', internalRole: 'pm' },
-  'adc:developer': { role: 'developer', internalRole: 'developer' },
+  'adc:developer': { role: 'developer', internalRole: null },
   'adc:tester': { role: 'developer', internalRole: 'tester' },
   'adc:security': { role: 'developer', internalRole: 'security' },
   'adc:ops': { role: 'developer', internalRole: 'ops' },
