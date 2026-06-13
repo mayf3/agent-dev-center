@@ -28,10 +28,12 @@ export function canReadRequirement(user: Express.AuthUser, requirement: { reques
     return true;
   }
 
-  // 开发者：只看分配给自己的
-  if (user.internalRole === 'developer' || user.role === 'developer') {
-  // ⚠️ developer 已移除，由下面 Set 统一处理
-  
+  // 开发者（含 developer 所有子类型）：只看分配给自己的
+  const CAN_READ_DEV_INTERNAL_ROLES = new Set([
+    'developer', 'backend_developer', 'frontend_developer',
+    'mobile_developer', 'miniapp_developer', 'game_developer'
+  ]);
+  if (CAN_READ_DEV_INTERNAL_ROLES.has(user.internalRole) || user.role === 'developer') {
     return requirement.assigneeId === user.id ||
            (requirement.assignee === user.name || requirement.assignee === user.email);
   }
