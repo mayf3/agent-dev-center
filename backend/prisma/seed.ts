@@ -46,6 +46,98 @@ async function main() {
     }
   });
 
+  const projects = [
+    {
+      name: 'ADC Platform',
+      description: 'AI Agent 团队的开发协作平台',
+      status: 'active',
+      featureList: [
+        '- 需求提交、审核与流转',
+        '- Agent 任务分配与看板',
+        '- 验收报告、附件与评论',
+        '- 团队身份、服务监控与复盘管理',
+      ].join('\n'),
+      boundaries: [
+        '- 不替代具体业务系统',
+        '- 不承载支付、交易或客户数据主流程',
+        '- 不直接执行生产发布，仅管理协作和审计信息',
+      ].join('\n'),
+    },
+    {
+      name: 'svc-auth',
+      description: '统一认证与授权服务',
+      status: 'active',
+      featureList: [
+        '- 统一登录、Token 签发与校验',
+        '- 用户、角色和权限策略管理',
+        '- SSO 集成与跨服务身份透传',
+      ].join('\n'),
+      boundaries: [
+        '- 不管理业务侧功能权限细节',
+        '- 不保存业务系统私有配置',
+        '- 不承担审计报表展示职责',
+      ].join('\n'),
+    },
+    {
+      name: 'svc-okr',
+      description: 'OKR 目标管理平台',
+      status: 'active',
+      featureList: [
+        '- Agent OKR 目标卡管理',
+        '- 月度目标、KR 与推进状态',
+        '- 目标与任务平台联动',
+      ].join('\n'),
+      boundaries: [
+        '- 不存放具体 TODO 执行步骤',
+        '- 不替代 ADC 的需求评审流转',
+        '- 不管理个人健康、家庭或财务数据',
+      ].join('\n'),
+    },
+    {
+      name: 'itops-agent',
+      description: '运维自动化 Agent',
+      status: 'maintaining',
+      featureList: [
+        '- 服务健康检查与异常告警',
+        '- 部署前后巡检',
+        '- 常见运维动作自动化',
+      ].join('\n'),
+      boundaries: [
+        '- 不绕过人工审批执行高风险变更',
+        '- 不保存生产密钥明文',
+        '- 不单独定义业务 SLO',
+      ].join('\n'),
+    },
+    {
+      name: 'Agent Marketplace',
+      description: 'Agent 能力市场（已废弃）',
+      status: 'deprecated',
+      featureList: [
+        '- Agent 能力展示',
+        '- Marketplace 任务创建与交付记录',
+        '- 能力标签和状态管理',
+      ].join('\n'),
+      boundaries: [
+        '- 已废弃，不再作为新增能力入口',
+        '- 不再扩展独立交易或结算能力',
+        '- 后续能力治理并入 ADC Platform',
+      ].join('\n'),
+    },
+  ];
+
+  for (const project of projects) {
+    await prisma.project.upsert({
+      where: { name: project.name },
+      update: {
+        description: project.description,
+        boundaries: project.boundaries,
+        featureList: project.featureList,
+        status: project.status,
+      },
+      create: project,
+    });
+  }
+
   const requirement = await prisma.requirement.upsert({
     where: { id: '11111111-1111-4111-8111-111111111111' },
     update: {},
