@@ -96,24 +96,17 @@ router.get(
 );
 
 // GET /mine - 我的活跃任务（Agent 心跳专用，一站式端点）
-// 返回当前用户的活跃需求 + 每条需求的下一步动作提示
-// 干掉客户端 assigneeId + activeStep 过滤逻辑
+// 只按 assigneeId 过滤，不按角色。用户的"我的任务" = 分配给当前用户的任务
 router.get(
   '/mine',
   asyncHandler(async (req, res) => {
     const actor = req.user!;
 
-    // 终态步骤 — 不出现在"我的活跃任务"中
     const terminalSteps = ['done', 'abandoned', 'cancelled', 'rejected'];
 
-    // 基于角色的可见性过滤
-    const roleWhere: Prisma.RequirementWhereInput = roleAwareRequirementWhere(actor);
-
     const where: Prisma.RequirementWhereInput = {
-      AND: [
-        roleWhere,
-        { currentStep: { notIn: terminalSteps } },
-      ],
+      assigneeId: actor.id,
+      currentStep: { notIn: terminalSteps },
     };
 
     // 分页参数
