@@ -73,21 +73,55 @@ export function getPreviousStep(steps: WorkflowStep[], currentStepName: string):
   return steps[idx - 1];
 }
 
-/** Check if all required reports are approved */
+/** Report types that are self-certifying — only need to exist (pending or approved), not QA-approved */
+const SELF_CERTIFY_REPORT_TYPES = new Set([
+  'DEV_SELF_CHECK',    // 开发自检：自己检查，不需要别人批准
+  'DEPLOY_CONFIRM',    // 部署确认：部署者确认完成
+]);
+
+/** Check if all required reports are in the required status
+ *  - Self-certify types (DEV_SELF_CHECK, DEPLOY_CONFIRM): status must be 'pending' or 'approved'
+ *  - All other types (TEST_REPORT, SECURITY_REVIEW, CTO_REVIEW, etc.): status must be 'approved'
+ */
 export async function checkReportsApproved(requirementId: string, requiredReports: string[]): Promise<{ ok: boolean; missing: string[] }> {
   if (requiredReports.length === 0) return { ok: true, missing: [] };
 
-  const approvedReports = await prisma.requirementReport.findMany({
-    where: {
-      requirementId,
-      reportType: { in: requiredReports as any },
-      status: 'approved',  // 2026-06-10: 只认 approved，pending 不算通过（防止报告提交=审批通过）
-    },
-    select: { reportType: true },
-  });
+  const selfCertify = requiredReports.filter(t => SELF_CERTIFY_REPORT_TYPES.has(t as string));
+  const needApproval = requiredReports.filter(t => !SELF_CERTIFY_REPORT_TYPES.has(t as string));
 
-  const approvedTypes = new Set(approvedReports.map(r => r.reportType));
-  const missing = requiredReports.filter(t => !approvedTypes.has(t as any));
+  const missing: string[] = [];
+
+  // Self-certify types: pending (submitted) or approved is fine
+  if (selfCertify.length > 0) {
+    const found = await prisma.requirementReport.findMany({
+      where: {
+        requirementId,
+        reportType: { in: selfCertify as any },
+        status: { in: ['pending', 'approved'] },
+      },
+      select: { reportType: true },
+    });
+    const foundTypes = new Set(found.map(r => r.reportType));
+    for (const t of selfCertify) {
+      if (!foundTypes.has(t as any)) missing.push(t);
+    }
+  }
+
+  // Non-self-certify types: must be approved
+  if (needApproval.length > 0) {
+    const approved = await prisma.requirementReport.findMany({
+      where: {
+        requirementId,
+        reportType: { in: needApproval as any },
+        status: 'approved',
+      },
+      select: { reportType: true },
+    });
+    const approvedTypes = new Set(approved.map(r => r.reportType));
+    for (const t of needApproval) {
+      if (!approvedTypes.has(t as any)) missing.push(t);
+    }
+  }
 
   return { ok: missing.length === 0, missing };
 }
