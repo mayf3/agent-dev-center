@@ -13,6 +13,8 @@ import { AgentDetailPage } from './pages/agents/AgentDetailPage';
 import { RequirementDetailPage } from './pages/requirements/RequirementDetailPage';
 import { RequirementListPage } from './pages/requirements/RequirementListPage';
 import { SubmitRequirementPage } from './pages/requirements/SubmitRequirementPage';
+import { ProjectDetailPage } from './pages/projects/ProjectDetailPage';
+import { ProjectListPage } from './pages/projects/ProjectListPage';
 import { TaskListPage } from './pages/TaskListPage';
 import { TaskKanbanPage } from './pages/TaskKanbanPage';
 import { GoalDashboardPage } from './pages/goals/GoalDashboardPage';
@@ -54,6 +56,8 @@ const router = createBrowserRouter([
             { index: true, element: <DashboardPage /> },
             { path: 'requirements', element: <RequirementListPage /> },
             { path: 'requirements/:id', element: <RequirementDetailPage /> },
+            { path: 'projects', element: <ProjectListPage /> },
+            { path: 'projects/:id', element: <ProjectDetailPage /> },
             { path: 'kanban', element: <KanbanBoardPage /> },
             { path: 'services', element: <ServicesPage /> },
             { path: 'services/:id', element: <ServiceDetailPage /> },
@@ -102,6 +106,14 @@ const router = createBrowserRouter([
           {
             path: 'requirements/:id',
             element: <RequirementDetailPage />
+          },
+          {
+            path: 'projects',
+            element: <ProjectListPage />
+          },
+          {
+            path: 'projects/:id',
+            element: <ProjectDetailPage />
           },
           {
             path: 'kanban',

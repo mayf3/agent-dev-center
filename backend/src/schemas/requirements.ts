@@ -22,6 +22,18 @@ const nullableString = z.preprocess((value) => {
   return String(value).trim();
 }, z.string().optional());
 
+const nullableUuid = z.preprocess((value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || value === '') {
+    return null;
+  }
+
+  return String(value).trim();
+}, z.string().uuid().nullable().optional());
+
 export const createRequirementSchema = z.object({
   body: z.object({
     title: z.string().trim().min(2).max(120),
@@ -33,7 +45,8 @@ export const createRequirementSchema = z.object({
     department: z.string().trim().min(2).max(80),
     assignee: nullableString,
     dueDate: optionalDate,
-    attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined))
+    attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
+    projectId: nullableUuid
   })
 });
 
@@ -50,7 +63,8 @@ export const listRequirementsSchema = z.object({
       z.array(z.string()).optional()
     ),
     search: z.string().trim().max(100).optional(),
-    assigneeId: z.string().uuid().optional()
+    assigneeId: z.string().uuid().optional(),
+    projectId: z.string().uuid().optional()
   })
 });
 
@@ -92,6 +106,7 @@ export const updateRequirementSchema = requirementIdSchema.extend({
       dueDate: optionalDate,
       attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
       notes: z.string().optional(),
+      projectId: nullableUuid,
       dependsOnIds: z.array(z.string().uuid()).max(20).optional().default([]),
       blockedBy: z.array(z.string().uuid()).max(20).optional().default([])
     })

@@ -4,7 +4,7 @@
  * 每个项目的功能清单、产品边界、关联需求
  */
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 
@@ -20,9 +20,26 @@ router.get(
     const page = Math.max(1, parseInt(String(req.query.page)) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize)) || 10));
     const skip = (page - 1) * pageSize;
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+    const where: Prisma.ProjectWhereInput = {};
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { boundaries: { contains: search, mode: 'insensitive' } },
+        { featureList: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    if (status) {
+      where.status = status;
+    }
 
     const [projects, total] = await Promise.all([
       prisma.project.findMany({
+        where,
         skip,
         take: pageSize,
         orderBy: { createdAt: 'desc' },
@@ -30,7 +47,7 @@ router.get(
           owner: { select: { id: true, name: true } },
         },
       }),
-      prisma.project.count(),
+      prisma.project.count({ where }),
     ]);
 
     res.json({ data: projects, meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } });

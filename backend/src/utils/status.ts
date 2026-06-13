@@ -1,4 +1,5 @@
 import type {
+  Project,
   Requirement,
   Task,
   TaskStatus
@@ -45,6 +46,7 @@ export type SerializedRequirement = Omit<Requirement, 'assignee'> & {
   currentStep: string | null;
   assignee?: string | null;  // resolved from assigneeUser.name
   tasks?: SerializedTask[];
+  project?: Pick<Project, 'id' | 'name' | 'boundaries'> | null;
 };
 
 export function serializeTask(task: Task): SerializedTask {
@@ -55,7 +57,11 @@ export function serializeTask(task: Task): SerializedTask {
 }
 
 export function serializeRequirement(
-  requirement: (Requirement & { tasks?: Task[]; assigneeUser?: { name: string } | null })
+  requirement: (Requirement & {
+    tasks?: Task[];
+    assigneeUser?: { name: string } | null;
+    project?: Pick<Project, 'id' | 'name' | 'boundaries'> | null;
+  })
 ): SerializedRequirement {
   return {
     ...requirement,

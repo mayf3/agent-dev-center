@@ -26,6 +26,12 @@ import { notifyEvent } from '../../utils/notifications.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
 import { canReadRequirement, canEditRequirement, roleAwareRequirementWhere } from './utils.js';
 
+const requirementInclude = {
+  tasks: true,
+  assigneeUser: { select: { name: true } },
+  project: { select: { id: true, name: true, boundaries: true } },
+} satisfies Prisma.RequirementInclude;
+
 export function registerCoreCrudRoutes(router: import('express').Router): void {
 
 // POST / - 创建需求
@@ -83,9 +89,10 @@ router.post(
         department: body.department,
         assignee: createAssigneeName, assigneeId: createAssigneeId,
         dueDate: body.dueDate, attachment: body.attachment,
+        projectId: body.projectId ?? null,
         dependsOnIds: (body as any).dependsOnIds ?? []
       },
-      include: { tasks: true, assigneeUser: { select: { name: true } } }
+      include: requirementInclude
     });
 
     // 反向更新被依赖的需求的 blockedBy
@@ -164,11 +171,14 @@ router.get(
     if (query.assigneeId) {
       where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { assigneeId: query.assigneeId }];
     }
+    if (query.projectId) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { projectId: query.projectId }];
+    }
 
     const skip = (query.page - 1) * query.pageSize;
     const [requirements, total] = await prisma.$transaction([
       prisma.requirement.findMany({
-        where, include: { tasks: true, assigneeUser: { select: { name: true } } },
+        where, include: requirementInclude,
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
         skip, take: query.pageSize
       }),
@@ -189,7 +199,7 @@ router.get(
     const { params } = requirementIdSchema.parse({ params: req.params });
     const requirement = await prisma.requirement.findUnique({
       where: { id: params.id },
-      include: { tasks: true, assigneeUser: { select: { name: true } } }
+      include: requirementInclude
     });
 
     if (!requirement) throw new HttpError(404, '需求不存在');
@@ -270,9 +280,10 @@ router.put(
         requester: body.requester, department: body.department,
         assignee: assigneeName, assigneeId, dueDate: body.dueDate, attachment: body.attachment,
         notes: body.notes,
+        ...(body.projectId !== undefined && { projectId: body.projectId }),
         dependsOnIds: body.dependsOnIds
       },
-      include: { tasks: true, assigneeUser: { select: { name: true } } }
+      include: requirementInclude
     });
 
     // 处理 dependsOnIds 变化：更新被依赖需求的 blockedBy 反向引用
@@ -413,7 +424,7 @@ router.patch(
         deployVersion: body.deployVersion,
         ...(body.workflowId ? { workflowId: body.workflowId } : {}),
       },
-      include: { tasks: true, assigneeUser: { select: { name: true } } }
+      include: requirementInclude
     });
 
     void notifyEvent('requirement.updated', {

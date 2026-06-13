@@ -52,6 +52,12 @@ export interface Attachment {
   uploadedAt?: string;
 }
 
+export interface RequirementProject {
+  id: string;
+  name: string;
+  boundaries: string | null;
+}
+
 export interface Requirement {
   id: string;
   title: string;
@@ -69,6 +75,8 @@ export interface Requirement {
   rejectReason?: string | null;
   gitHash?: string | null;
   deployVersion?: string | null;
+  projectId?: string | null;
+  project?: RequirementProject | null;
   createdAt: string;
   updatedAt: string;
   tasks?: Task[];

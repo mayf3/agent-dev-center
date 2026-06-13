@@ -62,6 +62,8 @@ export function AppLayout() {
         ? '/admin/users'
         : location.pathname.startsWith('/team')
           ? '/team'
+          : location.pathname.startsWith('/projects')
+            ? '/projects'
           : location.pathname.startsWith('/requirements/new')
             ? '/requirements/new'
             : location.pathname.startsWith('/requirements')
@@ -98,6 +100,7 @@ export function AppLayout() {
     { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
     { key: '/requirements', icon: <UnorderedListOutlined />, label: '需求管理' },
     ...(!isPublicMode ? [{ key: '/requirements/new', icon: <PlusCircleOutlined />, label: '提交需求' }] : []),
+    { key: '/projects', icon: <ProjectOutlined />, label: '📦 项目' },
     { key: '/team', icon: <TeamOutlined />, label: '团队看板' },
     { key: '/kanban', icon: <ProjectOutlined />, label: '开发看板' },
     { key: '/goals', icon: <AimOutlined />, label: '目标卡' },

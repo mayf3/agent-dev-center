@@ -13,9 +13,10 @@ import {
 } from 'antd';
 import type { UploadFile, UploadProps } from 'antd';
 import type { Dayjs } from 'dayjs';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
+import { fetchProjects, type Project } from '../../api/projects';
 import type { Requirement, RequirementPriority, RequirementType } from '../../api/types';
 import {
   ACCEPTED_FILE_TYPES,
@@ -24,7 +25,7 @@ import {
   formatFileSize,
   isAllowedFile
 } from '../../components/requirements/fileUtils';
-import { agentOptions, departmentOptions, priorityLabels, typeLabels } from '../../constants/options';
+import { departmentOptions, priorityLabels, typeLabels } from '../../constants/options';
 
 const { TextArea } = Input;
 
@@ -34,6 +35,7 @@ interface RequirementFormValues {
   priority: RequirementPriority;
   type?: RequirementType;
   tags?: string[];
+  projectId?: string;
   department: string;
   dueDate?: Dayjs;
   attachment?: string;
@@ -46,6 +48,7 @@ function toPayload(values: RequirementFormValues) {
     priority: values.priority,
     type: values.type,
     tags: values.tags,
+    projectId: values.projectId || undefined,
     department: values.department,
     dueDate: values.dueDate?.toISOString(),
     attachment: values.attachment?.trim() || undefined
@@ -66,7 +69,17 @@ export function SubmitRequirementPage() {
   const navigate = useNavigate();
   const [form] = Form.useForm<RequirementFormValues>();
   const [submitting, setSubmitting] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectLoading, setProjectLoading] = useState(false);
   const [attachmentFiles, setAttachmentFiles] = useState<UploadFile[]>([]);
+
+  useEffect(() => {
+    setProjectLoading(true);
+    fetchProjects({ page: 1, pageSize: 100 })
+      .then((response) => setProjects(response.data))
+      .catch(() => message.warning('项目列表加载失败，仍可继续提交需求'))
+      .finally(() => setProjectLoading(false));
+  }, [message]);
 
   const beforeAttachmentUpload: UploadProps['beforeUpload'] = (file, fileList) => {
     const incomingIndex = fileList.findIndex((item) => item.uid === file.uid);
@@ -200,6 +213,20 @@ export function SubmitRequirementPage() {
 
           <Form.Item label="标签" name="tags">
             <Select mode="tags" placeholder="输入标签后回车，如：前端、优化、P0修复" tokenSeparators={[',', '，']} />
+          </Form.Item>
+
+          <Form.Item label="所属项目" name="projectId">
+            <Select
+              allowClear
+              showSearch
+              loading={projectLoading}
+              placeholder="选择关联项目（可选）"
+              optionFilterProp="label"
+              options={projects.map((project) => ({
+                label: project.name,
+                value: project.id
+              }))}
+            />
           </Form.Item>
 
           <Form.Item
