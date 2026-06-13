@@ -107,8 +107,12 @@ export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.Requir
     return {};
   }
 
-  // 开发者（internalRole=developer 或 role=developer）：只看分配给自己的
-  if (user.internalRole === 'developer' || user.role === 'developer') {
+  // 开发者（internalRole=developer, backend_developer 等细粒度角色，或 role=developer）：只看分配给自己的
+  const DEVELOPER_INTERNAL_ROLES = new Set([
+    'developer', 'backend_developer', 'frontend_developer',
+    'mobile_developer', 'miniapp_developer', 'game_developer'
+  ]);
+  if (DEVELOPER_INTERNAL_ROLES.has(user.internalRole) || user.role === 'developer') {
     return {
       OR: [{ assigneeId: user.id }, { assignee: user.name }, { assignee: user.email }]
     };
