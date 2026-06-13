@@ -12,7 +12,7 @@ import {
 } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
 import type { Requirement } from '../../api/types';
 import { PriorityTag } from '../../components/PriorityTag';
@@ -264,6 +264,13 @@ export function RequirementDetailPage() {
               )}
             </Descriptions.Item>
             <Descriptions.Item label="标题">{requirement.title}</Descriptions.Item>
+            <Descriptions.Item label="所属项目">
+              {requirement.project ? (
+                <Link to={`/projects/${requirement.project.id}`}>{requirement.project.name}</Link>
+              ) : (
+                <Typography.Text type="secondary">未关联</Typography.Text>
+              )}
+            </Descriptions.Item>
             <Descriptions.Item label="优先级"><PriorityTag priority={requirement.priority} /></Descriptions.Item>
             <Descriptions.Item label="类型"><TypeTag type={requirement.type} /></Descriptions.Item>
             <Descriptions.Item label="状态"><StatusTag status={requirement.status} /></Descriptions.Item>

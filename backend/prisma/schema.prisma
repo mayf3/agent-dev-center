@@ -184,6 +184,8 @@ model Requirement {
   repoPath            String?             // 4397e6a9: 代码仓库本地路径
   branch              String?             // 4397e6a9: Git 分支名
   deployVersion       String?
+  projectId           String?               @db.Uuid
+  project             Project?              @relation("RequirementProject", fields: [projectId], references: [id])
   dependsOnIds        String[]              @default([]) @map("depends_on_ids")
   blockedBy           String[]              @default([]) @map("blocked_by")
   createdAt           DateTime              @default(now())
@@ -212,6 +214,7 @@ model Requirement {
   @@index([requesterId])
   @@index([assignee])
   @@index([assigneeId])
+  @@index([projectId])
   @@map("requirements")
 }
 
@@ -801,6 +804,7 @@ model Project {
   status      String   @default("active")
   ownerId     String?  @db.Uuid
   owner       User?    @relation("ProjectOwner", fields: [ownerId], references: [id])
+  requirements Requirement[] @relation("RequirementProject")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
