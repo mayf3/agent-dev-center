@@ -87,9 +87,15 @@ async function validateReportRole(
 
   // admin 特赦：仅 allowAdmin=true 时放行（目前只有 CTO_REVIEW 和 POSTMORTEM）
   if (isAdminEnv && rule.allowAdmin) {
-    // admin 只能提交 CTO_REVIEW 或 POSTMORTEM，不能代提交其他类型
+    // 如果是 assignee 模式，检查 admin 本人是否就是 assignee
     if (rule.mode === 'assignee') {
-      throw new HttpError(403, `⛔ ${reportType} 仅需求 assignee 可提交，admin 不能代提交`);
+      const requirement = await prisma.requirement.findUnique({
+        where: { id: requirementId },
+        select: { assigneeId: true, assignee: true },
+      });
+      if (requirement?.assigneeId === user.id) return;
+      if (requirement?.assignee && (requirement.assignee === user.name || requirement.assignee === user.email)) return;
+      throw new HttpError(403, `⛔ ${reportType} 仅需求 assignee 可提交，你不是该需求的 assignee`);
     }
     if (rule.platformRoles && rule.platformRoles.length > 0 && !rule.platformRoles.includes('adc:admin')) {
       throw new HttpError(403, `⛔ ${reportType} 仅 ${rule.platformRoles.join('/')} 可提交，admin 不能代提交`);
