@@ -46,7 +46,11 @@ export function canReadRequirement(user: Express.AuthUser, requirement: { reques
          (requirement.assignee === user.name || requirement.assignee === user.email);
 }
 
-/** 权限判断：是否可编辑该需求（基于 user.id） */
+/** 权限判断：是否可编辑该需求（基于 user.id）
+ *
+ * 2026-06-13 修复：PM 角色在 pm_review 步骤时允许编辑（打回 draft / 改 assignee）
+ * 字段级限制在 core-crud.ts PATCH handler 中单独处理（禁止改 title/description 等）。
+ */
 export function canEditRequirement(user: Express.AuthUser, requirement: {
   requesterId: string | null;
   requester: string;
@@ -58,8 +62,14 @@ export function canEditRequirement(user: Express.AuthUser, requirement: {
     return true;
   }
 
-  const isRequester = requirement.requesterId === user.id || requirement.requester === user.name;
+  // PM 角色：在 pm_review 步骤时允许编辑（打回 draft、改 assignee 回 requester）
+  const isPmRole = user.internalRole === 'pm' || user.role === 'pm';
   const currentStep = requirement.currentStep ?? 'pending';
+  if (isPmRole && currentStep === 'pm_review') {
+    return true;
+  }
+
+  const isRequester = requirement.requesterId === user.id || requirement.requester === user.name;
   if (isRequester && ['pending', 'rejected'].includes(currentStep)) {
     return true;
   }
