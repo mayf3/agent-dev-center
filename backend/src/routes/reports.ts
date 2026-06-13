@@ -41,6 +41,8 @@ const REPORT_ROLE_MAP: Record<string, { mode: 'assignee' | 'role' | 'any'; platf
   DEV_SELF_CHECK:    { mode: 'assignee', allowAdmin: false },
   TEST_REPORT:       { mode: 'role', platformRoles: ['adc:tester'], allowAdmin: false },
   SECURITY_REVIEW:   { mode: 'role', platformRoles: ['adc:security'], allowAdmin: false },
+  ARCH_DESIGN:       { mode: 'assignee', allowAdmin: false },
+  ARCH_REVIEW:       { mode: 'assignee', allowAdmin: false },
   CTO_REVIEW:        { mode: 'role', platformRoles: ['adc:admin'], allowAdmin: true },
   DEPLOY_CONFIRM:    { mode: 'role', platformRoles: ['adc:ops'], allowAdmin: false },
   POSTMORTEM:        { mode: 'any', allowAdmin: true },
@@ -58,6 +60,7 @@ const WORKFLOW_STEP_PLATFORM_ROLES: Record<string, string[]> = {
   ops: ['adc:ops'],
   pm: ['adc:pm', 'adc:viewer'],
   requester: ['adc:pm', 'adc:viewer'],
+  architect: ['adc:admin'],  // 架构师 - 用 admin 级别权限提交 ARCH_DESIGN/ARCH_REVIEW
 };
 
 function describeUserRoles(user: Express.AuthUser): string {

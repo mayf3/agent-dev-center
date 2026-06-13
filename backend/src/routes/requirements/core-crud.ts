@@ -335,6 +335,7 @@ router.patch(
     if (!canEditRequirement(req.user!, existing)) throw new HttpError(403, '无权编辑该需求');
 
     // 5c76bb65: PM 审核时字段级权限控制
+    // 2026-06-13: draft 步骤允许 requester/PM 修改 description/title（补充材料后重新提交）
     if (existing.currentStep === 'pm_review') {
       const user = req.user!;
       const isPmRole = user.internalRole === 'pm' || user.role === 'pm';
@@ -413,17 +414,22 @@ router.patch(
       }
     }
 
+    // 构建 update data
+    const patchData: Record<string, unknown> = {
+      currentStep: newStep,
+      assignee: assigneeName,
+      assigneeId,
+      rejectReason: body.rejectReason,
+      gitHash: body.gitHash,
+      deployVersion: body.deployVersion,
+    };
+    if (body.title !== undefined) patchData.title = body.title;
+    if (body.description !== undefined) patchData.description = body.description;
+    if (body.workflowId !== undefined) patchData.workflowId = body.workflowId;
+
     const updated = await prisma.requirement.update({
       where: { id: params.id },
-      data: {
-        currentStep: newStep,
-        assignee: assigneeName,
-        assigneeId,
-        rejectReason: body.rejectReason,
-        gitHash: body.gitHash,
-        deployVersion: body.deployVersion,
-        ...(body.workflowId ? { workflowId: body.workflowId } : {}),
-      },
+      data: patchData,
       include: requirementInclude
     });
 
