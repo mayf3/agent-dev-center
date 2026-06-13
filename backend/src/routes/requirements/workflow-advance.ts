@@ -175,6 +175,7 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         data: {
           currentStep: targetStep.name,
           assigneeId: newAssigneeId,
+          rejectReason: null,  // 审批通过时清空驳回原因（防止残留导致误判）
         },
       });
 

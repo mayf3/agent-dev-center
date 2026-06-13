@@ -60,13 +60,13 @@ const PM_REVIEW: StepDef = {
  * v4-refined: 架构审查 + QA 缩编
  *
  * 完整链路（13步）：
- * draft → pm_review → arch_design_review → dev_self_check →
+ * draft → pm_review → arch_design → dev_self_check →
  * arch_review → qa_review → test_env_deploy →
  * testing → security_review → qa_pre_release →
  * cto_review → merge_to_main → deploying → done
  *
  * 变化：
- * - 新增 arch_design_review（架构设计审查）
+ * - 新增 arch_design（架构设计）
  * - 新增 arch_review（含代码质量 + 架构合规）
  * - 合并 qa_review_test + qa_review_security → qa_pre_release
  * - deploying 去掉 MERGE_REPORT
@@ -89,11 +89,11 @@ const QA_REVIEW_DEV: StepDef = {
   autoAdvance: false,
 };
 
-/** 架构设计审查 */
-const ARCH_DESIGN_REVIEW: StepDef = {
-  name: 'arch_design_review',
-  displayName: '架构设计审查',
-  role: 'cto',
+/** 架构设计（非审查） */
+const ARCH_DESIGN: StepDef = {
+  name: 'arch_design',
+  displayName: '架构设计',
+  role: 'architect',
   requiredReports: ['ARCH_DESIGN'],
   autoAdvance: false,
 };
@@ -102,7 +102,7 @@ const ARCH_DESIGN_REVIEW: StepDef = {
 const ARCH_REVIEW: StepDef = {
   name: 'arch_review',
   displayName: '架构审查(代码+设计合规)',
-  role: 'cto',
+  role: 'architect',
   requiredReports: ['ARCH_REVIEW'],
   autoAdvance: false,
 };
@@ -135,10 +135,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     steps: [
       DRAFT,
       PM_REVIEW,
-      ARCH_DESIGN_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '后端开发自检',
+        displayName: '后端开发并自检',
         role: 'backend_developer',
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
@@ -155,10 +155,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     steps: [
       DRAFT,
       PM_REVIEW,
-      ARCH_DESIGN_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '前端开发自检',
+        displayName: '前端开发并自检',
         role: 'frontend_developer',
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
@@ -175,10 +175,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     steps: [
       DRAFT,
       PM_REVIEW,
-      ARCH_DESIGN_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '移动端开发自检',
+        displayName: '移动端开发并自检',
         role: 'mobile_developer',
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
@@ -195,10 +195,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     steps: [
       DRAFT,
       PM_REVIEW,
-      ARCH_DESIGN_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '小程序开发自检',
+        displayName: '小程序开发并自检',
         role: 'miniapp_developer',
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
@@ -215,10 +215,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     steps: [
       DRAFT,
       PM_REVIEW,
-      ARCH_DESIGN_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '游戏开发自检',
+        displayName: '游戏开发并自检',
         role: 'game_developer',
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,
@@ -235,10 +235,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     steps: [
       DRAFT,
       PM_REVIEW,
-      ARCH_DESIGN_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '修复自检',
+        displayName: '修复并自检',
         role: 'backend_developer',
         requiredReports: ['DEV_SELF_CHECK'],
         autoAdvance: false,

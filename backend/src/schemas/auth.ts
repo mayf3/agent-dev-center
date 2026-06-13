@@ -37,7 +37,7 @@ export const batchRegisterSchema = z.object({
       email: z.string().trim().email('邮箱格式不正确').transform((email) => email.toLowerCase()),
       password: z.string().min(6, '密码至少需要 6 个字符').optional(),  // bf651cbc: optional, auto-gen if omitted
       role: z.enum(['requester', 'developer', 'agent', 'cto-agent']).default('agent').transform(r => r === 'cto-agent' ? 'cto_agent' : r),
-      internalRole: z.enum(['cto', 'pm', 'tester', 'security', 'ops', 'qa']).optional()
+      internalRole: z.enum(['cto', 'pm', 'tester', 'security', 'ops', 'qa', 'architect']).optional()
     })).min(1, '至少需要注册 1 个 Agent').max(100, '单次最多注册 100 个 Agent')
   })
 });

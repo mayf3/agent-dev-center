@@ -74,7 +74,7 @@ export function canEditRequirement(user: Express.AuthUser, requirement: {
   }
 
   const isRequester = requirement.requesterId === user.id || requirement.requester === user.name;
-  if (isRequester && ['pending', 'rejected'].includes(currentStep)) {
+  if (isRequester && ['pending', 'rejected', 'draft'].includes(currentStep)) {
     return true;
   }
 

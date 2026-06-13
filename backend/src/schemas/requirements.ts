@@ -79,6 +79,8 @@ export const patchRequirementSchema = requirementIdSchema.extend({
     .object({
       currentStep: z.string().trim().min(1).max(80).optional(),
       status: z.enum(requirementStatusValues).optional(),
+      title: z.string().trim().min(2).max(120).optional(),
+      description: z.string().trim().min(5).optional(),
       assignee: nullableString,
       rejectReason: nullableString,
       gitHash: z.string().trim().optional(),
