@@ -10,7 +10,6 @@ import { prisma } from './prisma.js';
 
 /** 工作流步骤 role → InternalRole 映射 */
 const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
-  developer: 'developer',
   backend_developer: 'backend_developer',
   frontend_developer: 'frontend_developer',
   mobile_developer: 'mobile_developer',
