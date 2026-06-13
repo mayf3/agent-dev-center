@@ -18,7 +18,6 @@ enum UserRole {
 enum InternalRole {
   cto
   pm
-  developer
   backend_developer
   frontend_developer
   mobile_developer

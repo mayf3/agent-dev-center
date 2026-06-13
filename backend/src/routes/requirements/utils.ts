@@ -30,6 +30,8 @@ export function canReadRequirement(user: Express.AuthUser, requirement: { reques
 
   // 开发者：只看分配给自己的
   if (user.internalRole === 'developer' || user.role === 'developer') {
+  // ⚠️ developer 已移除，由下面 Set 统一处理
+  
     return requirement.assigneeId === user.id ||
            (requirement.assignee === user.name || requirement.assignee === user.email);
   }
