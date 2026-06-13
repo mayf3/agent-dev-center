@@ -56,15 +56,6 @@ const PM_REVIEW: StepDef = {
   autoAdvance: false,
 };
 
-/** QA 审查 DEV_SELF_CHECK 报告 — 门禁：开发自检报告必须已通过 */
-const QA_REVIEW_DEV: StepDef = {
-  name: 'qa_review',
-  displayName: 'QA审查(开发自检)',
-  role: 'qa',
-  requiredReports: ['DEV_SELF_CHECK'],
-  autoAdvance: false,
-};
-
 /**
  * v4-refined: 架构审查 + QA 缩编
  *
