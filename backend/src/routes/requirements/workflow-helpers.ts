@@ -77,6 +77,7 @@ export function getPreviousStep(steps: WorkflowStep[], currentStepName: string):
 const SELF_CERTIFY_REPORT_TYPES = new Set([
   'DEV_SELF_CHECK',    // 开发自检：自己检查，不需要别人批准
   'DEPLOY_CONFIRM',    // 部署确认：部署者确认完成
+  'CTO_REVIEW',        // CTO验收：CTO 自审自批
 ]);
 
 /** Check if all required reports are in the required status
