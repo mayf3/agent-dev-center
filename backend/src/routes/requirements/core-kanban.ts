@@ -16,6 +16,7 @@ import { serializeRequirement } from '../../utils/status.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
 import { findOverdueRequirements, runOverdueCheck } from '../../utils/overdue-check.js';
 import { roleAwareRequirementWhere } from './utils.js';
+import { parseSteps, getCurrentStep, mapUserRole } from './workflow-helpers.js';
 
 export function registerCoreKanbanRoutes(router: import('express').Router): void {
 
@@ -91,6 +92,104 @@ router.get(
     }
 
     res.json({ data: serialized, meta: { total: requirements.length } });
+  })
+);
+
+// GET /mine - 我的活跃任务（Agent 心跳专用，一站式端点）
+// 返回当前用户的活跃需求 + 每条需求的下一步动作提示
+// 干掉客户端 assigneeId + activeStep 过滤逻辑
+router.get(
+  '/mine',
+  asyncHandler(async (req, res) => {
+    const actor = req.user!;
+
+    // 终态步骤 — 不出现在"我的活跃任务"中
+    const terminalSteps = ['done', 'abandoned', 'cancelled', 'rejected'];
+
+    // 基于角色的可见性过滤
+    const roleWhere: Prisma.RequirementWhereInput = roleAwareRequirementWhere(actor);
+
+    const where: Prisma.RequirementWhereInput = {
+      AND: [
+        roleWhere,
+        { currentStep: { notIn: terminalSteps } },
+      ],
+    };
+
+    // 分页参数
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50));
+
+    const [requirements, total] = await prisma.$transaction([
+      prisma.requirement.findMany({
+        where,
+        include: {
+          tasks: true,
+          assigneeUser: { select: { name: true } },
+          workflow: { select: { steps: true, name: true, displayName: true } },
+        },
+        orderBy: [
+          // P0 最高优先级，然后按 updatedAt 排序
+          { priority: 'asc' },   // P0 < P1 < P2 < P3 字符串排序刚好对
+          { updatedAt: 'desc' },
+        ],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.requirement.count({ where }),
+    ]);
+
+    // 为每条需求计算"下一步动作提示"
+    const items = requirements.map(r => {
+      let nextAction: string | null = null;
+      let requiredReports: string[] = [];
+      let missingReports: string[] = [];
+
+      if (r.workflow && r.currentStep) {
+        try {
+          const steps = parseSteps(r.workflow.steps as any);
+          const currentStepDef = getCurrentStep(steps, r.currentStep);
+          if (currentStepDef) {
+            requiredReports = currentStepDef.requiredReports;
+            // 简单动作提示（同步检查，不查报告状态避免 N+1）
+            const matchedRole = mapUserRole(actor.internalRole, currentStepDef.role);
+            const canOperate = !!matchedRole || actor.role === 'admin' || actor.role === 'cto_agent';
+
+            if (canOperate) {
+              if (currentStepDef.requiredReports.length > 0) {
+                nextAction = `提交 ${currentStepDef.requiredReports.join(' + ')} 报告后可推进`;
+              } else {
+                nextAction = `可以 advance 到下一步`;
+              }
+            } else {
+              nextAction = `等待 ${currentStepDef.role} 角色操作`;
+            }
+          }
+        } catch {
+          nextAction = null;
+        }
+      }
+
+      return {
+        ...serializeRequirement(r),
+        workflow: r.workflow ? {
+          name: r.workflow.name,
+          displayName: r.workflow.displayName,
+        } : null,
+        nextAction,
+        requiredReports,
+      };
+    });
+
+    res.json({
+      data: items,
+      meta: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    });
   })
 );
 
