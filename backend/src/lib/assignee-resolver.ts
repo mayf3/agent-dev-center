@@ -23,6 +23,7 @@ const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
   pm: 'pm',
   requester: 'pm',
   qa: 'qa',  // 2026-06-05 新增 QA 步骤支持
+  architect: 'architect',  // 2026-06-13 架构师独立角色
 };
 
 /**
