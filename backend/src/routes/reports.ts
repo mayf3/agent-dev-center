@@ -347,6 +347,56 @@ reportsRouter.patch(
           reportType: report.reportType,
           actor: req.user!.name,
         });
+
+        // QA 驳回时自动退回工作流（不需要 QA 额外调 workflow/reject）
+        let targetStep: string;
+        switch (report.reportType) {
+          case 'DEV_SELF_CHECK':
+            targetStep = 'dev_self_check';
+            break;
+          case 'TEST_REPORT':
+            targetStep = 'testing';
+            break;
+          case 'SECURITY_REVIEW':
+            targetStep = 'dev_self_check';
+            break;
+          default:
+            targetStep = reqInfo.currentStep;
+        }
+
+        // 获取工作流步骤，确保 targetStep 在当前步骤之前
+        const wf = await prisma.workflowTemplate.findUnique({
+          where: { id: reqInfo.workflowId },
+          select: { steps: true },
+        });
+        if (wf) {
+          const steps = (wf.steps as any[]) || [];
+          const currentIdx = steps.findIndex((s: any) => s.name === reqInfo.currentStep);
+          const targetIdx = steps.findIndex((s: any) => s.name === targetStep);
+          const actualTarget = targetIdx >= 0 && targetIdx < currentIdx
+            ? targetStep
+            : currentIdx > 0 ? steps[currentIdx - 1]?.name ?? targetStep : targetStep;
+
+          if (actualTarget !== reqInfo.currentStep) {
+            await prisma.requirement.update({
+              where: { id: params.id },
+              data: { currentStep: actualTarget },
+            });
+
+            await prisma.workflowTransition.create({
+              data: {
+                requirementId: params.id,
+                fromStep: reqInfo.currentStep,
+                toStep: actualTarget,
+                action: 'reject',
+                actorId: req.user!.id,
+                actorName: req.user!.name,
+                actorRole: 'qa',
+                comment: body.reviewComment || `QA 驳回 ${report.reportType} 报告，自动退回`,
+              },
+            });
+          }
+        }
       }
     }
 
