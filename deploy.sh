@@ -60,6 +60,17 @@ if grep -Eq 'JWT_SECRET=(replace|change|dev-only|changeme)' "${ENV_FILE}"; then
   exit 1
 fi
 
+log "Running pre-deploy smoke tests..."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "${SCRIPT_DIR}/smoke-test.sh" ]; then
+  bash "${SCRIPT_DIR}/smoke-test.sh" --host "${SERVER_HOST}" || {
+    echo "❌ Smoke tests failed — deployment aborted." >&2
+    exit 1
+  }
+else
+  log "WARNING: smoke-test.sh not found, skipping pre-deploy validation"
+fi
+
 log "Checking SSH access to ${SSH_TARGET}:${SERVER_PORT}"
 ssh_cmd "echo ok" >/dev/null
 
