@@ -60,10 +60,14 @@ const PM_REVIEW: StepDef = {
  * v4-refined: 架构审查 + QA 缩编
  *
  * 完整链路（13步）：
- * draft → arch_design → pm_review → dev_self_check →
+ * draft → pm_review → arch_design → dev_self_check →
  * arch_review → qa_review → test_env_deploy →
  * testing → security_review → qa_pre_release →
  * cto_review → merge_to_main → deploying → done
+ *
+ * 变化（2026-06-14）：
+ * - 交换 pm_review 和 arch_design 顺序：PM 先审需求，架构师再设计方案
+ * - 符合产品流程：PM 决定做什么 → 架构师设计怎么做 → 开发实现
  *
  * 变化：
  * - 新增 arch_design（架构设计）
@@ -131,11 +135,11 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'backend-dev',
     displayName: '后端开发流程',
-    description: '草稿→架构设计→PM审批→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
-      ARCH_DESIGN,
       PM_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
         displayName: '后端开发并自检',
@@ -151,11 +155,11 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'frontend-dev',
     displayName: '前端开发流程',
-    description: '草稿→架构设计→PM审批→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
-      ARCH_DESIGN,
       PM_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
         displayName: '前端开发并自检',
@@ -171,11 +175,11 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'mobile-dev',
     displayName: '移动端开发流程',
-    description: '草稿→架构设计→PM审批→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
-      ARCH_DESIGN,
       PM_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
         displayName: '移动端开发并自检',
@@ -191,11 +195,11 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'miniapp-dev',
     displayName: '小程序开发流程',
-    description: '草稿→架构设计→PM审批→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
-      ARCH_DESIGN,
       PM_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
         displayName: '小程序开发并自检',
@@ -211,11 +215,11 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'game-dev',
     displayName: '游戏开发流程',
-    description: '草稿→架构设计→PM审批→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
-      ARCH_DESIGN,
       PM_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
         displayName: '游戏开发并自检',
@@ -231,11 +235,11 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'security-fix',
     displayName: '安全修复流程',
-    description: '草稿→架构设计→PM审批→修复→QA审→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→PM审批→架构设计→修复→QA审→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
-      ARCH_DESIGN,
       PM_REVIEW,
+      ARCH_DESIGN,
       {
         name: 'dev_self_check',
         displayName: '修复并自检',
