@@ -277,3 +277,5 @@ tasksRouter.delete(
     res.json({ success: true, id: existing.id, archived: true });
   })
 );
+export const router = tasksRouter;
+export const mountPath = '/api/tasks';

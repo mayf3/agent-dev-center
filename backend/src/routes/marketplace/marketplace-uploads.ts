@@ -111,3 +111,5 @@ marketplaceUploadsRouter.delete(
     }
   })
 );
+export const router = marketplaceUploadsRouter;
+export const mountPath = '/api/marketplace/uploads';

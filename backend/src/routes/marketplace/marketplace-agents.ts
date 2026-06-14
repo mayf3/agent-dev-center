@@ -175,3 +175,5 @@ marketplaceAgentsRouter.delete(
     res.json({ data: agent });
   })
 );
+export const router = marketplaceAgentsRouter;
+export const mountPath = '/api/marketplace/agents';

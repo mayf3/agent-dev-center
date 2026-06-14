@@ -310,3 +310,5 @@ servicesRouter.get(
     res.json({ data: relations, grouped, total: relations.length });
   })
 );
+export const router = servicesRouter;
+export const mountPath = '/api/services';

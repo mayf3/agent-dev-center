@@ -8,3 +8,5 @@ export const agentsRouter = Router();
 registerCoreRoutes(agentsRouter);
 registerReportsRoutes(agentsRouter);
 registerOkrRoutes(agentsRouter);
+export const router = agentsRouter;
+export const mountPath = '/api/agents';

@@ -53,3 +53,5 @@ familyRouter.get(
     });
   })
 );
+export const router = familyRouter;
+export const mountPath = '/api/family';

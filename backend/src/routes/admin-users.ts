@@ -530,3 +530,5 @@ adminUsersRouter.put(
     res.json(policy);
   })
 );
+export const router = adminUsersRouter;
+export const mountPath = '/api/admin/users';
