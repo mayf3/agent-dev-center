@@ -128,28 +128,33 @@ async function logTransition(params: {
 /**
  * df1e4527: 自动 reject 需求的 pending 报告
  * advance 到 done / reject 需求时调用，清理 QA 队列中的垃圾报告
+ * @param requirementId 需求 ID
+ * @param stepFilter 可选：只清理指定 workflowStep 的报告（reject 回退时只清当前步骤）
+ * @returns 清理数量
  */
-async function autoRejectPendingReports(requirementId: string) {
+async function autoRejectPendingReports(requirementId: string, stepFilter?: string): Promise<number> {
+  const where: any = { requirementId, status: 'pending' };
+  if (stepFilter) where.workflowStep = stepFilter;
+
   const pending = await prisma.requirementReport.findMany({
-    where: {
-      requirementId,
-      status: 'pending',
-    },
+    where,
     select: { id: true },
   });
 
-  if (pending.length === 0) return;
+  if (pending.length === 0) return 0;
 
   await prisma.requirementReport.updateMany({
-    where: {
-      requirementId,
-      status: 'pending',
-    },
+    where,
     data: {
       status: 'rejected',
       reviewComment: '需求已完成或已回退，pending 报告自动关闭',
     },
   });
+
+  // df1e4527 AC6: 清理日志记录需求ID和数量
+  console.log(`[df1e4527] 清理 pending 报告: requirementId=${requirementId}, count=${pending.length}, stepFilter=${stepFilter ?? 'all'}`);
+
+  return pending.length;
 }
 
 // ── Route Registration ───────────────────────────────────
@@ -321,6 +326,13 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
       // 自动解析下一步骤的 assigneeId
       const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
 
+      // df1e4527 AC1+AC4: 到达最终步骤时在同一事务中清理 pending 报告
+      const isFinalStep = targetStep.name === steps[steps.length - 1]?.name;
+      let cleanedCount = 0;
+      if (isFinalStep) {
+        cleanedCount = await autoRejectPendingReports(params.id);
+      }
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: {
@@ -340,7 +352,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         actorName: req.user!.name,
         actorRole: req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
-        metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+        metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null, cleanedPendingReports: cleanedCount },
       });
 
       res.json({
@@ -352,16 +364,10 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           toStepDisplayName: targetStep.displayName,
           newAssigneeId,
           newAssigneeName,
-          isDone: targetStep.name === steps[steps.length - 1]?.name,
+          isDone: isFinalStep,
+          cleanedPendingReports: cleanedCount,
         },
       });
-
-      // df1e4527: 到达最终步骤时自动清理 pending 报告
-      if (targetStep.name === steps[steps.length - 1]?.name) {
-        autoRejectPendingReports(params.id).catch(err => {
-          console.error('[df1e4527] auto-reject pending reports on advance failed:', err);
-        });
-      }
     }),
   );
 
@@ -421,6 +427,9 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
         : requirement.assigneeId;
 
+      // df1e4527 AC2: 回退时清理当前步骤的 pending 报告（在同一事务之前执行）
+      const cleanedCount = await autoRejectPendingReports(params.id, requirement.currentStep);
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: {
@@ -440,6 +449,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         actorName: req.user!.name,
         actorRole: req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
+        metadata: { cleanedPendingReports: cleanedCount },
       });
 
       res.json({
@@ -451,12 +461,8 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           newAssigneeId,
           newAssigneeName,
           comment: body.comment,
+          cleanedPendingReports: cleanedCount,
         },
-      });
-
-      // df1e4527: 回退时自动清理 pending 报告
-      autoRejectPendingReports(params.id).catch(err => {
-        console.error('[df1e4527] auto-reject pending reports on reject failed:', err);
       });
     }),
   );
