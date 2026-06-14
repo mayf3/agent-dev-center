@@ -22,6 +22,14 @@ export const reportsRouter = Router({ mergeParams: true });
 // 所有接口需要认证
 reportsRouter.use(authRequired);
 
+// autoRegisterRoutes 兼容：当路由为平路路径 (/api/reports) 时，从 body/query 读 requirementId
+reportsRouter.use((req, _res, next) => {
+  if (!req.params.id) {
+    req.params.id = req.body?.requirementId || (req.query as any)?.requirementId || req.params.id;
+  }
+  next();
+});
+
 /**
  * 报告类型 → 允许提交的角色/身份映射
  *
@@ -147,6 +155,13 @@ reportsRouter.post(
       params: req.params,
       body: req.body,
     });
+
+    // autoRegisterRoutes 兼容：平路路径 (/api/reports) 时 params.id 为空，
+    // 从 body.requirementId 取需求ID，注入到 params.id 供下游 handler 使用
+    if (!params.id && body.requirementId) {
+      params.id = body.requirementId;
+    }
+    if (!params.id) throw new HttpError(400, '缺少 requirementId');
 
     // 确认需求存在
     const requirement = await prisma.requirement.findUnique({

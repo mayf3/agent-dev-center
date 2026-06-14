@@ -21,8 +21,9 @@ export const reportStatusValues = [
 ] as const;
 
 export const submitReportSchema = z.object({
-  params: z.object({ id: z.string().uuid() }),
+  params: z.object({ id: z.string().uuid().optional() }),
   body: z.object({
+    requirementId: z.string().uuid().optional(),  // autoRegisterRoutes 兼容：平路路径时从 body 传递
     reportType: z.enum(reportTypeValues),
     content: z.record(z.unknown()),
     submittedBy: z.string().min(1).optional(),
@@ -30,8 +31,9 @@ export const submitReportSchema = z.object({
 });
 
 export const listReportsSchema = z.object({
-  params: z.object({ id: z.string().uuid() }),
+  params: z.object({ id: z.string().uuid().optional() }),  // autoRegisterRoutes 兼容：平路路径时可为空
   query: z.object({
+    requirementId: z.string().uuid().optional(),
     reportType: z.enum(reportTypeValues).optional(),
     status: z.enum(reportStatusValues).optional(),
   }),
