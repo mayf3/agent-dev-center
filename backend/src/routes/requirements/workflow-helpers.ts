@@ -35,6 +35,7 @@ export function mapUserRole(internalRole: string | null | undefined, role: strin
     security: ['security'],
     ops: ['ops'],
     pm: ['pm', 'requester'],
+    architect: ['architect'],
     qa: ['qa'],
   };
   const allowed = mapping[internalRole] || [];
