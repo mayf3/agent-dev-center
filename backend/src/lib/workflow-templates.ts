@@ -56,6 +56,15 @@ const PM_REVIEW: StepDef = {
   autoAdvance: false,
 };
 
+/** 已提交待审批步骤 — PM 在草稿提交后先确认是否进入流水线 */
+const SUBMITTED: StepDef = {
+  name: 'submitted',
+  displayName: '已提交待审批',
+  role: 'pm',
+  requiredReports: [],
+  autoAdvance: false,
+};
+
 /**
  * v4-refined: 架构审查 + QA 缩编
  *
@@ -135,9 +144,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'backend-dev',
     displayName: '后端开发流程',
-    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {
@@ -155,9 +165,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'frontend-dev',
     displayName: '前端开发流程',
-    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {
@@ -175,9 +186,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'mobile-dev',
     displayName: '移动端开发流程',
-    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {
@@ -195,9 +207,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'miniapp-dev',
     displayName: '小程序开发流程',
-    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {
@@ -215,9 +228,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'game-dev',
     displayName: '游戏开发流程',
-    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {
@@ -235,9 +249,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'security-fix',
     displayName: '安全修复流程',
-    description: '草稿→PM审批→架构设计→修复→QA审→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→修复→QA审→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {
