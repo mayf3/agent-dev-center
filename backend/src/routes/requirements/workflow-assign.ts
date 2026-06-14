@@ -116,9 +116,10 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
 
       const user = req.user!;
       const isOwner = requirement.requesterId === user.id;
+      const isAssignee = requirement.assigneeId === user.id;
       const isAdmin = user.role === 'admin' || user.role === 'cto_agent';
-      if (!isOwner && !isAdmin) {
-        throw new HttpError(403, '只有需求提出者或管理员可以放弃需求');
+      if (!isOwner && !isAssignee && !isAdmin) {
+        throw new HttpError(403, '只有需求提出者、当前执行人或管理员可以放弃需求');
       }
 
       const abandonableSteps = ['rejected', 'draft', 'pm_review', 'dev_self_check', 'qa_review', 'testing'];
@@ -177,9 +178,10 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
 
       const user = req.user!;
       const isOwner = requirement.requesterId === user.id;
+      const isAssignee = requirement.assigneeId === user.id;
       const isAdmin = user.role === 'admin' || user.role === 'cto_agent';
-      if (!isOwner && !isAdmin) {
-        throw new HttpError(403, '只有需求提出者或管理员可以重新激活需求');
+      if (!isOwner && !isAssignee && !isAdmin) {
+        throw new HttpError(403, '只有需求提出者、当前执行人或管理员可以重新激活需求');
       }
 
       const updated = await prisma.requirement.update({
