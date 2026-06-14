@@ -81,11 +81,23 @@ router.post(
       }
     }
 
+    // Fix 1 (e97eb46b): 校验 requester 名字 — 如果 body.requester 传了值，必须在 users 表能找到对应的 name
+    const requesterName = body.requester ?? actor.name;
+    if (body.requester && body.requester !== actor.name) {
+      const requesterUser = await prisma.user.findFirst({
+        where: { name: body.requester },
+        select: { id: true, name: true }
+      });
+      if (!requesterUser) {
+        throw new HttpError(400, `requester「${body.requester}」在用户表中不存在，请使用 users 表中的实际用户名`);
+      }
+    }
+
     const requirement = await prisma.requirement.create({
       data: {
         title: body.title, description: body.description, priority: body.priority,
         type: body.type, tags: body.tags,
-        requester: body.requester ?? actor.name, requesterId: actor.id,
+        requester: requesterName, requesterId: actor.id,
         department: body.department,
         assignee: createAssigneeName, assigneeId: createAssigneeId,
         dueDate: body.dueDate, attachment: body.attachment,
@@ -269,6 +281,17 @@ router.put(
       } else {
         assigneeId = null;
         assigneeName = null;
+      }
+    }
+
+    // Fix 1 (e97eb46b): PUT 时校验 requester 名字 — 如果传了 requester 且在 users 表找不到，400
+    if (body.requester && body.requester !== existing.requester) {
+      const requesterUser = await prisma.user.findFirst({
+        where: { name: body.requester },
+        select: { id: true, name: true }
+      });
+      if (!requesterUser) {
+        throw new HttpError(400, `requester「${body.requester}」在用户表中不存在，请使用 users 表中的实际用户名`);
       }
     }
 
