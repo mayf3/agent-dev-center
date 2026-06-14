@@ -1,14 +1,16 @@
 /**
- * Assignee Resolver — 工作流步骤角色 → 用户自动映射
+ * Assignee Resolver — 工作流步骤角色 → 用户映射（v2: assigneeMode + roleUserMap）
  *
- * 核心原则：
- * - assigneeId 是唯一的真实字段（FK → users.id）
- * - assignee 文本字段废弃，API 输出通过 JOIN assigneeUser.name 获取
- * - 工作流 advance/reject 时自动查找下一步骤 role 对应的用户
+ * 2026-06-14 重构 (6c70be0a):
+ * - 消除所有 fallback 路径，改用 assigneeMode + roleUserMap 精准匹配
+ * - 三种模式：role-based（查表）/ creator（需求创建者）/ fixed（保持当前）
+ * - 角色不在 roleUserMap 中时抛出错误（不是静默 fallback）
+ *
+ * 向后兼容：当不传 options 时，回退到旧的 internalRole 查找逻辑（用于旧调用方）
  */
 import { prisma } from './prisma.js';
 
-/** 工作流步骤 role → InternalRole 映射 */
+/** 工作流步骤 role → InternalRole 映射（向后兼容用） */
 const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
   backend_developer: 'backend_developer',
   frontend_developer: 'frontend_developer',
@@ -21,22 +23,75 @@ const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
   admin: 'cto',
   ops: 'ops',
   pm: 'pm',
-  qa: 'qa',  // 2026-06-05 新增 QA 步骤支持
-  architect: 'architect',  // 2026-06-13 架构师独立角色
+  qa: 'qa',
+  architect: 'architect',
 };
 
 /**
- * 根据工作流步骤的 role 找到对应的用户 ID
+ * 根据 assigneeMode 和 roleUserMap 解析目标步骤的 assignee
  *
- * 优先级：
- * 1. 如果传入 currentAssigneeId 且该用户的 internalRole 匹配 → 保持不变
- * 2. 从 users 表找 internalRole 匹配的第一个活跃用户
+ * @param stepRole - 目标步骤的 role 字段
+ * @param currentAssigneeId - 当前 assignee（向后兼容，用于旧模式）
+ * @param options.assigneeMode - 'role-based' | 'creator' | 'fixed'（默认 'role-based'）
+ * @param options.roleUserMap - role → userId 映射表（从模板读取）
+ * @param options.requirement - 需求对象（需要 id, requesterId, assigneeId）
+ * @returns 目标 assignee 的用户 ID，或 null
+ * @throws { Error } 如果 role-based 模式且 role 不在 roleUserMap 中
  */
 export async function resolveAssigneeForStep(
   stepRole: string,
   currentAssigneeId?: string | null,
+  options?: {
+    assigneeMode?: 'role-based' | 'creator' | 'fixed';
+    roleUserMap?: Record<string, string> | null;
+    requirement?: { id: string; requesterId: string | null; assigneeId: string | null };
+  },
 ): Promise<string | null> {
-  // requester 角色：返回当前 assignee（需求创建者），不查找 internalRole
+  // ── 新逻辑：有 options 时使用 assigneeMode + roleUserMap ──
+  if (options) {
+    const { assigneeMode, roleUserMap, requirement } = options;
+    const mode = assigneeMode ?? 'role-based';
+
+    // requester 角色特殊处理
+    if (stepRole === 'requester') {
+      return requirement?.requesterId ?? currentAssigneeId ?? null;
+    }
+
+    switch (mode) {
+      case 'creator': {
+        if (!requirement?.requesterId) {
+          throw new Error(`assigneeMode=creator 但需求没有 requesterId`);
+        }
+        return requirement.requesterId;
+      }
+
+      case 'fixed': {
+        return requirement?.assigneeId ?? currentAssigneeId ?? null;
+      }
+
+      case 'role-based':
+      default: {
+        if (!roleUserMap || Object.keys(roleUserMap).length === 0) {
+          throw new Error(
+            `assigneeMode=role-based 但模板没有配置 roleUserMap，`
+            + `无法为步骤 role「${stepRole}」分配用户`,
+          );
+        }
+
+        const userId = roleUserMap[stepRole];
+        if (!userId) {
+          throw new Error(
+            `roleUserMap 中未找到 role「${stepRole}」的映射，`
+            + `已配置的角色: ${Object.keys(roleUserMap).join(', ')}`,
+          );
+        }
+
+        return userId;
+      }
+    }
+  }
+
+  // ── 旧逻辑（向后兼容）：internalRole 查找 + fallback ──
   if (stepRole === 'requester') {
     return currentAssigneeId ?? null;
   }
@@ -54,7 +109,7 @@ export async function resolveAssigneeForStep(
     }
   }
 
-  // 查找匹配角色的用户（按创建时间排序，保证确定性）
+  // 查找匹配角色的用户
   const match = await prisma.user.findFirst({
     where: { internalRole: internalRole as any },
     orderBy: { createdAt: 'asc' },
@@ -63,7 +118,7 @@ export async function resolveAssigneeForStep(
 
   if (match?.id) return match.id;
 
-  // 兜底：找不到匹配用户时分配给 CTO（避免 assignee 为空导致任务无人处理）
+  // 兜底：找不到时分配给 CTO
   const cto = await prisma.user.findFirst({
     where: { internalRole: 'cto' },
     select: { id: true },
@@ -85,13 +140,6 @@ export async function getAssigneeName(assigneeId: string | null): Promise<string
 
 /**
  * 验证 assigneeId 是否匹配需求工作流步骤的角色
- *
- * 如果需求有工作流，assigneeId 指向的用户必须拥有目标步骤所需的 internalRole。
- *
- * 2026-06-14 修复 (fe6d34b5): 当步骤发生变更时（PM 打回 draft），应使用
- * targetStep 的 role 校验 assignee，而非 currentStep 的 role。
- * 例：pm_review→draft，PM 设 assignee=requester，应校验 draft 的 role(requester)
- * 而非 pm_review 的 role(pm)。
  *
  * @param targetStepName 可选，步骤变更时传入目标步骤名，用于正确校验角色
  * @returns { ok: true } 或 { ok: false; message: string }
@@ -118,21 +166,35 @@ export async function validateAssigneeRoleMatch(
 
   const steps = template.steps as Array<{ name: string; role: string; displayName: string }>;
 
-  // 确定用于校验的步骤：优先 targetStepName（步骤变更场景），否则用 currentStep
+  // 确定用于校验的步骤
   const stepForValidation = targetStepName ?? requirement.currentStep;
   const stepDef = steps.find(s => s.name === stepForValidation);
   if (!stepDef) return { ok: true };
 
   const stepRole = stepDef.role;
 
-  // 特殊处理：requester 角色不校验 internalRole（draft 步骤的 assignee 应为需求创建者）
-  // 任何人可以是 requester，跟 internalRole 无关
+  // 特殊处理：requester 角色不校验
   if (stepRole === 'requester') return { ok: true };
 
+  // 从模板的 roleUserMap 校验
+  const templateData = template.steps as any;
+  const roleUserMap: Record<string, string> | undefined = templateData.roleUserMap;
+
+  if (roleUserMap && roleUserMap[stepRole]) {
+    if (roleUserMap[stepRole] !== assigneeUserId) {
+      return {
+        ok: false,
+        message: `步骤「${stepDef.displayName}」（需要 ${stepRole} 角色），`
+          + `roleUserMap 中该角色对应的用户不是当前 assignee`,
+      };
+    }
+    return { ok: true };
+  }
+
+  // 兜底校验（没有 roleUserMap 时，走 internalRole 匹配）
   const expectedInternalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
   if (!expectedInternalRole) return { ok: true };
 
-  // 检查被分配用户的 internalRole
   const assigneeUser = await prisma.user.findUnique({
     where: { id: assigneeUserId },
     select: { name: true, internalRole: true },

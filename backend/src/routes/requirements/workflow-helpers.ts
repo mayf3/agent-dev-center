@@ -15,6 +15,10 @@ export interface WorkflowStep {
   requiredReports: string[];
   autoAdvance: boolean;
   wipLimit?: number; // WIP 上限：该步骤同时处理的需求数量上限（undefined = 无限制）
+  assigneeMode?: 'role-based' | 'creator' | 'fixed'; // assignee 解析模式
+  // role-based: 从 roleUserMap 查角色对应用户
+  // creator: 固定为需求创建者（requesterId）
+  // fixed: 保持当前 assignee 不变
 }
 
 // ── Helpers ──────────────────────────────────────────────
@@ -42,8 +46,23 @@ export function mapUserRole(internalRole: string | null | undefined, role: strin
   return allowed.includes(role) ? role : null;
 }
 
-/** Parse steps from JSONB */
+/** Parse steps from JSONB — 兼容两种格式：
+ * 1. 旧格式：纯数组 [...steps]
+ * 2. 新格式：{ steps: [...steps], roleUserMap: {...} }
+ */
 export function parseSteps(stepsJson: unknown): WorkflowStep[] {
+  let rawSteps: unknown;
+
+  if (Array.isArray(stepsJson)) {
+    // 旧格式：纯数组
+    rawSteps = stepsJson;
+  } else if (stepsJson && typeof stepsJson === 'object' && 'steps' in stepsJson) {
+    // 新格式：{ steps: [...], roleUserMap: {...} }
+    rawSteps = (stepsJson as Record<string, unknown>).steps;
+  } else {
+    rawSteps = [];
+  }
+
   const steps = z.array(z.object({
     name: z.string(),
     displayName: z.string(),
@@ -51,8 +70,18 @@ export function parseSteps(stepsJson: unknown): WorkflowStep[] {
     requiredReports: z.array(z.string()),
     autoAdvance: z.boolean().default(false),
     wipLimit: z.number().int().positive().optional(),
-  })).parse(stepsJson);
+    assigneeMode: z.enum(['role-based', 'creator', 'fixed']).optional(),
+  })).parse(rawSteps);
   return steps;
+}
+
+/** 从模板 JSON 中提取 roleUserMap（兼容新旧格式） */
+export function extractRoleUserMap(stepsJson: unknown): Record<string, string> | undefined {
+  if (!stepsJson || typeof stepsJson !== 'object') return undefined;
+  if (!Array.isArray(stepsJson) && 'roleUserMap' in stepsJson) {
+    return (stepsJson as Record<string, unknown>).roleUserMap as Record<string, string> | undefined;
+  }
+  return undefined;
 }
 
 /** Get current step definition from workflow */
