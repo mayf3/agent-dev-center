@@ -103,10 +103,11 @@ router.get(
     const actor = req.user!;
 
     const terminalSteps = ['done', 'abandoned', 'cancelled', 'rejected'];
+    const requesterSteps = ['draft', 'pm_review'];  // requester 阶段，assignee 无需处理
 
     const where: Prisma.RequirementWhereInput = {
       assigneeId: actor.id,
-      currentStep: { notIn: terminalSteps },
+      currentStep: { notIn: [...terminalSteps, ...requesterSteps] },
     };
 
     // 分页参数
