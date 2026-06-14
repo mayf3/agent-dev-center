@@ -81,14 +81,22 @@ export async function getAssigneeName(assigneeId: string | null): Promise<string
 }
 
 /**
- * 验证 assigneeId 是否匹配需求当前工作流步骤的角色
- * 如果需求有工作流，assigneeId 指向的用户必须拥有该步骤所需的 internalRole
- * 
- * @returns { ok: true } 或 { ok: false, message: string }
+ * 验证 assigneeId 是否匹配需求工作流步骤的角色
+ *
+ * 如果需求有工作流，assigneeId 指向的用户必须拥有目标步骤所需的 internalRole。
+ *
+ * 2026-06-14 修复 (fe6d34b5): 当步骤发生变更时（PM 打回 draft），应使用
+ * targetStep 的 role 校验 assignee，而非 currentStep 的 role。
+ * 例：pm_review→draft，PM 设 assignee=requester，应校验 draft 的 role(requester)
+ * 而非 pm_review 的 role(pm)。
+ *
+ * @param targetStepName 可选，步骤变更时传入目标步骤名，用于正确校验角色
+ * @returns { ok: true } 或 { ok: false; message: string }
  */
 export async function validateAssigneeRoleMatch(
   requirementId: string,
   assigneeUserId: string | null,
+  targetStepName?: string,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   if (!assigneeUserId) return { ok: true };
 
@@ -98,7 +106,7 @@ export async function validateAssigneeRoleMatch(
   });
   if (!requirement?.workflowId || !requirement.currentStep) return { ok: true };
 
-  // 获取模板获取当前步骤 role
+  // 获取工作流模板
   const template = await prisma.workflowTemplate.findFirst({
     where: { id: requirement.workflowId, isActive: true },
     select: { steps: true },
@@ -106,10 +114,13 @@ export async function validateAssigneeRoleMatch(
   if (!template) return { ok: true };
 
   const steps = template.steps as Array<{ name: string; role: string; displayName: string }>;
-  const currentStepDef = steps.find(s => s.name === requirement.currentStep);
-  if (!currentStepDef) return { ok: true };
 
-  const stepRole = currentStepDef.role;
+  // 确定用于校验的步骤：优先 targetStepName（步骤变更场景），否则用 currentStep
+  const stepForValidation = targetStepName ?? requirement.currentStep;
+  const stepDef = steps.find(s => s.name === stepForValidation);
+  if (!stepDef) return { ok: true };
+
+  const stepRole = stepDef.role;
   const expectedInternalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
   if (!expectedInternalRole) return { ok: true };
 
@@ -123,8 +134,8 @@ export async function validateAssigneeRoleMatch(
   if (assigneeUser.internalRole !== expectedInternalRole) {
     return {
       ok: false,
-      message: `当前需求处于步骤「${currentStepDef.displayName}」（需要 ${stepRole} 角色），`
-        + `但被分配用户「${assigneeUser.name}」的 internalRole 是 ${assigneeUser.internalRole ?? '(未设置)'}，不匹配需求当前步骤的角色要求`,
+      message: `步骤「${stepDef.displayName}」（需要 ${stepRole} 角色），`
+        + `但被分配用户「${assigneeUser.name}」的 internalRole 是 ${assigneeUser.internalRole ?? '(未设置)'}，不匹配该步骤的角色要求`,
     };
   }
 
