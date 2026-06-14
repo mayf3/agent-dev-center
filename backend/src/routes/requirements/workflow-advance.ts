@@ -18,6 +18,7 @@ import {
   checkReportsApproved,
   getStepWipCount,
   logTransition,
+  extractRoleUserMap,
 } from './workflow-helpers.js';
 
 export function registerWorkflowAdvanceRoutes(router: import('express').Router): void {
@@ -171,8 +172,29 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         }
       }
 
-      // 自动解析下一步骤的 assigneeId
-      const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
+      // 从模板中提取 roleUserMap（兼容新旧格式）
+      const roleUserMap = extractRoleUserMap(requirement.workflow.steps);
+
+      // 自动解析下一步骤的 assigneeId（v2: assigneeMode + roleUserMap）
+      let newAssigneeId: string | null;
+      try {
+        newAssigneeId = await resolveAssigneeForStep(
+          targetStep.role,
+          requirement.assigneeId,
+          {
+            assigneeMode: targetStep.assigneeMode,
+            roleUserMap,
+            requirement: {
+              id: requirement.id,
+              requesterId: requirement.requesterId,
+              assigneeId: requirement.assigneeId,
+            },
+          },
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new HttpError(400, `assignee 解析失败: ${msg}`);
+      }
 
       const updated = await prisma.requirement.update({
         where: { id: params.id },
