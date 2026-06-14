@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# pre-push — 推送前自动验证编译
+# 安装: git config core.hooksPath .githooks
+
+set -euo pipefail
+
+echo "🔍 [pre-push] Prisma schema 检查 + TypeScript 编译验证..."
+
+cd "$(git rev-parse --show-toplevel)/backend"
+
+# 1. 验证 Prisma schema
+if ! npx prisma generate --no-hints 2>/dev/null; then
+    echo "❌ [pre-push] prisma generate 失败 — 请检查 schema.prisma 是否与数据库一致"
+    echo "   修复: 如果是开发环境，运行 prisma db pull 同步 schema"
+    exit 1
+fi
+
+# 2. 验证 TypeScript 编译
+if ! npx tsc --noEmit 2>&1; then
+    echo "❌ [pre-push] TypeScript 编译失败 — 请修复类型错误后再推送"
+    exit 1
+fi
+
+echo "✅ [pre-push] 编译验证通过"
