@@ -169,7 +169,7 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
 
       const requirement = await prisma.requirement.findUnique({
         where: { id: params.id },
-        select: { id: true, currentStep: true, requesterId: true },
+        select: { id: true, currentStep: true, requesterId: true, assigneeId: true },
       });
       if (!requirement) throw new HttpError(404, '需求不存在');
       if (requirement.currentStep !== 'abandoned') {
