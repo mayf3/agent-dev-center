@@ -423,7 +423,7 @@ reportsRouter.patch(
 
             await prisma.workflowTransition.create({
               data: {
-                requirementId: params.id,
+                requirement: { connect: { id: params.id } },
                 fromStep: reqInfo.currentStep,
                 toStep: actualTarget,
                 action: 'reject',
