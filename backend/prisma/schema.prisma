@@ -193,12 +193,9 @@ model RequirementReport {
   qaReviewedAt    DateTime?    @map("qa_reviewed_at")
   qaReviewedBy    String?      @map("qa_reviewed_by")
   workflowStep    String?      @map("workflow_step")
-  workflowStep    String?
   requirement     Requirement  @relation(fields: [requirementId], references: [id], onDelete: Cascade)
   submittedByUser User?        @relation("ReportSubmitter", fields: [submittedById], references: [id])
 
-  @@unique([requirementId, reportType, workflowStep])
-  @@unique([requirementId, reportType, workflowStep], map: "idx_requirement_reports_unique")
   @@unique([requirementId, reportType, workflowStep])
   @@index([requirementId])
   @@index([reportType])
