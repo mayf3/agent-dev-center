@@ -148,13 +148,31 @@ scp \
 log "Building images and starting services on remote host"
 ssh_cmd "REMOTE_DIR='${REMOTE_DIR}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' COMPOSE_FILE='${COMPOSE_FILE}' ENV_FILE='${ENV_FILE}' bash -s" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
+
 cd "${REMOTE_DIR}"
+
+# 加载回滚工具库
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "${SCRIPT_DIR}/scripts/rollback-utils.sh" ]; then
+  source "${SCRIPT_DIR}/scripts/rollback-utils.sh"
+fi
+
 tar -xzf "${REMOTE_ARCHIVE}" -C "${REMOTE_DIR}"
 rm -f "${REMOTE_ARCHIVE}"
 chmod 600 "${ENV_FILE}"
+
+# ── 备份当前镜像（构建前） ──
+backup_images "agent-dev-center-backend" "agent-dev-center-frontend"
+
+# ── 构建并部署 ──
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build --pull
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --remove-orphans
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps
+
+# ── 健康检查 + 自动回滚 ──
+auto_rollback_on_fail "http://127.0.0.1:4000/api/health" "agent-dev-center-backend" "agent-dev-center-frontend" || {
+  echo "[deploy] ⚠️  自动回滚触发 — 部署可能未完全成功，请检查" >&2
+}
 REMOTE_SCRIPT
 
 log "Deployment complete"
