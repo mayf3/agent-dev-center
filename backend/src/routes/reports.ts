@@ -155,6 +155,11 @@ reportsRouter.post(
     });
     if (!requirement) throw new HttpError(404, '需求不存在');
 
+    // assigneeId 校验：非 assignee 不能提交报告（CTO 可以代操作）
+    if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
+      throw new HttpError(403, `该任务当前有分配给其他成员，你无法为非自己名下的任务提交报告`);
+    }
+
     // 校验提交者角色
     await validateReportRole(req.user!, body.reportType, params.id);
 

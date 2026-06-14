@@ -47,14 +47,18 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       // 特殊处理：draft 步骤允许需求提出者 advance（无论 internalRole）
       if (currentStep.name === 'draft') {
         const isRequester = requirement.requesterId === req.user!.id;
-        if (!isRequester && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
+        if (!isRequester && req.user!.role !== 'cto_agent') {
           throw new HttpError(403, '只有需求提出者可以提交草稿到 PM 审批');
         }
         // 通过，跳过角色校验
       } else {
+        // assigneeId 校验：非 assignee 不能操作（CTO 可以代操作）
+        if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
+          throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法操作非自己名下的任务`);
+        }
         // 角色校验（系统级强制约束）
         const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-        if (!matchedRole && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
+        if (!matchedRole && req.user!.role !== 'cto_agent') {
           throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
         }
       }
