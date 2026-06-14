@@ -175,22 +175,29 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       // 从模板中提取 roleUserMap（兼容新旧格式）
       const roleUserMap = extractRoleUserMap(requirement.workflow.steps);
 
-      // 自动解析下一步骤的 assigneeId（v2: assigneeMode + roleUserMap）
+      // 自动解析下一步骤的 assigneeId
       let newAssigneeId: string | null;
       try {
-        newAssigneeId = await resolveAssigneeForStep(
-          targetStep.role,
-          requirement.assigneeId,
-          {
-            assigneeMode: targetStep.assigneeMode,
-            roleUserMap,
-            requirement: {
-              id: requirement.id,
-              requesterId: requirement.requesterId,
-              assigneeId: requirement.assigneeId,
+        const hasRoleUserMap = roleUserMap && Object.keys(roleUserMap).length > 0;
+        if (hasRoleUserMap || targetStep.assigneeMode) {
+          // v2: 使用 assigneeMode + roleUserMap
+          newAssigneeId = await resolveAssigneeForStep(
+            targetStep.role,
+            requirement.assigneeId,
+            {
+              assigneeMode: targetStep.assigneeMode,
+              roleUserMap,
+              requirement: {
+                id: requirement.id,
+                requesterId: requirement.requesterId,
+                assigneeId: requirement.assigneeId,
+              },
             },
-          },
-        );
+          );
+        } else {
+          // 旧逻辑：无 roleUserMap 时不传 options
+          newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         throw new HttpError(400, `assignee 解析失败: ${msg}`);
