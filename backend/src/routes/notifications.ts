@@ -200,3 +200,5 @@ notificationsRouter.delete(
     res.json({ ok: true, archived: true });
   })
 );
+export const router = notificationsRouter;
+export const mountPath = '/api/notifications';

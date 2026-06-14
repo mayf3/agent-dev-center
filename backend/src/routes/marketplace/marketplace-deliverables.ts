@@ -147,3 +147,5 @@ marketplaceDeliverablesRouter.delete(
     res.json({ success: true, id: params.id, archived: true });
   })
 );
+export const router = marketplaceDeliverablesRouter;
+export const mountPath = '/api/marketplace/deliverables';

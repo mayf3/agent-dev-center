@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
@@ -10,7 +11,17 @@ import { env } from '../config/env.js';
 import { loginSchema, registerSchema, changePasswordSchema, adminResetPasswordSchema, batchRegisterSchema, forceChangePasswordSchema } from '../schemas/auth.js';
 import { UserRole, InternalRole } from '@prisma/client';
 
+// 登录/注册速率限制：15分钟内最多50次请求
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: '请求过于频繁，请稍后再试'
+});
+
 export const authRouter = Router();
+authRouter.use(authLimiter);
 
 // ---------------------------------------------------------------------------
 // Password generation utility — 24-char hex (12 random bytes)
@@ -526,3 +537,5 @@ authRouter.post(
     res.json({ generatedPassword: plainPassword, message: '新密码已生成，请妥善保管' });
   })
 );
+export const router = authRouter;
+export const mountPath = '/api/auth';

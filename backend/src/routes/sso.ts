@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
@@ -8,7 +9,17 @@ import { signAccessToken, signRefreshToken } from '../middleware/auth.js';
 import { ssoLoginSchema, ssoVerifySchema, ssoTokenSchema } from '../schemas/sso.js';
 import { env } from '../config/env.js';
 
+// 登录/注册速率限制：15分钟内最多50次请求
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: '请求过于频繁，请稍后再试'
+});
+
 export const ssoRouter = Router();
+ssoRouter.use(authLimiter);
 
 interface ServiceInfo {
   name: string;
@@ -183,3 +194,5 @@ ssoRouter.post(
     });
   })
 );
+export const router = ssoRouter;
+export const mountPath = '/api/auth/sso';

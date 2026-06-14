@@ -245,3 +245,5 @@ profileRouter.get(
     res.json({ data: reports, total: reports.length });
   })
 );
+export const router = profileRouter;
+export const mountPath = '/api/profile';

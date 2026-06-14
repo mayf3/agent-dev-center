@@ -41,3 +41,5 @@ registerPipelineRoutes(requirementsRouter);
 registerDecomposeRoutes(requirementsRouter);
 registerDependencyGraphRoutes(requirementsRouter);
 registerTransitionRoutes(requirementsRouter);
+export const router = requirementsRouter;
+export const mountPath = '/api/requirements';

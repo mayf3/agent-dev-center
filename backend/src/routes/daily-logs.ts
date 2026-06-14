@@ -196,3 +196,5 @@ dailyLogsRouter.get(
     });
   })
 );
+export const router = dailyLogsRouter;
+export const mountPath = '/api/daily-logs';

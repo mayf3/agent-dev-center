@@ -158,3 +158,5 @@ router.delete('/:id/comments/:commentId', authRequired, asyncHandler(async (req,
 }));
 
 export const commentsRouter = router;
+export { router };
+export const mountPath = '/api/requirements';
