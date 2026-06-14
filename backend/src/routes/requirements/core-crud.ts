@@ -349,6 +349,30 @@ router.patch(
       }
     }
 
+    // 2026-06-14 (fe6d34b5): 先计算 newStep，用于后续 assignee 角色校验和白名单校验
+    let newStep = existing.currentStep;
+    if (body.currentStep !== undefined) {
+      newStep = body.currentStep;
+    } else if (body.status !== undefined) {
+      newStep = body.status;
+    }
+    const stepChanged = newStep !== existing.currentStep;
+
+    // 白名单校验：PATCH currentStep 只允许特定转换，其他必须走 advance/reject API
+    if (stepChanged) {
+      const PATCH_STEP_WHITELIST: Record<string, string[]> = {
+        'pm_review': ['draft'],     // PM 打回到 draft
+        'draft': ['draft'],          // draft 同步骤（补充材料后重新提交）
+      };
+      const allowedTargets = existing.currentStep ? PATCH_STEP_WHITELIST[existing.currentStep] : undefined;
+      if (!allowedTargets || !newStep || !allowedTargets.includes(newStep)) {
+        throw new HttpError(
+          400,
+          `PATCH currentStep 不支持从「${existing.currentStep}」转到「${newStep}」。请使用 workflow advance/reject API 进行步骤流转。`
+        );
+      }
+    }
+
     let assigneeId = existing.assigneeId;
     let assigneeName: string | null = existing.assignee;
 
@@ -374,8 +398,12 @@ router.patch(
         assigneeId = assigneeUser.id;
         assigneeName = assigneeUser.name;
 
-        // 角色校验：如果有工作流，assigneeId 必须匹配当前步骤的角色
-        const roleCheck = await validateAssigneeRoleMatch(params.id, assigneeId);
+        // 角色校验：步骤变更时用 targetStep 的 role 校验，否则用 currentStep
+        // 2026-06-14 (fe6d34b5): 修复 PM 打回时用 currentStep(pm) 校验导致 requester 被拒
+        const roleCheck = await validateAssigneeRoleMatch(
+          params.id, assigneeId,
+          stepChanged ? (newStep ?? undefined) : undefined,
+        );
         if (!roleCheck.ok) {
           throw new HttpError(400, roleCheck.message);
         }
@@ -385,16 +413,8 @@ router.patch(
       }
     }
 
-    // 处理步骤变更
-    let newStep = existing.currentStep;
-    if (body.currentStep !== undefined) {
-      newStep = body.currentStep;
-    } else if (body.status !== undefined) {
-      newStep = body.status;
-    }
-
-    // 如果步骤发生了变化，自动解析 assignee（防止漂移）
-    if (newStep !== existing.currentStep && !body.assignee) {
+    // 如果步骤发生了变化且 assignee 未手动指定，自动解析 assignee（防止漂移）
+    if (stepChanged && !body.assignee) {
       // 查找目标步骤的 role（如果有工作流）
       if (existing.workflowId) {
         const workflow = await prisma.workflowTemplate.findUnique({
