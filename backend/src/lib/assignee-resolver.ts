@@ -21,7 +21,6 @@ const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
   admin: 'cto',
   ops: 'ops',
   pm: 'pm',
-  requester: 'pm',
   qa: 'qa',  // 2026-06-05 新增 QA 步骤支持
   architect: 'architect',  // 2026-06-13 架构师独立角色
 };
@@ -37,6 +36,10 @@ export async function resolveAssigneeForStep(
   stepRole: string,
   currentAssigneeId?: string | null,
 ): Promise<string | null> {
+  // requester 角色：返回当前 assignee（需求创建者），不查找 internalRole
+  if (stepRole === 'requester') {
+    return currentAssigneeId ?? null;
+  }
   const internalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
   if (!internalRole) return currentAssigneeId ?? null;
 
@@ -121,6 +124,11 @@ export async function validateAssigneeRoleMatch(
   if (!stepDef) return { ok: true };
 
   const stepRole = stepDef.role;
+
+  // 特殊处理：requester 角色不校验 internalRole（draft 步骤的 assignee 应为需求创建者）
+  // 任何人可以是 requester，跟 internalRole 无关
+  if (stepRole === 'requester') return { ok: true };
+
   const expectedInternalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
   if (!expectedInternalRole) return { ok: true };
 
