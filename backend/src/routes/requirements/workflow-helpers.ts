@@ -78,6 +78,7 @@ export function getPreviousStep(steps: WorkflowStep[], currentStepName: string):
 const SELF_CERTIFY_REPORT_TYPES = new Set([
   'DEV_SELF_CHECK',    // 开发自检：自己检查，不需要别人批准
   'ARCH_DESIGN',       // 架构设计：架构师自审（方案由 arch_review 步骤验证）
+  'ARCH_REVIEW',       // 架构审查：架构师审实现，自审自批
   'DEPLOY_CONFIRM',    // 部署确认：部署者确认完成
   'CTO_REVIEW',        // CTO验收：CTO 自审自批
   'MERGE_REPORT',      // 合并报告：合并者自证完成
