@@ -38,7 +38,7 @@ export const listReportsSchema = z.object({
 });
 
 export const reviewReportSchema = z.object({
-  params: z.object({ id: z.string().uuid(), reportId: z.string().uuid() }),
+  params: z.object({ id: z.string().uuid().optional(), reportId: z.string().uuid() }),
   body: z.object({
     status: z.enum(['approved', 'rejected', 'changes_requested']),
     reviewComment: z.string().max(2000).optional(),
