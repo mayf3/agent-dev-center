@@ -663,3 +663,5 @@ reportsRouter.delete(
     res.status(204).send();
   }),
 );
+export const router = reportsRouter;
+export const mountPath = '/api/reports';

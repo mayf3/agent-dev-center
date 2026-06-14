@@ -177,3 +177,5 @@ identitiesRouter.post("/sync", authRequired, requireRoles("admin"), asyncHandler
 
   res.json({ message: `同步完成: ${agents.length} Agent + ${users.length} Human → Identity 表` });
 }));
+export const router = identitiesRouter;
+export const mountPath = '/api/identities';

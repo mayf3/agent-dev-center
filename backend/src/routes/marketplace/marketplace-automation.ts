@@ -420,3 +420,5 @@ marketplaceAutomationRouter.get(
     });
   })
 );
+export const router = marketplaceAutomationRouter;
+export const mountPath = '/api/marketplace';

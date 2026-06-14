@@ -218,3 +218,5 @@ adminAuditRouter.get(
     });
   }),
 );
+export const router = adminAuditRouter;
+export const mountPath = '/api/admin';

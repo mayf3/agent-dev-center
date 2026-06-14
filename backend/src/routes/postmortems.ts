@@ -273,3 +273,5 @@ postmortemsRouter.get(
     res.json({ postmortems });
   })
 );
+export const router = postmortemsRouter;
+export const mountPath = '/api/postmortems';

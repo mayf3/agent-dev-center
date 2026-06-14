@@ -44,3 +44,5 @@ healthRecordsRouter.get(
     });
   })
 );
+export const router = healthRecordsRouter;
+export const mountPath = '/api/health-records';

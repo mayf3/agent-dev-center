@@ -313,3 +313,5 @@ marketplaceTasksRouter.post(
     res.json({ data: task });
   })
 );
+export const router = marketplaceTasksRouter;
+export const mountPath = '/api/marketplace/tasks';

@@ -48,3 +48,5 @@ roadmapRouter.get(
     });
   })
 );
+export const router = roadmapRouter;
+export const mountPath = '/api/roadmap';

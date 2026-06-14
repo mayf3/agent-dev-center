@@ -6,3 +6,5 @@ export const goalsRouter = Router();
 
 registerCoreRoutes(goalsRouter);
 registerLifecycleRoutes(goalsRouter);
+export const router = goalsRouter;
+export const mountPath = '/api/goals';

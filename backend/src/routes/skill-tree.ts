@@ -54,3 +54,5 @@ skillTreeRouter.get(
     });
   })
 );
+export const router = skillTreeRouter;
+export const mountPath = '/api/skill-tree';

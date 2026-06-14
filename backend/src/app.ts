@@ -3,39 +3,15 @@ import { randomUUID } from 'crypto';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { env } from './config/env.js';
-import { authRouter } from './routes/auth.js';
-import { requirementsRouter } from './routes/requirements/index.js';
-import { tasksRouter } from './routes/tasks.js';
-import { reportsRouter } from './routes/reports.js';
-import { notificationsRouter } from './routes/notifications.js';
-import { servicesRouter } from './routes/services.js';
-import { marketplaceAgentsRouter } from './routes/marketplace/marketplace-agents.js';
-import { marketplaceTasksRouter } from './routes/marketplace/marketplace-tasks.js';
-import { marketplaceDeliverablesRouter } from './routes/marketplace/marketplace-deliverables.js';
-import { marketplaceUploadsRouter } from './routes/marketplace/marketplace-uploads.js';
-import { marketplaceAutomationRouter } from './routes/marketplace/marketplace-automation.js';
-import { goalsRouter } from './routes/goals/index.js';
-import { postmortemsRouter } from './routes/postmortems.js';
-import { commentsRouter } from './routes/comments.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { gatewayGuard } from './middleware/ip-whitelist.js';
 import { HttpError } from './utils/http-error.js';
-import { agentsRouter } from './routes/agents/index.js';
-import { ssoRouter } from './routes/sso.js';
-import { agentSsoRouter } from './routes/agent-sso/index.js';
-import { profileRouter } from './routes/profile.js';
-import { skillTreeRouter } from './routes/skill-tree.js';
-import { roadmapRouter } from './routes/roadmap.js';
-import { identitiesRouter } from './routes/identities.js';
-import { healthRecordsRouter } from './routes/health-records.js';
-import { familyRouter } from './routes/family.js';
-import projectsRouter from './routes/projects.js';
-import { adminUsersRouter } from './routes/admin-users.js';
-import { adminAuditRouter } from './routes/admin-audit.js';
-import { dailyLogsRouter } from './routes/daily-logs.js';
 import { mustChangePasswordGuard } from './middleware/must-change-password.js';
+import { autoRegisterRoutes } from './utils/route-registry.js';
 
 export const app = express();
+
+// ─── 核心中间件 ─────────────────────────────────────────
 
 // Nginx 反向代理，需要信任 proxy header
 app.set('trust proxy', 1);
@@ -69,7 +45,7 @@ app.use((req, res, next) => {
   }
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '0'); // 现代浏览器推荐禁用，依赖 CSP
+  res.setHeader('X-XSS-Protection', '0');
   res.removeHeader('X-Powered-By');
   next();
 });
@@ -78,7 +54,7 @@ if (env.NODE_ENV === 'production') {
 }
 app.use(express.json({ limit: '10mb' }));
 
-// 6f5879d5: 禁止访问敏感文件（.DS_Store, .sql, .env, .git 等）
+// 6f5879d5: 禁止访问敏感文件
 app.use((req, res, next) => {
   const path = req.path.toLowerCase();
   const blockedPatterns = [
@@ -118,6 +94,7 @@ const authLimiter = rateLimit({
   message: '请求过于频繁，请稍后再试'
 });
 
+// 健康检查
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
@@ -126,39 +103,21 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-app.use('/api/auth/sso', authLimiter, ssoRouter);
-app.use('/api/auth/agent', agentSsoRouter);
-app.use('/api/auth', authLimiter, authRouter);
+// ─── 路由自动注册（约定优于配置）──────────────────────────
+// 自动加载 routes/ 目录下所有带 mountPath + router 导出的模块
+// 认证路由（/api/auth, /api/auth/sso）在 autoRegisterRoutes 中注册，
+// authLimiter 通过局部中间件在路由内部生效
+await autoRegisterRoutes(app);
+
+// SSO 路由和 Auth 路由的速率限制由路由文件内部应用 authLimiter
+
 // mustChangePassword 拦截：认证后检查是否需要强制改密码
 app.use('/api', mustChangePasswordGuard);
-app.use('/api/requirements', requirementsRouter);
-app.use('/api/requirements/:id/reports', reportsRouter);
-app.use('/api/requirements', commentsRouter);
-app.use('/api/reports', reportsRouter);
-app.use('/api/tasks', tasksRouter);
-app.use('/api/notifications', notificationsRouter);
-app.use('/api/services', servicesRouter);
-app.use('/api/marketplace/agents', marketplaceAgentsRouter);
-app.use('/api/marketplace/tasks', marketplaceTasksRouter);
-app.use('/api/marketplace/deliverables', marketplaceDeliverablesRouter);
-app.use('/api/marketplace/uploads', marketplaceUploadsRouter);
-app.use('/api/marketplace', marketplaceAutomationRouter);
-app.use('/api/goals', goalsRouter);
-app.use('/api/agents', agentsRouter);
-app.use('/api/postmortems', postmortemsRouter);
-app.use('/api/profile', profileRouter);
-app.use('/api/skill-tree', skillTreeRouter);
-app.use('/api/roadmap', roadmapRouter);
-app.use('/api/health-records', healthRecordsRouter);
-app.use('/api/family', familyRouter);
-app.use('/api/identities', identitiesRouter);
-app.use('/api/admin/users', adminUsersRouter);
-app.use('/api/admin', adminAuditRouter);
-app.use('/api/daily-logs', dailyLogsRouter);
-app.use('/api/projects', projectsRouter);
 
+// 404
 app.use((_req, _res, next) => {
   next(new HttpError(404, '接口不存在'));
 });
 
+// 全局错误处理
 app.use(errorHandler);

@@ -145,3 +145,7 @@ router.delete(
 );
 
 export default router;
+
+export const projectsRouter = router;
+export { router };
+export const mountPath = '/api/projects';
