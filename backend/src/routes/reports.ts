@@ -351,7 +351,7 @@ reportsRouter.patch(
 
     const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
     void notifyEvent(reportEvent as any, {
-      id: params.id,
+      id: report.requirementId,
       title: report.reportType,
       actor: req.user!.name,
     });
@@ -359,13 +359,13 @@ reportsRouter.patch(
     // 如果是 rejected/changes_requested，触发报告打回逻辑
     if (body.status === 'rejected' || body.status === 'changes_requested') {
       const reqInfo = await prisma.requirement.findUnique({
-        where: { id: params.id },
+        where: { id: report.requirementId },
         select: { title: true, currentStep: true, workflowId: true, assigneeId: true, assignee: true },
       });
 
       if (reqInfo?.workflowId && reqInfo.currentStep) {
         void notifyEvent('report.rejected' as any, {
-          id: params.id,
+          id: report.requirementId,
           title: reqInfo.title,
           reportType: report.reportType,
           actor: req.user!.name,
