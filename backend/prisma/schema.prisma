@@ -31,7 +31,6 @@ model User {
   passwordChangedAt     DateTime?             @map("password_changed_at")
   lastLoginAt           DateTime?             @map("last_login_at")
   roles                 String[]              @default([]) @map("roles")
-  okrRole               String                @default("okr_member")
   marketplaceAgents     MarketplaceAgent[]    @relation("MarketplaceAgentOwner")
   linkedAgent           MarketplaceAgent?     @relation("AgentUserLink")
   marketplaceTasks      MarketplaceTask[]     @relation("MarketplaceRequester")
