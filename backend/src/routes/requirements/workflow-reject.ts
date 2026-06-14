@@ -41,9 +41,14 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
+      // assigneeId 校验：非 assignee 不能操作（CTO 可以代操作）
+      if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
+        throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法回退非自己名下的任务`);
+      }
+
       // 角色校验
       const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-      if (!matchedRole && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
+      if (!matchedRole && req.user!.role !== 'cto_agent') {
         throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色才能回退`);
       }
 
