@@ -70,17 +70,24 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         targetStepName = target.name;
         targetStepDef = target;
       } else {
-        // 智能回退：有些步骤驳回一步不能到真正需要修改的人
-        const REJECT_TO_DEV = ['security_review', 'cto_review', 'merge_to_main', 'deploying', 'qa_review_deploy', 'done'];
-        if (REJECT_TO_DEV.includes(currentStep.name ?? '')) {
-          const devStep = steps.find(s => s.name === 'dev_self_check');
-          targetStepName = devStep?.name ?? 'dev_self_check';
-          targetStepDef = devStep ?? undefined;
+        // PM reject → always go to draft
+        if (currentStep.name === 'submitted' || currentStep.name === 'pm_review') {
+          const draftStep = steps.find(s => s.name === 'draft');
+          targetStepName = draftStep?.name ?? 'draft';
+          targetStepDef = draftStep;
         } else {
-          // 默认：回退一步
-          const prevStep = getPreviousStep(steps, requirement.currentStep);
-          targetStepName = prevStep ? prevStep.name : steps[0]?.name ?? 'dev_self_check';
-          targetStepDef = prevStep ?? steps[0];
+          // 智能回退：有些步骤驳回一步不能到真正需要修改的人
+          const REJECT_TO_DEV = ['security_review', 'cto_review', 'merge_to_main', 'deploying', 'qa_review_deploy', 'done'];
+          if (REJECT_TO_DEV.includes(currentStep.name ?? '')) {
+            const devStep = steps.find(s => s.name === 'dev_self_check');
+            targetStepName = devStep?.name ?? 'dev_self_check';
+            targetStepDef = devStep ?? undefined;
+          } else {
+            // 默认：回退一步
+            const prevStep = getPreviousStep(steps, requirement.currentStep);
+            targetStepName = prevStep ? prevStep.name : steps[0]?.name ?? 'dev_self_check';
+            targetStepDef = prevStep ?? steps[0];
+          }
         }
       }
 
