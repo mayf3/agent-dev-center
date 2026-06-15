@@ -9,7 +9,8 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { assignWorkflowSchema } from '../../schemas/workflow.js';
-import { parseSteps, getCurrentStep, logTransition, mapUserRole } from './workflow-helpers.js';
+import { parseSteps, getCurrentStep, logTransition, mapUserRole, extractRoleUserMap } from './workflow-helpers.js';
+import { resolveAssigneeForStep } from '../../lib/assignee-resolver.js';
 
 export function registerWorkflowAssignRoutes(router: import('express').Router): void {
 
@@ -60,6 +61,31 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
       // draft 步骤：assignee 设为需求提出者（requester 需要提交草稿到 PM 审批）
       if (targetStep.name === 'draft' && requirement.requesterId) {
         updateData.assigneeId = requirement.requesterId;
+      } else if (targetStep.role === 'requester' && requirement.requesterId) {
+        // requester 角色步骤：assignee 设为需求提出者
+        updateData.assigneeId = requirement.requesterId;
+      } else {
+        // 非 draft/requester 步骤：自动解析 assigneeId（使用 assignee-resolver）
+        const roleUserMap = extractRoleUserMap(template.steps);
+        try {
+          const resolvedId = await resolveAssigneeForStep(
+            targetStep.role,
+            requirement.assigneeId,
+            {
+              assigneeMode: (targetStep as any).assigneeMode,
+              roleUserMap,
+              requirement: {
+                id: requirement.id,
+                requesterId: requirement.requesterId,
+                assigneeId: requirement.assigneeId,
+              },
+            },
+          );
+          updateData.assigneeId = resolvedId;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          throw new HttpError(400, `assignee 自动解析失败: ${msg}`);
+        }
       }
 
       const updated = await prisma.requirement.update({
