@@ -26,15 +26,31 @@ app.use((req, res, next) => {
   next();
 });
 
-// d7e0a85d: 生产环境禁止 localhost CORS，需显式配置 FRONTEND_ORIGIN
-const corsOrigin = env.FRONTEND_ORIGIN === '*' ? true : env.FRONTEND_ORIGIN;
-if (!corsOrigin && env.NODE_ENV === 'production') {
+// db30203f: CORS 动态 Origin 校验 — 白名单 + 精确匹配
+// 白名单仅包含可信任域名，非白名单 Origin 不返回 CORS 头
+const corsAllowedOrigins = (env.FRONTEND_ORIGIN || '')
+  .split(',')
+  .map((o: string) => o.trim())
+  .filter(Boolean);
+if (corsAllowedOrigins.length === 0 && env.NODE_ENV === 'production') {
   console.warn('[CORS] FRONTEND_ORIGIN not set in production — CORS disabled, only same-origin allowed');
 }
 app.use(
   cors({
-    origin: corsOrigin || false,
-    credentials: !!env.FRONTEND_ORIGIN && env.FRONTEND_ORIGIN !== ''
+    origin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+      // 无 Origin（同源请求或非浏览器请求）— 允许但不返回 CORS 头
+      if (!origin) return callback(null, false);
+      // 白名单为空 — 禁止所有跨域
+      if (corsAllowedOrigins.length === 0) return callback(null, false);
+      // 通配符 — 允许所有
+      if (corsAllowedOrigins.includes('*')) return callback(null, true);
+      // 白名单精确匹配
+      const allowed = corsAllowedOrigins.some((a: string) => origin.startsWith(a));
+      if (allowed) return callback(null, true);
+      // 不在白名单 — 不返回 CORS 头
+      return callback(null, false);
+    },
+    credentials: corsAllowedOrigins.length > 0,
   })
 );
 
