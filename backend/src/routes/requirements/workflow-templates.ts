@@ -36,6 +36,33 @@ export function registerWorkflowTemplateRoutes(router: import('express').Router)
   );
 
   /**
+   * DELETE /workflow/test-env-lock — 强制释放测试环境锁（仅 admin/cto）
+   * 用于：锁持有者已过 testing 阶段但卡在后续步骤（如 qa_review），导致死锁
+   */
+  router.delete(
+    '/workflow/test-env-lock',
+    requireRoles('admin', 'cto_agent'),
+    asyncHandler(async (req, res) => {
+      const lock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
+      if (!lock) {
+        res.json({ success: true, message: '锁不存在，无需释放' });
+        return;
+      }
+      await prisma.testEnvLock.delete({ where: { id: 'singleton' } });
+      console.log(`[test-env-lock] 🔓 管理员 ${req.user?.name} 强制释放了锁（原持有者: ${lock.requirementId?.slice(0, 8)} ${lock.requirementTitle?.slice(0, 30)})`);
+      res.json({
+        success: true,
+        message: '测试环境锁已强制释放',
+        releasedFrom: {
+          requirementId: lock.requirementId,
+          requirementTitle: lock.requirementTitle,
+          acquiredAt: lock.acquiredAt,
+        },
+      });
+    }),
+  );
+
+  /**
    * GET /workflow-templates — 列出所有工作流模板
    * 任何已登录用户可查看（方便前端展示和 CTO 分配）
    * 2026-06-04: 修改为返回所有模板（包括非活跃），以便诊断和修复
