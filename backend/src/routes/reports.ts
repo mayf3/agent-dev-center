@@ -546,19 +546,12 @@ reportsRouter.patch(
     });
 
     // ─── 报告打回自动回退需求状态 + assignee ───
-    // 对于有工作流的需求：通过工作流 reject（按步骤角色自动分配）
-    // 对于无工作流的旧需求：从 revisions 历史找 assignee
+    // 所有需求（有/无工作流）都会自动回退到上一步，给提交者修改机会
     if (body.status === 'rejected' && reqInfo) {
       const reportType = report.reportType as string;
+      let targetStep: string | null = null;
 
-      // 如果需求有工作流，不在这里处理回退（由 workflow reject 处理）
-      if (reqInfo.workflowId) {
-        // 工作流模式：报告打回不做状态回退，由 CTO/test-engineer 手动调 workflow reject
-      } else {
-        // 旧版非工作流模式保留原逻辑
-        let targetStep: string | null = null;
-
-        switch (reportType) {
+      switch (reportType) {
           case 'DEV_SELF_CHECK':
           case 'TEST_REPORT':
           case 'SECURITY_REVIEW':
@@ -645,7 +638,6 @@ reportsRouter.patch(
             actor: req.user!.name,
             assignee: rollbackAssigneeName,
           });
-        }
       }
     }
 
