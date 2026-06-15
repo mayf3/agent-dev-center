@@ -163,10 +163,11 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
           update: { requirementId: params.id, requirementTitle: requirement.title, branch: requirement.branch, acquiredAt: new Date() },
         });
       }
-      // 离开 deploying（正式部署）时释放锁，并自动推进队列中下一条
-      if (currentStep.name === 'deploying') {
+      // 离开 testing 或 deploying 时释放测试环境锁
+      // 2026-06-15 修复: 之前只在 deploying 释放，导致卡在 qa_review 的需求锁死测试环境
+      if (currentStep.name === 'testing' || currentStep.name === 'deploying') {
         const existingLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
-        if (existingLock) {
+        if (existingLock && existingLock.requirementId === params.id) {
           await prisma.testEnvLock.delete({ where: { id: 'singleton' } });
           lockReleased = true;
         }
