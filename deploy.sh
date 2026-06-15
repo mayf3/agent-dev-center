@@ -12,6 +12,7 @@ ENV_FILE=".env.production"
 
 trap 'echo "Deployment failed at line ${LINENO}." >&2' ERR
 
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 LOCK_FILE="/tmp/agent-dev-center-deploy.lock"
 
 log() {
@@ -93,6 +94,7 @@ if grep -Eq 'JWT_SECRET=(replace|change|dev-only|changeme)' "${ENV_FILE}"; then
 fi
 
 log "Acquiring deploy lock"
+log "Deploying branch: ${DEPLOY_BRANCH}"
 acquire_lock
 
 log "Checking SSH access to ${SSH_TARGET}:${SERVER_PORT}"
@@ -146,10 +148,11 @@ scp \
   "${SSH_TARGET}:${REMOTE_ARCHIVE}"
 
 log "Building images and starting services on remote host"
-ssh_cmd "REMOTE_DIR='${REMOTE_DIR}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' COMPOSE_FILE='${COMPOSE_FILE}' ENV_FILE='${ENV_FILE}' bash -s" <<'REMOTE_SCRIPT'
+ssh_cmd "DEPLOY_BRANCH='${DEPLOY_BRANCH}' REMOTE_DIR='${REMOTE_DIR}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' COMPOSE_FILE='${COMPOSE_FILE}' ENV_FILE='${ENV_FILE}' bash -s" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
 cd "${REMOTE_DIR}"
-tar -xzf "${REMOTE_ARCHIVE}" -C "${REMOTE_DIR}"
+echo "[deploy] Branch: ${DEPLOY_BRANCH:-main}"
+  tar -xzf "${REMOTE_ARCHIVE}" -C "${REMOTE_DIR}"
 rm -f "${REMOTE_ARCHIVE}"
 chmod 600 "${ENV_FILE}"
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build --pull
