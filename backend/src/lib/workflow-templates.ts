@@ -253,10 +253,16 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         name: 'security_review',
         displayName: '安全验证',
         role: 'security',
-        requiredReports: [],
+        requiredReports: ['SECURITY_REVIEW'],
         autoAdvance: false,
       },
-      QA_PRE_RELEASE,
+      {
+        name: 'qa_pre_release',
+        displayName: 'QA预发布审查',
+        role: 'qa',
+        requiredReports: ['SECURITY_REVIEW'],  // 安全修复流程无 testing 步骤，不需要 TEST_REPORT
+        autoAdvance: false,
+      },
       {
         name: 'cto_review',
         displayName: 'CTO验收',
