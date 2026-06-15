@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import { authRequired } from '../../middleware/auth.js';
-import { registerCoreCrudRoutes } from './core-crud.js';
+import { registerCoreCreateRoutes } from './core-create.js';
+import { registerCoreListRoutes } from './core-list.js';
+import { registerCorePutRoutes } from './core-put.js';
+import { registerCorePatchRoutes } from './core-patch.js';
 import { registerCoreKanbanRoutes } from './core-kanban.js';
+import { registerCoreMineRoutes } from './core-mine.js';
 import { registerCoreLifecycleRoutes } from './core-lifecycle.js';
 import { registerAttachmentRoutes } from './attachments.js';
 import { registerStatusRoutes } from './status.js';
@@ -11,7 +15,11 @@ import { registerDecomposeRoutes } from './decompose.js';
 import { registerWorkflowAdvanceRoutes } from './workflow-advance.js';
 import { registerWorkflowRejectRoutes } from './workflow-reject.js';
 import { registerWorkflowAssignRoutes } from './workflow-assign.js';
-import { registerWorkflowTemplateRoutes } from './workflow-templates.js';
+import { registerWorkflowLifecycleRoutes } from './workflow-lifecycle.js';
+import { registerWorkflowTestEnvRoutes } from './workflow-test-env.js';
+import { registerWorkflowTemplatesListRoutes } from './workflow-templates-list.js';
+import { registerWorkflowWipRoutes } from './workflow-wip.js';
+import { registerWorkflowStepConfigRoutes } from './workflow-step-config.js';
 import { registerWorkflowMyStepRoutes } from './workflow-mystep.js';
 import { registerDependencyGraphRoutes } from './dependency-graph.js';
 import { registerTransitionRoutes } from './transitions.js';
@@ -19,22 +27,30 @@ import { reportsRouter } from '../reports.js';
 
 export const requirementsRouter = Router();
 
-// 所有需求路由都需要登录认证
+// All requirement routes require authentication
 requirementsRouter.use(authRequired);
 
-// 注册工作流路由（必须在 core CRUD 之前，避免 /:id 参数路由冲突）
-registerWorkflowTemplateRoutes(requirementsRouter);
+// Register workflow routes (must be before core CRUD to avoid /:id param conflicts)
+registerWorkflowTestEnvRoutes(requirementsRouter);
+registerWorkflowTemplatesListRoutes(requirementsRouter);
+registerWorkflowWipRoutes(requirementsRouter);
+registerWorkflowStepConfigRoutes(requirementsRouter);
 registerWorkflowAdvanceRoutes(requirementsRouter);
 registerWorkflowRejectRoutes(requirementsRouter);
 registerWorkflowAssignRoutes(requirementsRouter);
+registerWorkflowLifecycleRoutes(requirementsRouter);
 registerWorkflowMyStepRoutes(requirementsRouter);
 
-// 注册 core 路由（拆分为三个模块）
+// Register core routes
 registerCoreKanbanRoutes(requirementsRouter);
-registerCoreCrudRoutes(requirementsRouter);
+registerCoreMineRoutes(requirementsRouter);
+registerCoreCreateRoutes(requirementsRouter);
+registerCoreListRoutes(requirementsRouter);
+registerCorePutRoutes(requirementsRouter);
+registerCorePatchRoutes(requirementsRouter);
 registerCoreLifecycleRoutes(requirementsRouter);
 
-// 注册其他模块路由
+// Register other module routes
 registerAttachmentRoutes(requirementsRouter);
 registerStatusRoutes(requirementsRouter);
 registerReviewRoutes(requirementsRouter);
@@ -43,7 +59,7 @@ registerDecomposeRoutes(requirementsRouter);
 registerDependencyGraphRoutes(requirementsRouter);
 registerTransitionRoutes(requirementsRouter);
 
-// 挂载报告路由（同时支持 POST /api/reports 和 POST /api/requirements/:id/reports）
+// Mount reports router
 requirementsRouter.use('/:id/reports', reportsRouter);
 
 export const router = requirementsRouter;
