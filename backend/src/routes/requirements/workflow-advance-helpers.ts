@@ -3,10 +3,41 @@
  *
  * Extracted from workflow-advance.ts to keep file under 200 lines.
  * Handles: test-env lock acquire/release, security step skipping, queue auto-advance.
+ *
+ * 2026-06-16: 锁保护范围从硬编码 testing/deploying 改为完整的受保护步骤集合。
+ * 锁的语义：从部署测试环境到最终上线完成，测试环境只服务这一个任务。
+ * 受保护步骤离开即释放锁（无论 advance 还是 reject）。
  */
 import { prisma } from '../../lib/prisma.js';
 import { HttpError } from '../../utils/http-error.js';
 import { getNextStep, parseSteps, type WorkflowStep } from './workflow-helpers.js';
+
+/**
+ * 测试环境锁保护范围
+ * 
+ * 一个任务从部署测试环境（test_env_deploy）到最终上线完成（done），
+ * 其代码一直存在于测试环境中。在此期间，其他任务不应覆盖测试环境。
+ * 
+ * 锁在此范围内的任何步骤被获取后，直到离开此范围才释放。
+ * 离开方式包括：正常 advance 到 done、或被 reject 回更早步骤。
+ */
+export const TEST_ENV_PROTECTED_STEPS = new Set([
+  'test_env_deploy',
+  'testing',
+  'security_review',
+  'qa_pre_release',
+  'cto_review',
+  'merge_to_main',
+  'deploying',
+]);
+
+/**
+ * 判断是否应该释放测试环境锁
+ * 当前步骤在保护范围内，且目标步骤不在保护范围内 → 释放
+ */
+export function shouldReleaseTestEnvLock(currentStepName: string, targetStepName: string): boolean {
+  return TEST_ENV_PROTECTED_STEPS.has(currentStepName) && !TEST_ENV_PROTECTED_STEPS.has(targetStepName);
+}
 
 /**
  * Skip security_review (and qa_review_security) for non-SECURITY requirement types.
@@ -41,8 +72,9 @@ export function skipSecurityIfApplicable(
 /**
  * Acquire test environment lock when entering test_env_deploy.
  * Throws 409 if another requirement holds the lock.
+ * Returns the requirement ID for rollback tracking.
  */
-export async function acquireTestEnvLock(requirementId: string, title: string, branch: string | null): Promise<void> {
+export async function acquireTestEnvLock(requirementId: string, title: string, branch: string | null): Promise<string> {
   const existingLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
   if (existingLock && existingLock.requirementId !== requirementId) {
     throw new HttpError(
@@ -55,10 +87,11 @@ export async function acquireTestEnvLock(requirementId: string, title: string, b
     create: { id: 'singleton', requirementId, requirementTitle: title, branch },
     update: { requirementId, requirementTitle: title, branch, acquiredAt: new Date() },
   });
+  return requirementId;
 }
 
 /**
- * Release test environment lock when leaving testing or deploying step.
+ * Release test environment lock when leaving the protected zone.
  * Returns true if lock was released.
  */
 export async function releaseTestEnvLock(requirementId: string): Promise<boolean> {

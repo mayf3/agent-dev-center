@@ -24,6 +24,7 @@ import {
   skipSecurityIfApplicable,
   acquireTestEnvLock,
   releaseTestEnvLock,
+  shouldReleaseTestEnvLock,
   autoAdvanceTestEnvQueue,
 } from './workflow-advance-helpers.js';
 
@@ -116,11 +117,16 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       }
 
       // --- Test environment lock ---
+      // 锁的语义：从部署测试环境到最终上线完成，测试环境只服务这一个任务
+      // 保护范围 = test_env_deploy → deploying，离开保护范围时释放
+      let lockAcquired = false;
+      let lockReleased = false;
+
       if (targetStep.name === 'test_env_deploy') {
         await acquireTestEnvLock(params.id, requirement.title, requirement.branch);
+        lockAcquired = true;
       }
-      let lockReleased = false;
-      if (currentStep.name === 'testing' || currentStep.name === 'deploying') {
+      if (shouldReleaseTestEnvLock(currentStep.name, targetStep.name)) {
         lockReleased = await releaseTestEnvLock(params.id);
       }
 
@@ -138,6 +144,10 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
           newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
         }
       } catch (err: unknown) {
+        // 锁已获取但后续失败 → 回滚锁，防止孤儿锁
+        if (lockAcquired) {
+          try { await releaseTestEnvLock(params.id); } catch { /* ignore rollback error */ }
+        }
         const msg = err instanceof Error ? err.message : String(err);
         throw new HttpError(400, `assignee 解析失败: ${msg}`);
       }
