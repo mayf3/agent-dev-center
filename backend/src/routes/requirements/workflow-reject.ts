@@ -89,9 +89,35 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
         : requirement.assigneeId;
 
-      // 回退到 draft 时 assignee 设为需求提出者（requester 需要修改后重新提交）
-      if (targetStepName === 'draft' && requirement.requesterId) {
-        newAssigneeId = requirement.requesterId;
+      // Fix 2 (e97eb46b): 回退到 draft 时 assignee 设为需求提出者
+      // — requesterId 存在时直接使用
+      // — requesterId 为空时用 requester 名字查 users 表，找到则修复 requesterId
+      // — 都找不到则报错（不再静默跳过）
+      if (targetStepName === 'draft') {
+        if (requirement.requesterId) {
+          newAssigneeId = requirement.requesterId;
+        } else if (requirement.requester) {
+          const requesterUser = await prisma.user.findFirst({
+            where: { name: requirement.requester },
+            select: { id: true, name: true }
+          });
+          if (requesterUser) {
+            newAssigneeId = requesterUser.id;
+            // 顺便修复 requesterId（历史脏数据清理）
+            await prisma.requirement.update({
+              where: { id: params.id },
+              data: { requesterId: requesterUser.id }
+            });
+          } else {
+            throw new HttpError(400,
+              `需求「${requirement.title}」的 requester「${requirement.requester}」在用户表中不存在，无法回退到 draft`
+            );
+          }
+        } else {
+          throw new HttpError(400,
+            `需求「${requirement.title}」缺少 requester 信息（requesterId 和 requester 均为空），无法回退到 draft`
+          );
+        }
       }
 
       const updated = await prisma.requirement.update({
