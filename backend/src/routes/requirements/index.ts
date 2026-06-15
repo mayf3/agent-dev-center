@@ -15,6 +15,7 @@ import { registerWorkflowTemplateRoutes } from './workflow-templates.js';
 import { registerWorkflowMyStepRoutes } from './workflow-mystep.js';
 import { registerDependencyGraphRoutes } from './dependency-graph.js';
 import { registerTransitionRoutes } from './transitions.js';
+import { reportsRouter } from '../reports.js';
 
 export const requirementsRouter = Router();
 
@@ -41,5 +42,9 @@ registerPipelineRoutes(requirementsRouter);
 registerDecomposeRoutes(requirementsRouter);
 registerDependencyGraphRoutes(requirementsRouter);
 registerTransitionRoutes(requirementsRouter);
+
+// 挂载报告路由（同时支持 POST /api/reports 和 POST /api/requirements/:id/reports）
+requirementsRouter.use('/:id/reports', reportsRouter);
+
 export const router = requirementsRouter;
 export const mountPath = '/api/requirements';
