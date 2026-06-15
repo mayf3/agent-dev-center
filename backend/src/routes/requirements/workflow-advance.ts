@@ -89,6 +89,13 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
 
       // 7d7620e9: merge_to_main 步骤的自动验证
       if (currentStep.name === 'merge_to_main') {
+        // 如果 advance body 包含 branch，先保存到需求记录
+        if (body.branch) {
+          await prisma.requirement.update({
+            where: { id: params.id },
+            data: { branch: body.branch },
+          });
+        }
         const req = await prisma.requirement.findUnique({
           where: { id: params.id },
           select: { gitHash: true, branch: true, repoPath: true },
