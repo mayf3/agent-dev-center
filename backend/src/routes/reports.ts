@@ -270,7 +270,7 @@ reportsRouter.get(
           submittedByUser: { select: { id: true, name: true, email: true, roles: true } },
           requirement: { select: { id: true, title: true, currentStep: true, type: true } },
         },
-        orderBy: { createdAt: 'asc' },
+        orderBy: [{ requirement: { priority: "asc" } }, { createdAt: "asc" }],
         skip,
         take: pageSize,
       }),
