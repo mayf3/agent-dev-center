@@ -5,6 +5,9 @@
  * - assigneeId 是唯一的真实字段（FK → users.id）
  * - assignee 文本字段废弃，API 输出通过 JOIN assigneeUser.name 获取
  * - 工作流 advance/reject 时自动查找下一步骤 role 对应的用户
+ * - WIP 限制：分配时检查用户当前活跃需求数是否超过 wipLimit
+ *
+ * 2026-06-15: 新增 WIP 限制支持（per-user wipLimit 字段）
  */
 import { prisma } from './prisma.js';
 
@@ -21,12 +24,44 @@ const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
   qa: 'qa',  // 2026-06-05 新增 QA 步骤支持
 };
 
+/** 全局默认 WIP 上限 */
+const DEFAULT_WIP_LIMIT = 2;
+
 /**
- * 根据工作流步骤的 role 找到对应的用户 ID
+ * 获取用户当前的活跃需求数量（currentStep != 'done'）
+ */
+export async function getActiveRequirementCount(userId: string): Promise<number> {
+  return prisma.requirement.count({
+    where: {
+      assigneeId: userId,
+      currentStep: { not: 'done' },
+    },
+  });
+}
+
+/**
+ * 检查用户是否还有 WIP 容量
+ */
+export async function hasWipCapacity(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { wipLimit: true },
+  });
+  if (!user) return false;
+
+  const limit = user.wipLimit ?? DEFAULT_WIP_LIMIT;
+  const activeCount = await getActiveRequirementCount(userId);
+  return activeCount < limit;
+}
+
+/**
+ * 根据工作流步骤的 role 找到对应的用户 ID（带 WIP 容量检查）
  *
  * 优先级：
- * 1. 如果传入 currentAssigneeId 且该用户的 internalRole 匹配 → 保持不变
- * 2. 从 users 表找 internalRole 匹配的第一个活跃用户
+ * 1. 如果传入 currentAssigneeId 且该用户的 internalRole 匹配且有容量 → 保持不变
+ * 2. 从 users 表找 internalRole 匹配且有 WIP 容量的用户
+ * 3. 如果所有匹配用户都超限，分配 WIP 占用最少的用户
+ * 4. 兜底：找不到匹配用户时分配给 CTO
  */
 export async function resolveAssigneeForStep(
   stepRole: string,
@@ -35,32 +70,79 @@ export async function resolveAssigneeForStep(
   const internalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
   if (!internalRole) return currentAssigneeId ?? null;
 
-  // 如果当前 assignee 的角色匹配，保持不变
+  // 如果当前 assignee 的角色匹配且有容量，保持不变
   if (currentAssigneeId) {
     const current = await prisma.user.findUnique({
       where: { id: currentAssigneeId },
       select: { internalRole: true },
     });
     if (current?.internalRole === internalRole) {
-      return currentAssigneeId;
+      const hasCapacity = await hasWipCapacity(currentAssigneeId);
+      if (hasCapacity) {
+        return currentAssigneeId;
+      }
     }
   }
 
-  // 查找匹配角色的用户（按创建时间排序，保证确定性）
-  const match = await prisma.user.findFirst({
+  // 查找匹配角色的所有用户，按 WIP 容量排序
+  const candidates = await prisma.user.findMany({
     where: { internalRole: internalRole as any },
-    orderBy: { createdAt: 'asc' },
-    select: { id: true },
+    select: { id: true, name: true, wipLimit: true },
   });
 
-  if (match?.id) return match.id;
+  if (candidates.length === 0) {
+    // 兜底：找不到匹配用户时分配给 CTO
+    const cto = await prisma.user.findFirst({
+      where: { internalRole: 'cto' },
+      select: { id: true },
+    });
+    return cto?.id ?? null;
+  }
 
-  // 兜底：找不到匹配用户时分配给 CTO（避免 assignee 为空导致任务无人处理）
-  const cto = await prisma.user.findFirst({
-    where: { internalRole: 'cto' },
-    select: { id: true },
+  // 计算每个候选用户的活跃需求数和剩余容量
+  const usersWithLoad = await Promise.all(
+    candidates.map(async (u) => {
+      const activeCount = await getActiveRequirementCount(u.id);
+      const limit = u.wipLimit ?? DEFAULT_WIP_LIMIT;
+      const remaining = limit - activeCount;
+      return { id: u.id, name: u.name, activeCount, limit, remaining };
+    }),
+  );
+
+  // 先找有容量的用户
+  const hasCapacity = usersWithLoad.filter(u => u.remaining > 0);
+  if (hasCapacity.length > 0) {
+    // 按剩余容量降序排列（容量多的优先）
+    hasCapacity.sort((a, b) => b.remaining - a.remaining);
+    return hasCapacity[0].id;
+  }
+
+  // 所有候选都超限：分配 WIP 占用最少的（负载均衡）
+  usersWithLoad.sort((a, b) => a.activeCount - b.activeCount);
+  const best = usersWithLoad[0];
+
+  // 如果当前 assignee 角色匹配但不是最好的，仍然切换
+  // 否则返回负载最低的用户
+  return best.id;
+}
+
+/**
+ * 获取用户当前 WIP 限制和计数
+ */
+export async function getUserWipInfo(userId: string): Promise<{
+  activeCount: number;
+  wipLimit: number;
+  remaining: number;
+} | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { wipLimit: true, name: true },
   });
-  return cto?.id ?? null;
+  if (!user) return null;
+
+  const activeCount = await getActiveRequirementCount(userId);
+  const wipLimit = user.wipLimit ?? DEFAULT_WIP_LIMIT;
+  return { activeCount, wipLimit, remaining: wipLimit - activeCount };
 }
 
 /**

@@ -116,6 +116,9 @@ model User {
   marketplaceTasks      MarketplaceTask[]     @relation("MarketplaceRequester")
   ownedProjects         Project[]             @relation("ProjectOwner")
 
+  // WIP limit: maximum active requirements assignable to this user (null = system default 2)
+  wipLimit         Int?      @default(2) @map("wip_limit")
+
   @@index([lastLoginAt])
   @@map("users")
 }

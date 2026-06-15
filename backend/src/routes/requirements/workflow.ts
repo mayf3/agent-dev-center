@@ -16,7 +16,7 @@ import {
   rejectStepSchema,
 } from '../../schemas/workflow.js';
 import { canReadRequirement } from './utils.js';
-import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
+import { resolveAssigneeForStep, getAssigneeName, getUserWipInfo } from '../../lib/assignee-resolver.js';
 
 // ── Types ────────────────────────────────────────────────
 
@@ -330,6 +330,12 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
       });
 
+      // 添加新 assignee 的 WIP 信息
+      let wipInfo = null;
+      if (newAssigneeId) {
+        wipInfo = await getUserWipInfo(newAssigneeId);
+      }
+
       res.json({
         success: true,
         data: {
@@ -340,6 +346,7 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
           newAssigneeId,
           newAssigneeName,
           isDone: targetStep.name === steps[steps.length - 1]?.name,
+          wip: wipInfo,
         },
       });
     }),

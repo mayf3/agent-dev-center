@@ -82,10 +82,9 @@ export async function requirePmApproval(req: Request, _res: Response, next: Next
   return next();
 }
 
-// ─── 中间件：检查 WIP 限制 ───────────────────────────────────
+// ─── 中间件：检查 WIP 限制（per-user）─────────────────────────
 
 const DEFAULT_WIP_LIMIT = 2;
-const WIP_LIMIT = parseInt(process.env.WIP_LIMIT || String(DEFAULT_WIP_LIMIT), 10);
 
 export async function checkWipLimit(req: Request, _res: Response, next: NextFunction) {
   if (!req.user) return next(new HttpError(401, '请先登录'));
@@ -95,7 +94,16 @@ export async function checkWipLimit(req: Request, _res: Response, next: NextFunc
     return next(); // 没有分配给任何人，跳过
   }
 
-  // 检查当前 in-progress 需求数量
+  // 获取用户自定义 WIP 上限（fallback 全局默认值 2 / 环境变量覆盖）
+  const user = await prisma.user.findUnique({
+    where: { id: assigneeId },
+    select: { wipLimit: true, name: true },
+  });
+  if (!user) return next(new HttpError(404, `用户 ${assigneeId} 不存在`));
+
+  const wipLimit = user.wipLimit ?? parseInt(process.env.WIP_LIMIT || String(DEFAULT_WIP_LIMIT), 10);
+
+  // 检查当前活跃需求数（currentStep != 'done'）
   const inProgressCount = await prisma.requirement.count({
     where: {
       assigneeId,
@@ -103,11 +111,31 @@ export async function checkWipLimit(req: Request, _res: Response, next: NextFunc
     },
   });
 
-  if (inProgressCount >= WIP_LIMIT) {
-    return next(new HttpError(403, `当前开发已有 ${inProgressCount} 个进行中的需求，已达 WIP 上限 (${WIP_LIMIT})，请完成现有任务后再分配新需求`));
+  if (inProgressCount >= wipLimit) {
+    return next(new HttpError(403, `用户「${user.name}」当前已有 ${inProgressCount} 个进行中的需求，已达 WIP 上限 (${wipLimit})，请完成现有任务后再分配新需求`));
   }
 
   return next();
+}
+
+/**
+ * 获取用户的 WIP 信息（供 API 使用）
+ */
+export async function getWipInfo(userId: string): Promise<{
+  activeCount: number;
+  wipLimit: number;
+  remaining: number;
+}> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { wipLimit: true },
+  });
+  // If user not found, still return defaults
+  const wipLimit = user?.wipLimit ?? parseInt(process.env.WIP_LIMIT || String(DEFAULT_WIP_LIMIT), 10);
+  const activeCount = await prisma.requirement.count({
+    where: { assigneeId: userId, currentStep: { not: 'done' } },
+  });
+  return { activeCount, wipLimit, remaining: wipLimit - activeCount };
 }
 
 // ─── 中间件：防止自我审批 ───────────────────────────────────
