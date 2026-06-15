@@ -2,6 +2,9 @@
  * Workflow Reject Route
  *
  * POST /:id/workflow/reject — 回退到上一步
+ *
+ * 2026-06-16: 从测试环境保护范围（test_env_deploy → deploying）reject 时释放锁。
+ * 避免孤儿锁导致所有后续任务卡在 qa_review。
  */
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
@@ -17,6 +20,10 @@ import {
   logTransition,
   WorkflowStep,
 } from './workflow-helpers.js';
+import {
+  releaseTestEnvLock,
+  shouldReleaseTestEnvLock,
+} from './workflow-advance-helpers.js';
 
 export function registerWorkflowRejectRoutes(router: import('express').Router): void {
 
@@ -118,6 +125,17 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
             `需求「${requirement.title}」缺少 requester 信息（requesterId 和 requester 均为空），无法回退到 draft`
           );
         }
+      }
+
+      // --- 从测试环境保护范围 reject → 释放锁 ---
+      // 如果当前步骤在锁保护范围内但目标步骤不在，说明任务不再需要测试环境
+      try {
+        if (shouldReleaseTestEnvLock(requirement.currentStep, targetStepName)) {
+          await releaseTestEnvLock(params.id);
+        }
+      } catch (err) {
+        console.error(`[test-env-lock] reject lock release failed for ${params.id.slice(0, 8)}:`, err);
+        // 锁释放失败不应阻止 reject 本身
       }
 
       const updated = await prisma.requirement.update({
