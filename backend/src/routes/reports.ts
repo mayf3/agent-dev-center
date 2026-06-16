@@ -292,6 +292,12 @@ reportsRouter.get(
 reportsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
+    // autoRegisterRoutes 兼容：平路路径 (/api/reports) 时 params.id 为空，
+    // 从 query.requirementId 取需求ID
+    if (!req.params.id) {
+      req.params.id = (req.query as any)?.requirementId || req.params.id;
+    }
+    if (!req.params.id) throw new HttpError(400, '缺少 requirementId');
     const { params, query } = listReportsSchema.parse({
       params: req.params,
       query: req.query,
