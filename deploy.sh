@@ -74,7 +74,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-log "Creating deployment archive"
+# Verify local git is on the expected branch before archiving
+LOCAL_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+LOCAL_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+if [ "${LOCAL_BRANCH}" != "${DEPLOY_BRANCH}" ] && [ "${DEPLOY_BRANCH}" != "main" ]; then
+  log "WARNING: DEPLOY_BRANCH=${DEPLOY_BRANCH} but local branch is ${LOCAL_BRANCH}. Archive will contain current working tree."
+elif [ "${LOCAL_BRANCH}" != "${DEPLOY_BRANCH}" ]; then
+  log "NOTE: Deploying from local branch ${LOCAL_BRANCH} @ ${LOCAL_COMMIT} (DEPLOY_BRANCH defaults to main)"
+fi
+log "Creating deployment archive from branch ${LOCAL_BRANCH} @ ${LOCAL_COMMIT}"
 tar \
   --exclude='.git' \
   --exclude='node_modules' \
@@ -111,12 +119,8 @@ tar -xzf "${REMOTE_ARCHIVE}" -C "${REMOTE_DIR}"
 rm -f "${REMOTE_ARCHIVE}"
 chmod 600 "${ENV_FILE}"
 
-# Checkout the target branch (main for production, develop for test)
-git fetch origin 2>/dev/null || true
-git checkout "${DEPLOY_BRANCH}" 2>/dev/null || true
-git reset --hard "origin/${DEPLOY_BRANCH}" 2>/dev/null || true
-DEPLOY_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-echo "[deploy] Branch: ${DEPLOY_BRANCH} @ ${DEPLOY_COMMIT}"
+# Deploy metadata (source: build-side git, not target directory)
+echo "[deploy] Source branch: ${DEPLOY_BRANCH} @ ${LOCAL_COMMIT:-archive}"
 
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build --pull
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --remove-orphans
