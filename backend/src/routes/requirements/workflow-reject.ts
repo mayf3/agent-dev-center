@@ -79,7 +79,7 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       } else {
         // 智能回退：有些步骤驳回一步不能到真正需要修改的人
         // 2026-06-16: 增加 qa_review，QA 驳回后应直接返回开发自检，而非上一级 arch_review
-        const REJECT_TO_DEV = ['qa_review', 'security_review', 'cto_review', 'merge_to_main', 'deploying', 'qa_review_deploy', 'done'];
+        const REJECT_TO_DEV = ['test_env_deploy', 'qa_review', 'security_review', 'cto_review', 'merge_to_main', 'deploying', 'qa_review_deploy', 'done'];
         if (REJECT_TO_DEV.includes(currentStep.name ?? '')) {
           const devStep = steps.find(s => s.name === 'dev_self_check');
           targetStepName = devStep?.name ?? 'dev_self_check';
