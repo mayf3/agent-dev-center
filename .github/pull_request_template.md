@@ -25,6 +25,8 @@ ADC ID:
 
 ## Checklist
 
-- [ ] PR targets correct branch (feat → develop, develop → main)
+- [ ] Branch target correct (feat → develop, develop → main)
 - [ ] ADC requirement gitHash updated
 - [ ] No console.log / debug code left
+
+> **Note**: This repo uses self-hosted Git (not GitHub). For self-hosted repos, branch protection is enforced via `pre-receive` hook and merge is done by CTO/itops. This template serves as a commit/merge checklist.
