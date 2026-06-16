@@ -9,6 +9,7 @@ SSH_TARGET="${SERVER_USER}@${SERVER_HOST}"
 REMOTE_ARCHIVE="/tmp/agent-dev-center-prod.tar.gz"
 COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env.production"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"  # main=生产, develop=测试环境
 
 trap 'echo "Deployment failed at line ${LINENO}." >&2' ERR
 
@@ -116,7 +117,15 @@ fi
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-dev-center-prod.XXXXXX")"
 archive="${tmp_dir}/agent-dev-center-prod.tar.gz"
 
-log "Creating deployment archive"
+# Verify local git is on the expected branch before archiving
+LOCAL_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+LOCAL_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+if [ "${LOCAL_BRANCH}" != "${DEPLOY_BRANCH}" ] && [ "${DEPLOY_BRANCH}" != "main" ]; then
+  log "WARNING: DEPLOY_BRANCH=${DEPLOY_BRANCH} but local branch is ${LOCAL_BRANCH}. Archive will contain current working tree."
+elif [ "${LOCAL_BRANCH}" != "${DEPLOY_BRANCH}" ]; then
+  log "NOTE: Deploying from local branch ${LOCAL_BRANCH} @ ${LOCAL_COMMIT} (DEPLOY_BRANCH defaults to main)"
+fi
+log "Creating deployment archive from branch ${LOCAL_BRANCH} @ ${LOCAL_COMMIT}"
 tar \
   --exclude='.git' \
   --exclude='node_modules' \
@@ -145,18 +154,22 @@ scp \
   "${archive}" \
   "${SSH_TARGET}:${REMOTE_ARCHIVE}"
 
-log "Building images and starting services on remote host"
-ssh_cmd "REMOTE_DIR='${REMOTE_DIR}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' COMPOSE_FILE='${COMPOSE_FILE}' ENV_FILE='${ENV_FILE}' bash -s" <<'REMOTE_SCRIPT'
+log "Building images and starting services on remote host (branch=${DEPLOY_BRANCH})"
+ssh_cmd "REMOTE_DIR='${REMOTE_DIR}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' COMPOSE_FILE='${COMPOSE_FILE}' ENV_FILE='${ENV_FILE}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash -s" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
 cd "${REMOTE_DIR}"
 tar -xzf "${REMOTE_ARCHIVE}" -C "${REMOTE_DIR}"
 rm -f "${REMOTE_ARCHIVE}"
 chmod 600 "${ENV_FILE}"
+
+# Deploy metadata (source: build-side git, not target directory)
+echo "[deploy] Source branch: ${DEPLOY_BRANCH} @ ${LOCAL_COMMIT:-archive}"
+
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build --pull
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --remove-orphans
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps
 REMOTE_SCRIPT
 
-log "Deployment complete"
+log "Deployment complete (branch=${DEPLOY_BRANCH})"
 log "Frontend: http://${SERVER_HOST}"
 log "Backend health: http://${SERVER_HOST}/api/health"

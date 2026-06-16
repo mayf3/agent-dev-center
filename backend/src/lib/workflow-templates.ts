@@ -27,6 +27,7 @@ interface StepDef {
   role: string;
   requiredReports: string[];
   autoAdvance: boolean;
+  targetBranch?: string; // 部署目标分支: 'develop' (测试) | 'main' (生产)
 }
 
 interface TemplateDef {
@@ -121,13 +122,13 @@ const QA_PRE_RELEASE: StepDef = {
 };
 
 const STANDARD_DEV_MIDDLE_V4: StepDef[] = [
-  { name: 'test_env_deploy', displayName: '部署测试环境', role: 'ops', requiredReports: ['DEV_SELF_CHECK'], autoAdvance: false },
+  { name: 'test_env_deploy', displayName: '部署测试环境', role: 'ops', requiredReports: ['DEV_SELF_CHECK'], autoAdvance: false, targetBranch: 'develop' },
   { name: 'testing',         displayName: '测试验证',       role: 'tester',  requiredReports: [],                    autoAdvance: false },
   { name: 'security_review', displayName: '安全审查',       role: 'security',requiredReports: [],                    autoAdvance: false },
   QA_PRE_RELEASE,
   { name: 'cto_review',      displayName: 'CTO验收',        role: 'cto',    requiredReports: ['TEST_REPORT'],        autoAdvance: false },
   MERGE_TO_MAIN,
-  { name: 'deploying',       displayName: '部署上线',       role: 'ops',    requiredReports: ['CTO_REVIEW'],         autoAdvance: false },
+  { name: 'deploying',       displayName: '部署上线',       role: 'ops',    requiredReports: ['CTO_REVIEW'],         autoAdvance: false, targetBranch: 'main' },
   { name: 'done',            displayName: '已完成',         role: 'cto',    requiredReports: [],                     autoAdvance: false },
 ];
 
