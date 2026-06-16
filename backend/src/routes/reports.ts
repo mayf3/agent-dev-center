@@ -417,13 +417,13 @@ reportsRouter.patch(
 
           if (actualTarget !== reqInfo.currentStep) {
             await prisma.requirement.update({
-              where: { id: params.id },
+              where: { id: report.requirementId },
               data: { currentStep: actualTarget },
             });
 
             await prisma.workflowTransition.create({
               data: {
-                requirement: { connect: { id: params.id } },
+                requirement: { connect: { id: report.requirementId } },
                 fromStep: reqInfo.currentStep,
                 toStep: actualTarget,
                 action: 'reject',
