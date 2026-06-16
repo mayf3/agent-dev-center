@@ -2,6 +2,7 @@ import { app } from './app.js';
 import { env } from './config/env.js';
 import { prisma } from './lib/prisma.js';
 import { runOverdueCheck } from './utils/overdue-check.js';
+import { checkTestEnvLockTTL } from './utils/test-env-lock-monitor.js';
 import { startupSSOCheck } from './middleware/sso-config-guard.js';
 import { ensureWorkflowTemplates } from './lib/workflow-templates.js';
 
@@ -47,9 +48,31 @@ setTimeout(() => {
   void runOverdueCheck().catch(err => console.error('[overdue-cron] initial error:', err));
 }, 30_000);
 
+// ─── 测试环境锁 TTL 监控 Cron ──────────────────────────────
+// 每 5 分钟检查一次锁持有时间，超时发飞书告警
+const LOCK_TTL_CRON_MS = 5 * 60 * 1000;
+const lockTtlInterval = setInterval(async () => {
+  try {
+    const result = await checkTestEnvLockTTL();
+    if (result.warningCount > 0 || result.escalateCount > 0) {
+      console.log(
+        `[test-env-lock-monitor] 告警: ${result.warningCount} 个催办, ${result.escalateCount} 个升级`,
+      );
+    }
+  } catch (err) {
+    console.error('[test-env-lock-monitor] error:', err);
+  }
+}, LOCK_TTL_CRON_MS);
+
+// 启动后 60s 先跑一次
+setTimeout(() => {
+  void checkTestEnvLockTTL().catch(err => console.error('[test-env-lock-monitor] initial error:', err));
+}, 60_000);
+
 const shutdown = async (signal: string) => {
   console.log(`Received ${signal}, shutting down...`);
   clearInterval(overdueInterval);
+  clearInterval(lockTtlInterval);
   server.close(async () => {
     await prisma.$disconnect();
     process.exit(0);
