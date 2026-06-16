@@ -178,6 +178,24 @@ reportsRouter.post(
     // 校验提交者角色
     await validateReportRole(req.user!, body.reportType, params.id);
 
+    // b8c88a32: 报告提交质量门禁 — 最小内容校验
+    if (!body.content) {
+      throw new HttpError(400, '报告内容不能为空');
+    }
+    const contentStr = typeof body.content === 'string' ? body.content : JSON.stringify(body.content);
+    const MIN_LENGTHS: Record<string, number> = {
+      'DEV_SELF_CHECK': 100,
+      'TEST_REPORT': 200,
+      'SECURITY_REVIEW': 100,
+      'ARCH_DESIGN': 100,
+      'ARCH_REVIEW': 100,
+      'CTO_REVIEW': 50,
+    };
+    const minLen = MIN_LENGTHS[body.reportType] || 0;
+    if (minLen > 0 && contentStr.length < minLen) {
+      throw new HttpError(400, `${body.reportType} 报告内容最少需要 ${minLen} 个字符（当前: ${contentStr.length} 个字符）`);
+    }
+
     // 9da94ac1: 报告绑定工作流步骤，实现 upsert 逻辑
     const workflowStep = requirement.currentStep ?? null;
 
