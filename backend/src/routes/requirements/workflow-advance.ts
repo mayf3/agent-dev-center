@@ -105,8 +105,25 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         if (afterNext) targetStep = afterNext;
       }
 
-      const { targetStep: resolvedStep } = skipSecurityIfApplicable(targetStep, reqType, steps);
+      const { targetStep: resolvedStep, skippedSteps } = skipSecurityIfApplicable(targetStep, reqType, steps);
       targetStep = resolvedStep;
+
+      // --- Target step report check ---
+      // 进入目标步骤必须满足该步骤的 requiredReports（防止跳过报告审批）
+      // 如果安全步骤被跳过，自动过滤 SECURITY_REVIEW 要求
+      const targetReports = skippedSteps.includes('security_review')
+        ? targetStep.requiredReports.filter(r => r !== 'SECURITY_REVIEW')
+        : targetStep.requiredReports;
+      if (targetReports.length > 0) {
+        const { ok: targetOk, missing: targetMissing } = await checkReportsApproved(params.id, targetReports);
+        if (!targetOk) {
+          const reportLabels: Record<string, string> = {
+            DEV_SELF_CHECK: '开发自检报告', MERGE_REPORT: '合并报告', TEST_REPORT: '测试报告',
+            SECURITY_REVIEW: '安全检查报告', CTO_REVIEW: 'CTO验收报告', DEPLOY_CONFIRM: '部署确认报告',
+          };
+          throw new HttpError(400, `推进失败：进入「${targetStep.displayName}」需要已通过的报告 — ${targetMissing.map(t => reportLabels[t] ?? t).join('、')}`);
+        }
+      }
 
       // --- WIP limit check ---
       if (targetStep.wipLimit && targetStep.wipLimit > 0) {
