@@ -78,7 +78,8 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         targetStepDef = target;
       } else {
         // 智能回退：有些步骤驳回一步不能到真正需要修改的人
-        const REJECT_TO_DEV = ['security_review', 'cto_review', 'merge_to_main', 'deploying', 'qa_review_deploy', 'done'];
+        // 2026-06-16: 增加 qa_review，QA 驳回后应直接返回开发自检，而非上一级 arch_review
+        const REJECT_TO_DEV = ['qa_review', 'security_review', 'cto_review', 'merge_to_main', 'deploying', 'qa_review_deploy', 'done'];
         if (REJECT_TO_DEV.includes(currentStep.name ?? '')) {
           const devStep = steps.find(s => s.name === 'dev_self_check');
           targetStepName = devStep?.name ?? 'dev_self_check';
@@ -92,9 +93,16 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       }
 
       // 自动解析回退步骤的 assigneeId
-      let newAssigneeId = targetStepDef
-        ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
-        : requirement.assigneeId;
+      // 如果解析失败（如缺少对应角色的用户），fallback 到当前 assignee
+      let newAssigneeId: string | null;
+      try {
+        newAssigneeId = targetStepDef
+          ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
+          : requirement.assigneeId;
+      } catch {
+        // fallback: 保留当前 assignee，不阻止 reject 本身
+        newAssigneeId = requirement.assigneeId;
+      }
 
       // Fix 2 (e97eb46b): 回退到 draft 时 assignee 设为需求提出者
       // — requesterId 存在时直接使用
