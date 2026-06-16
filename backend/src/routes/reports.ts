@@ -294,23 +294,21 @@ reportsRouter.get(
   asyncHandler(async (req, res) => {
     // autoRegisterRoutes 兼容：平路路径 (/api/reports) 时 params.id 为空，
     // 从 query.requirementId 取需求ID
-    if (!req.params.id) {
-      req.params.id = (req.query as any)?.requirementId || req.params.id;
-    }
-    if (!req.params.id) throw new HttpError(400, '缺少 requirementId');
-    const { params, query } = listReportsSchema.parse({
-      params: req.params,
+    const reqId = (req.params.id || (req.query as any)?.requirementId) as string | undefined;
+    if (!reqId) throw new HttpError(400, '缺少 requirementId（通过路径或 query.requirementId 传入）');
+    const { query } = listReportsSchema.parse({
+      params: { id: reqId },
       query: req.query,
     });
 
     // 确认需求存在
     const requirement = await prisma.requirement.findUnique({
-      where: { id: params.id },
+      where: { id: reqId },
     });
     if (!requirement) throw new HttpError(404, '需求不存在');
 
     const where: Prisma.RequirementReportWhereInput = {
-      requirementId: params.id,
+      requirementId: reqId,
     };
     if (query.reportType) where.reportType = query.reportType;
     if (query.status) where.status = query.status;
