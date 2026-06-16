@@ -10,6 +10,8 @@
  *   - main 始终保持 tested 状态
  *   - merge_to_main role 固定为 cto
  *
+ * 2026-06-16 v5: merge_to_main role 从 cto → ops（itops 负责合并+部署，CTO 不做代码操作）
+ *
  * 2026-06-10 v3: 工作流链路重构
  *   核心原则：每一步只要求「前一步交付的东西」
  *   - QA 是全链路质检员：开发自检→QA审、测试→QA审、安全→QA审、部署→QA验证
@@ -80,7 +82,7 @@ const PM_REVIEW: StepDef = {
 const MERGE_TO_MAIN: StepDef = {
   name: 'merge_to_main',
   displayName: '合并到 main',
-  role: 'cto',
+  role: 'ops',
   requiredReports: ['MERGE_REPORT'],
   autoAdvance: false,
 };
