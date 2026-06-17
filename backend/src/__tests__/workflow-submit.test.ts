@@ -21,9 +21,9 @@ vi.mock('../lib/prisma.js', () => ({
 
 import { prisma } from '../lib/prisma.js';
 
-const mockFindUnique = prisma.requirement.findUnique as ReturnType<typeof vi.fn>;
-const mockUpdate = prisma.requirement.update as ReturnType<typeof vi.fn>;
-const mockTransitionCreate = prisma.workflowTransition.create as ReturnType<typeof vi.fn>;
+const mockFindUnique = prisma.requirement.findUnique as any;
+const mockUpdate = prisma.requirement.update as any;
+const mockTransitionCreate = prisma.workflowTransition.create as any;
 
 // ── Sample workflow steps ────────────────────────────
 const sampleSteps = [
