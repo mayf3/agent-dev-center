@@ -442,6 +442,8 @@ router.patch(
       rejectReason: body.rejectReason,
       gitHash: body.gitHash,
       deployVersion: body.deployVersion,
+      repoPath: body.repoPath,
+      branch: body.branch,
     };
     if (body.title !== undefined) patchData.title = body.title;
     if (body.description !== undefined) patchData.description = body.description;
