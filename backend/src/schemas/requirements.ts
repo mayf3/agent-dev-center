@@ -85,6 +85,8 @@ export const patchRequirementSchema = requirementIdSchema.extend({
       rejectReason: nullableString,
       gitHash: z.string().trim().optional(),
       deployVersion: z.string().trim().optional(),
+      repoPath: z.string().trim().optional(),
+      branch: z.string().trim().optional(),
       workflowId: z.string().trim().optional(),
       dependsOnIds: z.array(z.string().uuid()).optional().default([]),
       blockedBy: z.array(z.string().uuid()).optional().default([])
