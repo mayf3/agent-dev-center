@@ -146,6 +146,47 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         // 锁释放失败不应阻止 reject 本身
       }
 
+      // ── 跨步骤 reject 时自动标记旧报告为 stale ──
+      // 当 reject 到目标步骤时，该步骤已有的 approved 报告应失效（允许重新提交）
+      // 把 status 改为 changes_requested + 记录 reject 原因
+      if (targetStepName !== requirement.currentStep) {
+        const staleReports = await prisma.requirementReport.updateMany({
+          where: {
+            requirementId: params.id,
+            workflowStep: targetStepName,
+            status: 'approved',
+          },
+          data: {
+            status: 'changes_requested',
+            reviewComment: `[auto-stale] 需求被驳回回「${targetStepName}」(${body.comment ?? '无驳回原因'})`,
+            reviewedAt: new Date(),
+          },
+        });
+        if (staleReports.count > 0) {
+          console.log(
+            `[reject-stale] 需求 ${params.id.slice(0, 8)} → ${targetStepName}，标记 ${staleReports.count} 条报告为 changes_requested`
+          );
+        }
+        // 同时清理 targetStep 为 null 的报告（兼容旧数据：部分报告无 workflowStep）
+        const staleNullReports = await prisma.requirementReport.updateMany({
+          where: {
+            requirementId: params.id,
+            workflowStep: null,
+            status: 'approved',
+          },
+          data: {
+            status: 'changes_requested',
+            reviewComment: `[auto-stale] 需求被驳回回「${targetStepName}」(${body.comment ?? '无驳回原因'})`,
+            reviewedAt: new Date(),
+          },
+        });
+        if (staleNullReports.count > 0) {
+          console.log(
+            `[reject-stale] 需求 ${params.id.slice(0, 8)} → ${targetStepName}，标记 ${staleNullReports.count} 条无步骤报告为 changes_requested`
+          );
+        }
+      }
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: {
