@@ -1,10 +1,3 @@
-/**
- * Workflow Advance Route
- *
- * POST /:id/workflow/advance — advance to next workflow step.
- * Most complex route: role check + report check + security skip + WIP limit + test-env lock.
- */
-import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
@@ -18,16 +11,15 @@ import {
   mapUserRole,
   checkReportsApproved,
   getStepWipCount,
-  logTransition,
   extractRoleUserMap,
 } from './workflow-helpers.js';
 import {
   skipSecurityIfApplicable,
-  acquireTestEnvLock,
-  releaseTestEnvLock,
   shouldReleaseTestEnvLock,
   autoAdvanceTestEnvQueue,
 } from './workflow-advance-helpers.js';
+import { tryReplayAdvance, executeAdvanceTransition } from '../../lib/workflow-transition/index.js';
+import { prisma } from '../../lib/prisma.js';
 
 export function registerWorkflowAdvanceRoutes(router: import('express').Router): void {
 
@@ -36,6 +28,35 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
     asyncHandler(async (req, res) => {
       const { params } = requirementIdSchema.parse({ params: req.params });
       const { body } = advanceStepSchema.parse({ body: req.body });
+
+      const { execution } = body;
+      const isAgentAccount = !!req.user!.agentId;
+
+      if (isAgentAccount && !execution) {
+        throw new HttpError(409, 'Agent accounts must provide execution proof for advance');
+      }
+
+      if (execution) {
+        const replayed = await tryReplayAdvance({
+          requirementId: params.id,
+          actor: { id: req.user!.id, name: req.user!.name, role: req.user!.internalRole ?? req.user!.role, agentId: req.user!.agentId },
+          execution: { leaseId: execution.leaseId, sessionId: execution.sessionId, idempotencyKey: execution.idempotencyKey, expectedStateVersion: execution.expectedStateVersion },
+          requestedBranch: body.branch,
+          comment: body.comment,
+          fromStep: undefined,
+          toStep: undefined,
+        });
+        if (replayed) {
+          return res.json({
+            success: true,
+            replayed: true,
+            data: {
+              ...replayed,
+              toStepDisplayName: replayed.toStepDisplayName ?? '',
+            },
+          });
+        }
+      }
 
       const requirement = await prisma.requirement.findUnique({
         where: { id: params.id },
@@ -49,7 +70,6 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
-      // --- Permission check ---
       if (currentStep.name === 'draft') {
         const isRequester = requirement.requesterId === req.user!.id;
         if (!isRequester && req.user!.role !== 'cto_agent') {
@@ -65,7 +85,6 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         }
       }
 
-      // --- Report check ---
       const reqType = (requirement as any).type;
       const isNonSecurityType = reqType !== 'SECURITY';
       const currentReports = isNonSecurityType
@@ -82,21 +101,17 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         }
       }
 
-      // --- merge_to_main validation ---
+      const effectiveBranch = body.branch ?? requirement.branch;
       if (currentStep.name === 'merge_to_main') {
-        if (body.branch) {
-          await prisma.requirement.update({ where: { id: params.id }, data: { branch: body.branch } });
-        }
         const req = await prisma.requirement.findUnique({
           where: { id: params.id }, select: { gitHash: true, branch: true, repoPath: true },
         });
         const errors: string[] = [];
         if (!req?.gitHash) errors.push('缺少 gitHash，请先提交代码并更新 gitHash');
-        if (!req?.branch) errors.push('缺少 branch，请指定代码分支名');
+        if (!effectiveBranch) errors.push('缺少 branch，请指定代码分支名');
         if (errors.length > 0) throw new HttpError(400, `merge_to_main 验证失败：\n${errors.join('\n')}`);
       }
 
-      // --- Determine target step (next + auto-advance + security skip) ---
       const nextStep = getNextStep(steps, requirement.currentStep);
       if (!nextStep) throw new HttpError(400, '已在工作流最后一步，无法继续推进');
 
@@ -109,7 +124,8 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       const { targetStep: resolvedStep } = skipSecurityIfApplicable(targetStep, reqType, steps);
       targetStep = resolvedStep;
 
-      // --- WIP limit check ---
+      const skippedAutoStep = targetStep.name !== nextStep.name ? nextStep.name : null;
+
       if (targetStep.wipLimit && targetStep.wipLimit > 0) {
         const currentWip = await getStepWipCount(targetStep.name, params.id);
         if (currentWip >= targetStep.wipLimit) {
@@ -117,21 +133,6 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         }
       }
 
-      // --- Test environment lock ---
-      // 锁的语义：从部署测试环境到最终上线完成，测试环境只服务这一个任务
-      // 保护范围 = test_env_deploy → deploying，离开保护范围时释放
-      let lockAcquired = false;
-      let lockReleased = false;
-
-      if (targetStep.name === 'test_env_deploy') {
-        await acquireTestEnvLock(params.id, requirement.title, requirement.branch);
-        lockAcquired = true;
-      }
-      if (shouldReleaseTestEnvLock(currentStep.name, targetStep.name)) {
-        lockReleased = await releaseTestEnvLock(params.id);
-      }
-
-      // --- Resolve assignee for target step (snapshot-first) ---
       const workflowRawJson = getWorkflowRawJson(requirement);
       const roleUserMap = workflowRawJson ? extractRoleUserMap(workflowRawJson) : undefined;
       let newAssigneeId: string | null;
@@ -146,39 +147,63 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
           newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
         }
       } catch (err: unknown) {
-        // 锁已获取但后续失败 → 回滚锁，防止孤儿锁
-        if (lockAcquired) {
-          try { await releaseTestEnvLock(params.id); } catch { /* ignore rollback error */ }
-        }
         const msg = err instanceof Error ? err.message : String(err);
         throw new HttpError(400, `assignee 解析失败: ${msg}`);
       }
 
-      // --- Persist step transition ---
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: { currentStep: targetStep.name, assigneeId: newAssigneeId, rejectReason: null },
-      });
       const newAssigneeName = await getAssigneeName(newAssigneeId);
 
-      await logTransition({
-        requirementId: params.id, fromStep: requirement.currentStep, toStep: targetStep.name,
-        action: 'advance', actorId: req.user!.id, actorName: req.user!.name,
-        actorRole: req.user!.internalRole ?? req.user!.role, comment: body.comment,
-        metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+      let lockAction: import('../../lib/workflow-transition/transition-types.js').LockAction = { type: 'none' as const };
+      if (targetStep.name === 'test_env_deploy') {
+        lockAction = { type: 'acquire' as const, title: requirement.title, branch: effectiveBranch };
+      } else if (shouldReleaseTestEnvLock(requirement.currentStep, targetStep.name)) {
+        lockAction = { type: 'release' as const };
+      }
+
+      const result = await executeAdvanceTransition({
+        requirementId: params.id,
+        fromStep: requirement.currentStep,
+        toStep: targetStep.name,
+        toStepDisplayName: targetStep.displayName,
+        stateVersion: requirement.stateVersion,
+        newAssigneeId,
+        newAssigneeName,
+        comment: body.comment,
+        effectiveBranch: effectiveBranch,
+        requestedBranch: body.branch,
+        actor: {
+          id: req.user!.id,
+          name: req.user!.name,
+          role: req.user!.internalRole ?? req.user!.role,
+          agentId: req.user!.agentId,
+        },
+        execution: execution ? {
+          leaseId: execution.leaseId,
+          sessionId: execution.sessionId,
+          idempotencyKey: execution.idempotencyKey,
+          expectedStateVersion: execution.expectedStateVersion,
+        } : undefined,
+        lockAction,
+        skippedAutoStep,
+        finalStepName: steps[steps.length - 1]?.name ?? '',
       });
 
       res.json({
         success: true,
+        replayed: result.replayed,
         data: {
-          requirementId: updated.id, fromStep: requirement.currentStep, toStep: targetStep.name,
-          toStepDisplayName: targetStep.displayName, newAssigneeId, newAssigneeName,
-          isDone: targetStep.name === steps[steps.length - 1]?.name,
+          requirementId: result.requirementId,
+          fromStep: result.fromStep,
+          toStep: result.toStep,
+          toStepDisplayName: result.toStepDisplayName ?? targetStep.displayName,
+          newAssigneeId: result.newAssigneeId,
+          newAssigneeName: result.newAssigneeName,
+          isDone: result.isDone,
+          newStateVersion: result.newStateVersion,
         },
       });
 
-      // --- Auto-advance queue after lock release (snapshot-aware via helper) ---
-      if (lockReleased) autoAdvanceTestEnvQueue();
+      if (result.lockReleased) autoAdvanceTestEnvQueue();
     }),
   );
 }

@@ -7,6 +7,7 @@ declare global {
       name: string;
       email: string;
       role: UserRole;
+      agentId?: string | null | undefined;
       internalRole?: InternalRole | null | undefined;
       roles?: string[] | null | undefined;
       okrRole?: string | null | undefined;
