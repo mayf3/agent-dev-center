@@ -100,6 +100,17 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         newAssigneeId = requirement.requesterId;
       }
 
+      // 标记回退目标步骤的已 approved 报告为 changes_requested
+      // 允许开发者重新提交（否则旧 approved 报告会阻止新提交）
+      await prisma.requirementReport.updateMany({
+        where: {
+          requirementId: params.id,
+          workflowStep: targetStepName,
+          status: 'approved',
+        },
+        data: { status: 'changes_requested' },
+      });
+
       const updated = await prisma.requirement.update({
         where: { id: params.id },
         data: {

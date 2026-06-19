@@ -1,0 +1,281 @@
+import { Prisma } from '@prisma/client';
+import { Router } from 'express';
+import { authRequired, requireRoles } from '../middleware/auth.js';
+import { prisma } from '../lib/prisma.js';
+import { createTaskSchema, deleteTaskSchema, listTasksSchema, patchTaskSchema } from '../schemas/tasks.js';
+import { asyncHandler } from '../utils/async-handler.js';
+import { HttpError } from '../utils/http-error.js';
+import { prismaTaskStatus, serializeTask } from '../utils/status.js';
+import { notifyEvent } from '../utils/notifications.js';
+import { archiveRecord } from '../lib/archive.js';
+import { resolveAssigneeForStep, getAssigneeName } from '../lib/assignee-resolver.js';
+
+export const tasksRouter = Router();
+
+tasksRouter.use(authRequired);
+
+function roleAwareTaskWhere(user: Express.AuthUser): Prisma.TaskWhereInput {
+  if (user.role === 'admin') {
+    return {};
+  }
+
+  if (user.role === 'developer') {
+    return {
+      OR: [{ agentType: user.name }, { agentType: user.email }]
+    };
+  }
+
+  // requester: 基于 requesterId 匹配，兼容旧数据用 name/email fallback
+  return {
+    requirement: {
+      OR: [{ requesterId: user.id }, { requester: user.name }, { requester: user.email }]
+    }
+  };
+}
+
+tasksRouter.post(
+  '/',
+  requireRoles('admin', 'developer'),
+  asyncHandler(async (req, res) => {
+    const { body } = createTaskSchema.parse({ body: req.body });
+    const requirement = await prisma.requirement.findUnique({
+      where: { id: body.requirementId }
+    });
+
+    if (!requirement) {
+      throw new HttpError(404, '需求不存在');
+    }
+
+    // 查找 assignee 对应的 userId
+    const assigneeUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ name: body.agentType }, { email: body.agentType }]
+      },
+      select: { id: true }
+    });
+
+    const task = await prisma.$transaction(async (tx) => {
+      await tx.requirement.update({
+        where: { id: body.requirementId },
+        data: {
+          assignee: body.agentType,
+          assigneeId: assigneeUser?.id ?? null,
+          currentStep: requirement.currentStep || undefined,
+          rejectReason: null
+        }
+      });
+
+      return tx.task.create({
+        data: {
+          requirementId: body.requirementId,
+          title: body.title,
+          description: body.description,
+          agentType: body.agentType
+        }
+      });
+    });
+
+    void notifyEvent('task.created', {
+      id: task.id,
+      title: task.title,
+      actor: req.user!.name,
+      agentType: task.agentType,
+      requesterId: req.user!.id,
+      assigneeId: assigneeUser?.id ?? null
+    });
+
+    res.status(201).json(serializeTask(task));
+  })
+);
+
+tasksRouter.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    const { query } = listTasksSchema.parse({ query: req.query });
+    const where: Prisma.TaskWhereInput = {
+      AND: [roleAwareTaskWhere(req.user!)]
+    };
+
+    if (query.requirementId) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { requirementId: query.requirementId }];
+    }
+
+    if (query.status) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { status: prismaTaskStatus[query.status] }];
+    }
+
+    if (query.agentType) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { agentType: query.agentType }];
+    }
+
+    const tasks = await prisma.task.findMany({
+      where,
+      include: { requirement: true },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    res.json({
+      data: tasks.map((task) => ({
+        ...serializeTask(task),
+        requirement: {
+          id: task.requirement.id,
+          title: task.requirement.title,
+          currentStep: task.requirement.currentStep,
+          priority: task.requirement.priority
+        }
+      }))
+    });
+  })
+);
+
+tasksRouter.patch(
+  '/:id',
+  requireRoles('admin', 'developer'),
+  asyncHandler(async (req, res) => {
+    const { params, body } = patchTaskSchema.parse({
+      params: req.params,
+      body: req.body
+    });
+
+    const existing = await prisma.task.findUnique({
+      where: { id: params.id },
+      include: { requirement: true }
+    });
+
+    if (!existing) {
+      throw new HttpError(404, '任务不存在');
+    }
+
+    if (
+      req.user!.role === 'developer' &&
+      existing.agentType !== req.user!.name &&
+      existing.agentType !== req.user!.email
+    ) {
+      throw new HttpError(403, '无权更新该任务');
+    }
+
+    const task = await prisma.$transaction(async (tx) => {
+      const updatedTask = await tx.task.update({
+        where: { id: params.id },
+        data: {
+          status: prismaTaskStatus[body.status]
+        }
+      });
+
+      if (body.status === 'in-progress') {
+        // 查工作流获取步骤 role 并解析 assignee
+        let resolvedAssigneeId: string | null = null;
+        let resolvedAssigneeName: string | null = null;
+        if (existing.requirement.workflowId) {
+          const wf = await tx.workflowTemplate.findUnique({
+            where: { id: existing.requirement.workflowId },
+            select: { steps: true },
+          });
+          const step = wf ? (wf.steps as any[]).find((s: any) => s.name === 'in_progress') : null;
+          if (step?.role) {
+            resolvedAssigneeId = await resolveAssigneeForStep(step.role, existing.requirement.assigneeId);
+            if (resolvedAssigneeId) resolvedAssigneeName = await getAssigneeName(resolvedAssigneeId);
+          }
+        }
+        await tx.requirement.update({
+          where: { id: existing.requirementId },
+          data: {
+            currentStep: 'in_progress',
+            ...(resolvedAssigneeId ? { assigneeId: resolvedAssigneeId, assignee: resolvedAssigneeName } : {}),
+          }
+        });
+      }
+
+      if (body.status === 'done') {
+        const unfinishedCount = await tx.task.count({
+          where: {
+            requirementId: existing.requirementId,
+            id: { not: params.id },
+            status: { not: 'done' }
+          }
+        });
+
+        const targetStepName = unfinishedCount === 0 ? 'cto_review' : 'in_progress';
+
+        // 解析目标步骤的 assignee（防止漂移）
+        let resolvedAssigneeId: string | null = null;
+        let resolvedAssigneeName: string | null = null;
+        if (existing.requirement.workflowId && unfinishedCount === 0) {
+          const wf = await tx.workflowTemplate.findUnique({
+            where: { id: existing.requirement.workflowId },
+            select: { steps: true },
+          });
+          const step = wf ? (wf.steps as any[]).find((s: any) => s.name === targetStepName) : null;
+          if (step?.role) {
+            resolvedAssigneeId = await resolveAssigneeForStep(step.role, existing.requirement.assigneeId);
+            if (resolvedAssigneeId) resolvedAssigneeName = await getAssigneeName(resolvedAssigneeId);
+          }
+        }
+
+        await tx.requirement.update({
+          where: { id: existing.requirementId },
+          data: {
+            currentStep: targetStepName,
+            ...(resolvedAssigneeId ? { assigneeId: resolvedAssigneeId, assignee: resolvedAssigneeName } : {}),
+          }
+        });
+      }
+
+      return updatedTask;
+    });
+
+    void notifyEvent('task.status_changed', {
+      id: task.id,
+      title: task.title,
+      status: body.status,
+      actor: req.user!.name,
+      agentType: task.agentType
+    });
+
+    res.json(serializeTask(task));
+  })
+);
+
+tasksRouter.delete(
+  '/:id',
+  requireRoles('admin'),
+  asyncHandler(async (req, res) => {
+    const { params } = deleteTaskSchema.parse({ params: req.params });
+
+    const existing = await prisma.task.findUnique({
+      where: { id: params.id }
+    });
+
+    if (!existing) {
+      throw new HttpError(404, '任务不存在');
+    }
+
+    // Archive the record before deleting from DB
+    const serialized = serializeTask(existing);
+    archiveRecord(
+      serialized as unknown as Record<string, unknown>,
+      'tasks',
+      {
+        itemName: existing.title,
+        itemId: existing.id,
+        reason: '管理员归档删除',
+        archivedBy: req.user!.name || req.user!.email,
+        extra: `requirementId=${existing.requirementId}`
+      }
+    );
+
+    await prisma.task.delete({
+      where: { id: params.id }
+    });
+
+    void notifyEvent('task.deleted', {
+      id: existing.id,
+      title: existing.title,
+      actor: req.user!.name
+    });
+
+    res.json({ success: true, id: existing.id, archived: true });
+  })
+);
+export const router = tasksRouter;
+export const mountPath = '/api/tasks';
