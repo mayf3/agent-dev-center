@@ -12,6 +12,9 @@ const mockPrisma = {
   testEnvLock: { findUnique: vi.fn(), upsert: vi.fn(), delete: vi.fn() },
   $transaction: vi.fn(),
   workflowTemplate: { findFirst: vi.fn() },
+  requirementReport: { findUnique: vi.fn(), updateMany: vi.fn() },
+  requirementRevision: { create: vi.fn(), findFirst: vi.fn() },
+  user: { findUnique: vi.fn(), findFirst: vi.fn() },
 };
 
 vi.mock('../lib/prisma.js', () => ({ prisma: mockPrisma }));
@@ -1837,6 +1840,270 @@ describe('P0-B2a: workflow assign transaction kernel', () => {
       expect(capturedTx.executionLease.updateMany).not.toHaveBeenCalled();
       expect(capturedTx.executionLeaseEvent.create).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe('P0-B2b: report review atomic service', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('QA rejected: report CAS + requirement transition in single tx, no revision', async () => {
+    mockPrisma.requirementReport.findUnique = vi.fn().mockResolvedValue({
+      id: 'r1', status: 'pending', reportType: 'TEST_REPORT', requirementId: 'req-1',
+    });
+    mockPrisma.requirement.findUnique = vi.fn().mockResolvedValue({
+      id: 'req-1', title: 'Test', currentStep: 'qa_review', stateVersion: 3,
+      workflowId: 'w1', workflowSnapshot: [], assigneeId: 'u1', assignee: 'Dev',
+      workflow: { steps: [] },
+    });
+    let capturedTx: any = null;
+    let reportUpdatedOutsideTx = false;
+    // Mock the outer updateMany to track if service writes report BEFORE transaction
+    mockPrisma.requirementReport.updateMany = vi.fn().mockImplementation(() => { reportUpdatedOutsideTx = true; return { count: 1 }; });
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        requirementReport: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUnique: vi.fn().mockResolvedValue({ id: 'r1', status: 'rejected', reportType: 'TEST_REPORT', requirementId: 'req-1' }),
+        },
+        requirement: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'req-1', currentStep: 'qa_review', stateVersion: 3, assigneeId: 'u1' }),
+          updateMany: vi.fn().mockImplementation(({ where, data }: any) => {
+            expect(where.stateVersion).toBe(3);
+            expect(data.stateVersion).toEqual({ increment: 1 });
+            return { count: 1 };
+          }),
+        },
+        workflowTransition: { create: vi.fn().mockResolvedValue({}) },
+        executionLease: { findFirst: vi.fn().mockResolvedValue({ id: 'l1' }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        executionLeaseEvent: { create: vi.fn() },
+        requirementRevision: { create: vi.fn().mockResolvedValue({}) },
+        user: { findUnique: vi.fn().mockResolvedValue({ name: 'Dev' }) },
+      };
+      capturedTx = tx;
+      return cb(tx);
+    });
+    const { executeReportReviewQa } = await import('../routes/requirements/report-review-service.js');
+    await executeReportReviewQa({
+      reportId: 'r1', requirementId: 'req-1',
+      status: 'rejected', reviewedAt: new Date(),
+      qaReviewedAt: new Date(), qaReviewedBy: 'QA',
+      reviewerId: 'qa-1', reviewerName: 'QA', reviewerRole: 'qa',
+    });
+    // Report update happened INSIDE transaction, not outside
+    expect(reportUpdatedOutsideTx).toBe(false);
+    expect(capturedTx.requirementReport.updateMany).toHaveBeenCalled();
+    expect(capturedTx.workflowTransition.create).toHaveBeenCalled();
+    expect(capturedTx.executionLease.findFirst).toHaveBeenCalled();
+    expect(capturedTx.executionLease.updateMany).toHaveBeenCalled();
+    // QA reject should NOT create revision
+    expect(capturedTx.requirementRevision.create).not.toHaveBeenCalled();
+  });
+
+  it('final rejected: preflight resolved assignee + revision created in tx', async () => {
+    mockPrisma.requirementReport.findUnique = vi.fn().mockResolvedValue({
+      id: 'r1', status: 'pending', reportType: 'CTO_REVIEW', requirementId: 'req-1',
+    });
+    mockPrisma.requirement.findUnique = vi.fn().mockResolvedValue({
+      id: 'req-1', title: 'Test', currentStep: 'cto_review', stateVersion: 1,
+      workflowId: 'w1', workflowSnapshot: [], assigneeId: 'u2', assignee: 'Dev2',
+      workflow: { steps: [] },
+    });
+    mockPrisma.requirementReport.updateMany = vi.fn();
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        requirementReport: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUnique: vi.fn().mockResolvedValue({ id: 'r1', status: 'rejected', reportType: 'CTO_REVIEW', requirementId: 'req-1' }),
+        },
+        requirement: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'req-1', currentStep: 'cto_review', stateVersion: 1, assigneeId: 'u2' }),
+          updateMany: vi.fn().mockReturnValue({ count: 1 }),
+        },
+        workflowTransition: { create: vi.fn().mockResolvedValue({}) },
+        executionLease: { findFirst: vi.fn().mockResolvedValue({ id: 'l1' }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        executionLeaseEvent: { create: vi.fn() },
+        requirementRevision: { create: vi.fn().mockResolvedValue({}) },
+        user: { findUnique: vi.fn().mockResolvedValue({ name: 'Dev2' }) },
+      };
+      return cb(tx);
+    });
+    const { executeReportReviewFinal } = await import('../routes/requirements/report-review-service.js');
+    const result = await executeReportReviewFinal({
+      reportId: 'r1', requirementId: 'req-1',
+      status: 'rejected', reviewedAt: new Date(),
+      reviewerId: 'cto-1', reviewerName: 'CTO', reviewerRole: 'admin',
+      createRevision: true,
+    });
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
+    expect(result.status).toBe('rejected');
+  });
+
+  it('final rejected: revision assignee exists but user not found falls back to currentAssigneeId', async () => {
+    mockPrisma.requirementReport.findUnique = vi.fn().mockResolvedValue({
+      id: 'r1', status: 'pending', reportType: 'CTO_REVIEW', requirementId: 'req-1',
+    });
+    mockPrisma.requirement.findUnique = vi.fn().mockResolvedValue({
+      id: 'req-1', title: 'Test', currentStep: 'cto_review', stateVersion: 1,
+      workflowId: 'w1', workflowSnapshot: [], assigneeId: 'current-uuid',
+      assignee: 'CurrentUser',
+      workflow: { steps: [] },
+    });
+    mockPrisma.requirementReport.updateMany = vi.fn();
+    mockPrisma.requirementRevision.findFirst = vi.fn().mockResolvedValue({ assignee: 'OldDev' });
+    mockPrisma.user.findFirst = vi.fn().mockResolvedValue(null); // user not found
+    let capturedTx: any = null;
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        requirementReport: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUnique: vi.fn().mockResolvedValue({ id: 'r1', status: 'rejected', reportType: 'CTO_REVIEW', requirementId: 'req-1' }),
+        },
+        requirement: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'req-1', currentStep: 'cto_review', stateVersion: 1, assigneeId: 'current-uuid' }),
+          updateMany: vi.fn().mockReturnValue({ count: 1 }),
+        },
+        workflowTransition: { create: vi.fn().mockResolvedValue({}) },
+        executionLease: { findFirst: vi.fn().mockResolvedValue({ id: 'l1' }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        executionLeaseEvent: { create: vi.fn() },
+        requirementRevision: { create: vi.fn().mockResolvedValue({}) },
+        user: { findUnique: vi.fn().mockResolvedValue({ name: 'CurrentUser' }) },
+      };
+      capturedTx = tx;
+      return cb(tx);
+    });
+    const { executeReportReviewFinal } = await import('../routes/requirements/report-review-service.js');
+    const result = await executeReportReviewFinal({
+      reportId: 'r1', requirementId: 'req-1',
+      status: 'rejected', reviewedAt: new Date(),
+      reviewerId: 'cto-1', reviewerName: 'CTO', reviewerRole: 'admin',
+      createRevision: true,
+    });
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
+    expect(result.status).toBe('rejected');
+    expect(capturedTx.requirementRevision.create).toHaveBeenCalled();
+    const revData = capturedTx.requirementRevision.create.mock.calls[0][0].data;
+    expect(revData.assignee).toBe('OldDev');
+  });
+
+  it('report CAS count=0 returns 409, no requirement/transition/lease/revision touch', async () => {
+    mockPrisma.requirementReport.findUnique = vi.fn().mockResolvedValue({
+      id: 'r1', status: 'pending', reportType: 'TEST_REPORT', requirementId: 'req-1',
+    });
+    mockPrisma.requirement.findUnique = vi.fn().mockResolvedValue({
+      id: 'req-1', title: 'Test', currentStep: 'qa_review', stateVersion: 3,
+      workflowId: 'w1', workflowSnapshot: [], assigneeId: 'u1', assignee: 'Dev',
+      workflow: { steps: [] },
+    });
+    let transitionCreated = false;
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        requirementReport: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        requirement: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'req-1', currentStep: 'qa_review', stateVersion: 3, assigneeId: 'u1' }),
+          updateMany: vi.fn(),
+        },
+        workflowTransition: { create: vi.fn().mockImplementation(() => { transitionCreated = true; return {}; }) },
+        executionLease: { findFirst: vi.fn(), updateMany: vi.fn() },
+        executionLeaseEvent: { create: vi.fn() },
+        requirementRevision: { create: vi.fn() },
+        user: { findUnique: vi.fn() },
+      };
+      try { await cb(tx); } catch { /* expected 409 */ }
+      expect(transitionCreated).toBe(false);
+      expect(tx.workflowTransition.create).not.toHaveBeenCalled();
+      expect(tx.requirementRevision.create).not.toHaveBeenCalled();
+      throw new HttpError(409, 'concurrent report modification');
+    });
+    const { executeReportReviewQa } = await import('../routes/requirements/report-review-service.js');
+    try {
+      await executeReportReviewQa({
+        reportId: 'r1', requirementId: 'req-1',
+        status: 'rejected', reviewedAt: new Date(),
+        qaReviewedAt: new Date(), qaReviewedBy: 'QA',
+        reviewerId: 'qa-1', reviewerName: 'QA', reviewerRole: 'qa',
+      });
+      expect.unreachable();
+    } catch (e) {
+      expect((e as HttpError).statusCode).toBe(409);
+    }
+  });
+
+  it('reports.ts QA handler does not directly update report (all through service)', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync(
+      new URL('../routes/reports.ts', import.meta.url),
+      'utf-8',
+    );
+    // QA review section should use executeReportReviewQa
+    const qaSection = content.slice(content.indexOf('qa-review'), content.indexOf('CTO 最终审批'));
+    expect(qaSection).toContain('executeReportReviewQa');
+    expect(qaSection).not.toContain('requirementReport.update({'); // no direct update
+    expect(qaSection).not.toContain('executeReportReviewAtomic'); // old name gone
+  });
+
+  it('reports.ts final handler does not directly update report (all through service)', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync(
+      new URL('../routes/reports.ts', import.meta.url),
+      'utf-8',
+    );
+    // The final handler is the one that contains executeReportReviewFinal
+    const finalSection = content.slice(content.indexOf('executeReportReviewFinal') - 200, content.indexOf('executeReportReviewFinal') + 500);
+    expect(finalSection).toContain('executeReportReviewFinal');
+    // Should not have a direct .update({ call within the final handler
+    expect(finalSection).not.toMatch(/\.update\(\s*\{/);
+  });
+});
+
+describe('P0-B2b: task routes no longer touch requirement', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+  it('task POST does NOT call requirement.update or updateMany', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync(
+      new URL('../routes/tasks.ts', import.meta.url),
+      'utf-8',
+    );
+    const postSection = content.slice(content.indexOf('tasksRouter.post'), content.indexOf('tasksRouter.get'));
+    expect(postSection).not.toContain('requirement.update');
+    expect(postSection).not.toContain('$transaction');
+  });
+
+  it('task PATCH does NOT call requirement.update or updateMany for status changes', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync(
+      new URL('../routes/tasks.ts', import.meta.url),
+      'utf-8',
+    );
+    const patchSection = content.slice(content.indexOf('tasksRouter.patch'), content.indexOf('tasksRouter.delete') > 0 ? content.indexOf('tasksRouter.delete') : content.length);
+    expect(patchSection).not.toContain('requirement.update');
+    expect(patchSection).not.toContain('$transaction');
+    expect(patchSection).toContain('task.update');
+    expect(patchSection).toContain('prismaTaskStatus');
+  });
+});
+
+describe('P0-B2b: static inventory - active routes currentStep writes', () => {
+  it('reports.ts no longer has direct prisma.requirement.update currentStep writes', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync(
+      new URL('../routes/reports.ts', import.meta.url),
+      'utf-8',
+    );
+    expect(content).toContain('executeReportReviewQa');
+    expect(content).toContain('executeReportReviewFinal');
+    expect(content).not.toContain('executeReportReviewAtomic');
+    expect(content).not.toMatch(/data:\s*\{\s*currentStep:/);
+  });
+
+  it('tasks.ts no longer has direct prisma.requirement.update currentStep writes', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync(
+      new URL('../routes/tasks.ts', import.meta.url),
+      'utf-8',
+    );
+    expect(content).not.toContain('requirement.update');
+    // currentStep should only appear in read contexts (select/GET response), not in write data
+    expect(content).not.toMatch(/data:\s*\{[^}]*currentStep/);
   });
 });
 

@@ -8,8 +8,6 @@ import { HttpError } from '../utils/http-error.js';
 import { prismaTaskStatus, serializeTask } from '../utils/status.js';
 import { notifyEvent } from '../utils/notifications.js';
 import { archiveRecord } from '../lib/archive.js';
-import { resolveAssigneeForStep, getAssigneeName } from '../lib/assignee-resolver.js';
-import { getWorkflowSteps } from './requirements/workflow-helpers.js';
 
 export const tasksRouter = Router();
 
@@ -55,25 +53,13 @@ tasksRouter.post(
       select: { id: true }
     });
 
-    const task = await prisma.$transaction(async (tx) => {
-      await tx.requirement.update({
-        where: { id: body.requirementId },
-        data: {
-          assignee: body.agentType,
-          assigneeId: assigneeUser?.id ?? null,
-          currentStep: requirement.currentStep || undefined,
-          rejectReason: null
-        }
-      });
-
-      return tx.task.create({
-        data: {
-          requirementId: body.requirementId,
-          title: body.title,
-          description: body.description,
-          agentType: body.agentType
-        }
-      });
+    const task = await prisma.task.create({
+      data: {
+        requirementId: body.requirementId,
+        title: body.title,
+        description: body.description,
+        agentType: body.agentType
+      }
     });
 
     void notifyEvent('task.created', {
@@ -155,68 +141,11 @@ tasksRouter.patch(
       throw new HttpError(403, '无权更新该任务');
     }
 
-    const task = await prisma.$transaction(async (tx) => {
-      const updatedTask = await tx.task.update({
-        where: { id: params.id },
-        data: {
-          status: prismaTaskStatus[body.status]
-        }
-      });
-
-      if (body.status === 'in-progress') {
-        // 查工作流获取步骤 role 并解析 assignee（snapshot-first）
-        let resolvedAssigneeId: string | null = null;
-        let resolvedAssigneeName: string | null = null;
-        if (existing.requirement.workflowId) {
-          const steps = getWorkflowSteps(existing.requirement);
-          const step = steps.find(s => s.name === 'in_progress');
-          if (step?.role) {
-            resolvedAssigneeId = await resolveAssigneeForStep(step.role, existing.requirement.assigneeId);
-            if (resolvedAssigneeId) resolvedAssigneeName = await getAssigneeName(resolvedAssigneeId);
-          }
-        }
-        await tx.requirement.update({
-          where: { id: existing.requirementId },
-          data: {
-            currentStep: 'in_progress',
-            ...(resolvedAssigneeId ? { assigneeId: resolvedAssigneeId, assignee: resolvedAssigneeName } : {}),
-          }
-        });
+    const task = await prisma.task.update({
+      where: { id: params.id },
+      data: {
+        status: prismaTaskStatus[body.status]
       }
-
-      if (body.status === 'done') {
-        const unfinishedCount = await tx.task.count({
-          where: {
-            requirementId: existing.requirementId,
-            id: { not: params.id },
-            status: { not: 'done' }
-          }
-        });
-
-        const targetStepName = unfinishedCount === 0 ? 'cto_review' : 'in_progress';
-
-        // 解析目标步骤的 assignee（防止漂移，snapshot-first）
-        let resolvedAssigneeId: string | null = null;
-        let resolvedAssigneeName: string | null = null;
-        if (existing.requirement.workflowId && unfinishedCount === 0) {
-          const steps = getWorkflowSteps(existing.requirement);
-          const step = steps.find(s => s.name === targetStepName);
-          if (step?.role) {
-            resolvedAssigneeId = await resolveAssigneeForStep(step.role, existing.requirement.assigneeId);
-            if (resolvedAssigneeId) resolvedAssigneeName = await getAssigneeName(resolvedAssigneeId);
-          }
-        }
-
-        await tx.requirement.update({
-          where: { id: existing.requirementId },
-          data: {
-            currentStep: targetStepName,
-            ...(resolvedAssigneeId ? { assigneeId: resolvedAssigneeId, assignee: resolvedAssigneeName } : {}),
-          }
-        });
-      }
-
-      return updatedTask;
     });
 
     void notifyEvent('task.status_changed', {

@@ -11,6 +11,7 @@ import { ReportType } from '@prisma/client';
 import { requireInternalRole } from '../middleware/internal-workflow.js';
 import { getPlatformRoles, hasPlatformRole, isPlatformAdmin } from '../lib/platform-roles.js';
 import { getWorkflowRawJson, parseSteps } from './requirements/workflow-helpers.js';
+import { executeReportReviewQa, executeReportReviewFinal } from './requirements/report-review-service.js';
 import {
   submitReportSchema,
   listReportsSchema,
@@ -357,88 +358,25 @@ reportsRouter.patch(
 
     const reviewedAt = new Date();
 
-    const updated = await prisma.requirementReport.update({
-      where: { id: params.reportId },
-      data: {
-        qaReviewedAt: reviewedAt,
-        qaReviewedBy: req.user!.name,
-        reviewComment: body.reviewComment,
-        // QA 审查直接改变报告状态（2026-06-05 改进：QA 是 qa_review 步骤的 assignee，应直接审批）
-        status: body.status,
-        reviewedAt,
-      },
+    const updated = await executeReportReviewQa({
+      reportId: params.reportId,
+      requirementId: report.requirementId,
+      status: body.status,
+      reviewComment: body.reviewComment,
+      reviewedAt,
+      qaReviewedAt: reviewedAt,
+      qaReviewedBy: req.user!.name,
+      reviewerId: req.user!.id,
+      reviewerName: req.user!.name,
+      reviewerRole: 'qa',
     });
 
     const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
-    void notifyEvent(reportEvent as any, {
+    void notifyEvent(reportEvent, {
       id: report.requirementId,
       title: report.reportType,
       actor: req.user!.name,
     });
-
-    // 如果是 rejected/changes_requested，触发报告打回逻辑
-    if (body.status === 'rejected' || body.status === 'changes_requested') {
-      const reqInfo = await prisma.requirement.findUnique({
-        where: { id: report.requirementId },
-        select: { title: true, currentStep: true, workflowId: true, workflowSnapshot: true, assigneeId: true, assignee: true, workflow: { select: { steps: true } } },
-      });
-
-      if (reqInfo?.workflowId && reqInfo.currentStep) {
-        void notifyEvent('report.rejected' as any, {
-          id: report.requirementId,
-          title: reqInfo.title,
-          reportType: report.reportType,
-          actor: req.user!.name,
-        });
-
-        // QA 驳回时自动退回工作流（不需要 QA 额外调 workflow/reject）
-        let targetStep: string;
-        switch (report.reportType) {
-          case 'DEV_SELF_CHECK':
-            targetStep = 'dev_self_check';
-            break;
-          case 'TEST_REPORT':
-            targetStep = 'testing';
-            break;
-          case 'SECURITY_REVIEW':
-            targetStep = 'dev_self_check';
-            break;
-          default:
-            targetStep = reqInfo.currentStep;
-        }
-
-        // Get workflow steps (snapshot-first, legacy fallback)
-        const rawJson = getWorkflowRawJson(reqInfo);
-        if (rawJson) {
-          const steps = parseSteps(rawJson);
-          const currentIdx = steps.findIndex(s => s.name === reqInfo.currentStep!);
-          const targetIdx = steps.findIndex(s => s.name === targetStep);
-          const actualTarget = targetIdx >= 0 && targetIdx < currentIdx
-            ? targetStep
-            : currentIdx > 0 ? steps[currentIdx - 1].name : targetStep;
-
-          if (actualTarget !== reqInfo.currentStep) {
-            await prisma.requirement.update({
-              where: { id: report.requirementId },
-              data: { currentStep: actualTarget },
-            });
-
-            await prisma.workflowTransition.create({
-              data: {
-                requirement: { connect: { id: report.requirementId } },
-                fromStep: reqInfo.currentStep,
-                toStep: actualTarget,
-                action: 'reject',
-                actorId: req.user!.id,
-                actorName: req.user!.name,
-                actorRole: 'qa',
-                comment: body.reviewComment || `QA 驳回 ${report.reportType} 报告，自动退回`,
-              },
-            });
-          }
-        }
-      }
-    }
 
     res.json({ success: true, data: updated, message: `QA 审查完成，报告已${body.status === 'approved' ? '通过' : '驳回'}` });
   }),
@@ -522,129 +460,29 @@ reportsRouter.patch(
 
     if (report.status !== 'pending') throw new HttpError(400, '该报告已审核');
 
-    const updated = await prisma.requirementReport.update({
-      where: { id: params.reportId },
-      data: {
-        status: body.status,
-        reviewComment: body.reviewComment,
-        reviewedAt,
-        ...(shouldBypassQa ? {
-          qaBypass: true,
-          qaBypassReason: body.qa_bypass_reason,
-          qaBypassAt: reviewedAt,
-          qaBypassBy: req.user!.name,
-        } : {}),
-      },
+    const updated = await executeReportReviewFinal({
+      reportId: params.reportId,
+      requirementId: params.id,
+      status: body.status,
+      reviewComment: body.reviewComment,
+      reviewedAt,
+      reviewerId: req.user!.id,
+      reviewerName: req.user!.name,
+      reviewerRole: req.user!.internalRole ?? req.user!.role,
+      createRevision: body.status === 'rejected',
+      qaBypass: shouldBypassQa || undefined,
+      qaBypassReason: body.qa_bypass_reason,
+      qaBypassAt: shouldBypassQa ? reviewedAt : undefined,
+      qaBypassBy: shouldBypassQa ? req.user!.name : undefined,
     });
 
-    // 通知相关方
-    const reqInfo = await prisma.requirement.findUnique({
-      where: { id: params.id },
-      select: { title: true, requesterId: true, assigneeId: true, assignee: true, currentStep: true, workflowId: true, workflowSnapshot: true, workflow: { select: { steps: true } } },
-    });
     const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
-    void notifyEvent(reportEvent as any, {
+    void notifyEvent(reportEvent, {
       id: params.id,
-      title: reqInfo?.title ?? '',
+      title: report.reportType,
       reportType: report.reportType,
       actor: req.user!.name,
     });
-
-    // ─── 报告打回自动回退需求状态 + assignee ───
-    // 所有需求（有/无工作流）都会自动回退到上一步，给提交者修改机会
-    if (body.status === 'rejected' && reqInfo) {
-      const reportType = report.reportType as string;
-      let targetStep: string | null = null;
-
-      switch (reportType) {
-          case 'DEV_SELF_CHECK':
-          case 'TEST_REPORT':
-          case 'SECURITY_REVIEW':
-            targetStep = 'dev_self_check';
-            break;
-          case 'CTO_REVIEW':
-            targetStep = 'testing';
-            break;
-          case 'DEPLOY_CONFIRM':
-            targetStep = 'cto_review';
-            break;
-          default:
-            break;
-        }
-
-        if (targetStep) {
-          // 用 resolveAssigneeForStep 确保回退步骤的 assignee 角色正确（防止漂移）
-          let rollbackAssigneeId: string | null = null;
-          let rollbackAssigneeName: string | null = null;
-
-          if (reqInfo.workflowId) {
-            const rawJson = getWorkflowRawJson(reqInfo);
-            if (rawJson) {
-              const steps = parseSteps(rawJson);
-              const targetStepDef = steps.find(s => s.name === targetStep);
-              if (targetStepDef?.role) {
-                rollbackAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
-                if (rollbackAssigneeId) {
-                  rollbackAssigneeName = await getAssigneeName(rollbackAssigneeId);
-                }
-              }
-            }
-          }
-
-          // fallback: 如果 resolveAssigneeForStep 没找到（无工作流），用历史 assignee
-          if (!rollbackAssigneeId) {
-            const lastRevision = await prisma.requirementRevision.findFirst({
-              where: {
-                requirementId: params.id,
-                assignee: { not: null },
-                status: { in: ['in_progress', 'testing'] },
-              },
-              orderBy: { createdAt: 'desc' },
-              select: { assignee: true },
-            });
-            rollbackAssigneeName = lastRevision?.assignee ?? reqInfo.assignee;
-            if (rollbackAssigneeName) {
-              const assigneeUser = await prisma.user.findFirst({
-                where: { OR: [{ name: rollbackAssigneeName }, { email: rollbackAssigneeName }] },
-                select: { id: true },
-              });
-              rollbackAssigneeId = assigneeUser?.id ?? reqInfo.assigneeId;
-            }
-          }
-
-          await prisma.requirement.update({
-            where: { id: params.id },
-            data: {
-              currentStep: targetStep,
-              assignee: rollbackAssigneeName,
-              assigneeId: rollbackAssigneeId,
-            },
-          });
-
-          await prisma.requirementRevision.create({
-            data: {
-              requirementId: params.id,
-              title: reqInfo.title ?? '',
-              description: '',
-              priority: 'P2',
-              status: 'in_progress',
-              requester: '',
-              department: '',
-              assignee: rollbackAssigneeName,
-              revisionNote: `${reportType} 报告被打回，步骤回退至 ${targetStep}，assignee 回退为 ${rollbackAssigneeName ?? '原开发者'}`,
-              operatorId: req.user!.id,
-            },
-          });
-
-          void notifyEvent('requirement.step_changed' as any, {
-            id: params.id,
-            title: reqInfo.title ?? '',
-            currentStep: targetStep,
-            actor: req.user!.name,
-            assignee: rollbackAssigneeName,
-          });
-      }
-    }
 
     res.json({ success: true, data: updated });
   }),
