@@ -13,6 +13,7 @@ import { listRevisionsSchema } from '../../schemas/revision.js';
 import { serializeRequirement } from '../../utils/status.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { canReadRequirement } from './utils.js';
+import { rejectPendingReports } from '../../lib/report-cleanup.js';
 
 export function registerCoreLifecycleRoutes(router: import('express').Router): void {
 
@@ -58,9 +59,21 @@ router.post(
     if (existing.requesterId !== req.user.id && req.user.role !== 'admin') {
       throw new HttpError(403, '只有需求提交者或管理员可以放弃需求');
     }
-    const updated = await prisma.requirement.update({
-      where: { id: params.id },
-      data: { currentStep: 'abandoned' },
+    // df1e4527: abandon 时同一事务清理 pending 报告
+    const actorName = req.user.name;
+    const updated = await prisma.$transaction(async (tx) => {
+      const requirement = await tx.requirement.update({
+        where: { id: params.id },
+        data: { currentStep: 'abandoned' },
+      });
+
+      await rejectPendingReports(
+        tx,
+        params.id,
+        `需求已放弃（abandoned by ${actorName}）`,
+      );
+
+      return requirement;
     });
     void notifyEvent('requirement.updated', { id: updated.id, title: updated.title, actor: req.user.name });
     res.json(serializeRequirement(updated));

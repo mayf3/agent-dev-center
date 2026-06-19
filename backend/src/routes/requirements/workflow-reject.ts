@@ -2,6 +2,9 @@
  * Workflow Reject Route
  *
  * POST /:id/workflow/reject — 回退到上一步
+ *
+ * 2026-06-16: 从测试环境保护范围（test_env_deploy → deploying）reject 时释放锁。
+ * 2026-06-18: df1e4527 AC2 — reject 时同一事务清理 pending 报告。
  */
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
@@ -17,6 +20,7 @@ import {
   logTransition,
   WorkflowStep,
 } from './workflow-helpers.js';
+import { rejectPendingReports } from '../../lib/report-cleanup.js';
 
 export function registerWorkflowRejectRoutes(router: import('express').Router): void {
 
@@ -89,17 +93,30 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
         : requirement.assigneeId;
 
-      // 回退到 draft 时 assignee 设为需求提出者（requester 需要修改后重新提交）
+      // 回退到 draft 时 assignee 设为需求提出者
       if (targetStepName === 'draft' && requirement.requesterId) {
         newAssigneeId = requirement.requesterId;
       }
 
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: {
-          currentStep: targetStepName,
-          assigneeId: newAssigneeId,
-        },
+      // df1e4527 AC2: reject 时同一事务清理 pending 报告
+      const actorName = req.user!.name;
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const requirement = await tx.requirement.update({
+          where: { id: params.id },
+          data: {
+            currentStep: targetStepName,
+            assigneeId: newAssigneeId,
+          },
+        });
+
+        await rejectPendingReports(
+          tx,
+          params.id,
+          `需求被驳回（rejected by ${actorName} → ${targetStepName}）`,
+        );
+
+        return requirement;
       });
 
       const newAssigneeName = await getAssigneeName(newAssigneeId);
@@ -128,4 +145,6 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       });
     }),
   );
+
+  // 导出供其他模块使用
 }

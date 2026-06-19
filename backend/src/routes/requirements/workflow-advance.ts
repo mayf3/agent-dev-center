@@ -20,6 +20,7 @@ import {
   logTransition,
   extractRoleUserMap,
 } from './workflow-helpers.js';
+import { rejectPendingReports } from '../../lib/report-cleanup.js';
 
 export function registerWorkflowAdvanceRoutes(router: import('express').Router): void {
 
@@ -203,13 +204,29 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         throw new HttpError(400, `assignee 解析失败: ${msg}`);
       }
 
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: {
-          currentStep: targetStep.name,
-          assigneeId: newAssigneeId,
-          rejectReason: null,  // 审批通过时清空驳回原因（防止残留导致误判）
-        },
+      // df1e4527: advance 到 done 时，同一事务清理 pending 报告
+      const isAdvancingToDone = targetStep.name === steps[steps.length - 1]?.name;
+      const actorName = req.user!.name;
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const requirement = await tx.requirement.update({
+          where: { id: params.id },
+          data: {
+            currentStep: targetStep.name,
+            assigneeId: newAssigneeId,
+            rejectReason: null,  // 审批通过时清空驳回原因（防止残留导致误判）
+          },
+        });
+
+        if (isAdvancingToDone) {
+          await rejectPendingReports(
+            tx,
+            params.id,
+            `需求已完成（advance to done by ${actorName}）`,
+          );
+        }
+
+        return requirement;
       });
 
       const newAssigneeName = await getAssigneeName(newAssigneeId);
@@ -223,7 +240,10 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         actorName: req.user!.name,
         actorRole: req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
-        metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+        metadata: {
+          skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null,
+          pendingReportsCleaned: isAdvancingToDone,
+        },
       });
 
       res.json({
@@ -235,7 +255,7 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
           toStepDisplayName: targetStep.displayName,
           newAssigneeId,
           newAssigneeName,
-          isDone: targetStep.name === steps[steps.length - 1]?.name,
+          isDone: isAdvancingToDone,
         },
       });
 
