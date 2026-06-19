@@ -25,6 +25,9 @@ import {
   getPreviousStep,
   mapUserRole,
   checkReportsApproved,
+  getWorkflowSteps,
+  getWorkflowRawJson,
+  extractRoleUserMap,
 } from '../routes/requirements/workflow-helpers.js';
 
 import { prisma } from '../lib/prisma.js';
@@ -241,6 +244,197 @@ describe('checkReportsApproved', () => {
     mockFindMany.mockResolvedValueOnce([]);
 
     const result = await checkReportsApproved('req-1', ['DEV_SELF_CHECK', 'TEST_REPORT', 'CTO_REVIEW']);
-    expect(result).toEqual({ ok: false, missing: ['DEV_SELF_CHECK', 'TEST_REPORT', 'CTO_REVIEW'] });
+    expect(result).toEqual({ ok: false, missing: ['DEV_SELF_CHECK', 'CTO_REVIEW', 'TEST_REPORT'] });
+  });
+});
+
+// ── Workflow Snapshot tests ──────────────────────────────
+
+describe('getWorkflowRawJson', () => {
+  const originalSteps = [
+    { name: 'draft', displayName: '草稿', role: 'requester', requiredReports: [] as string[], autoAdvance: false },
+    { name: 'dev_self_check', displayName: '开发自检', role: 'developer', requiredReports: ['DEV_SELF_CHECK'], autoAdvance: false },
+    { name: 'done', displayName: '完成', role: 'cto', requiredReports: [] as string[], autoAdvance: false },
+  ];
+
+  it('returns null for null input', () => {
+    expect(getWorkflowRawJson(null)).toBeNull();
+  });
+
+  it('returns null for undefined input', () => {
+    expect(getWorkflowRawJson(undefined)).toBeNull();
+  });
+
+  it('returns null for empty object', () => {
+    expect(getWorkflowRawJson({})).toBeNull();
+  });
+
+  it('returns workflowSnapshot when present', () => {
+    const result = getWorkflowRawJson({
+      workflowSnapshot: originalSteps,
+      workflow: { steps: [] },
+    });
+    expect(result).toBe(originalSteps);
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it('returns null workflowSnapshot when explicitly null (legacy), falls through', () => {
+    const result = getWorkflowRawJson({
+      workflowSnapshot: null,
+      workflow: { steps: [{ name: 'legacy', displayName: '旧版', role: 'dev', requiredReports: [], autoAdvance: false }] },
+    });
+    expect(Array.isArray(result)).toBe(true);
+    expect((result as any[])[0].name).toBe('legacy');
+  });
+
+  it('falls back to workflow.steps when workflowSnapshot is absent', () => {
+    const result = getWorkflowRawJson({
+      workflow: { steps: originalSteps },
+    });
+    expect(result).toBe(originalSteps);
+  });
+
+  it('uses workflowSnapshot over workflow.steps (priority test)', () => {
+    const snapshot = [{ name: 'snapshot_step', displayName: '快照版', role: 'dev', requiredReports: [] as string[], autoAdvance: false }];
+    const template = [{ name: 'template_step', displayName: '新版', role: 'cto', requiredReports: [] as string[], autoAdvance: false }];
+    const result = getWorkflowRawJson({
+      workflowSnapshot: snapshot,
+      workflow: { steps: template },
+    });
+    expect(result).toBe(snapshot);
+    expect((result as any[])[0].name).toBe('snapshot_step');
+  });
+});
+
+describe('getWorkflowSteps', () => {
+  const originalSteps = [
+    { name: 'draft', displayName: '草稿', role: 'requester', requiredReports: [] as string[], autoAdvance: false },
+    { name: 'dev_self_check', displayName: '开发自检', role: 'developer', requiredReports: ['DEV_SELF_CHECK'], autoAdvance: false },
+    { name: 'done', displayName: '完成', role: 'cto', requiredReports: [] as string[], autoAdvance: false },
+  ];
+
+  it('returns empty array for null input', () => {
+    expect(getWorkflowSteps(null)).toEqual([]);
+  });
+
+  it('returns empty array for input with no workflow', () => {
+    expect(getWorkflowSteps({})).toEqual([]);
+  });
+
+  it('returns parsed steps from workflowSnapshot when present', () => {
+    const steps = getWorkflowSteps({
+      workflowSnapshot: originalSteps,
+      workflow: { steps: [] },
+    });
+    expect(steps).toHaveLength(3);
+    expect(steps[0].name).toBe('draft');
+  });
+
+  it('snapshot takes priority over changed template', () => {
+    const snapshot = [
+      { name: 'old_step', displayName: '旧版步骤', role: 'backend_developer', requiredReports: [] as string[], autoAdvance: false },
+    ];
+    const newTemplate = [
+      { name: 'new_step', displayName: '新版步骤', role: 'cto', requiredReports: [] as string[], autoAdvance: false },
+    ];
+    const steps = getWorkflowSteps({
+      workflowSnapshot: snapshot,
+      workflow: { steps: newTemplate },
+    });
+    expect(steps).toHaveLength(1);
+    expect(steps[0].name).toBe('old_step');
+    expect(steps[0].displayName).toBe('旧版步骤');
+  });
+
+  it('legacy fallback: returns steps from workflow.steps when snapshot is absent', () => {
+    const steps = getWorkflowSteps({
+      workflow: { steps: originalSteps },
+    });
+    expect(steps).toHaveLength(3);
+    expect(steps[0].name).toBe('draft');
+  });
+
+  it('legacy fallback: null workflowSnapshot falls back to workflow.steps', () => {
+    const steps = getWorkflowSteps({
+      workflowSnapshot: null,
+      workflow: { steps: originalSteps },
+    });
+    expect(steps).toHaveLength(3);
+    expect(steps[0].name).toBe('draft');
+  });
+
+  it('parses snapshot in array format (preserves roleUserMap via extractRoleUserMap)', () => {
+    const snapshotArray = [
+      { name: 'step1', displayName: '步骤1', role: 'developer', requiredReports: [] as string[], autoAdvance: false },
+    ];
+    const steps = getWorkflowSteps({
+      workflowSnapshot: snapshotArray,
+      workflow: { steps: [] },
+    });
+    expect(steps).toHaveLength(1);
+    expect(steps[0].role).toBe('developer');
+    // Array format has no roleUserMap at top level
+    expect(extractRoleUserMap(snapshotArray)).toBeUndefined();
+  });
+
+  it('parses snapshots in object {steps, roleUserMap} format and preserves roleUserMap', () => {
+    const snapshotObject = {
+      steps: [
+        { name: 'step1', displayName: '步骤1', role: 'backend_developer', requiredReports: [] as string[], autoAdvance: false },
+      ],
+      roleUserMap: { backend_developer: 'user-uuid-123' },
+    };
+    const steps = getWorkflowSteps({
+      workflowSnapshot: snapshotObject,
+    });
+    expect(steps).toHaveLength(1);
+    expect(steps[0].role).toBe('backend_developer');
+
+    // extractRoleUserMap preserves the map from object format
+    const map = extractRoleUserMap(snapshotObject);
+    expect(map).toEqual({ backend_developer: 'user-uuid-123' });
+  });
+
+  it('object format without steps field returns empty array', () => {
+    const steps = getWorkflowSteps({
+      workflowSnapshot: { roleUserMap: {} },
+    });
+    expect(steps).toEqual([]);
+  });
+});
+
+describe('extractRoleUserMap (snapshot compat)', () => {
+  it('returns undefined for array format', () => {
+    const arr = [{ name: 's', displayName: 'S', role: 'dev', requiredReports: [] as string[], autoAdvance: false }];
+    expect(extractRoleUserMap(arr)).toBeUndefined();
+  });
+
+  it('returns roleUserMap from object format', () => {
+    const obj = { steps: [], roleUserMap: { dev: 'user-1' } };
+    expect(extractRoleUserMap(obj)).toEqual({ dev: 'user-1' });
+  });
+
+  it('returns undefined for null', () => {
+    expect(extractRoleUserMap(null)).toBeUndefined();
+  });
+
+  it('returns undefined for primitive values', () => {
+    expect(extractRoleUserMap('string')).toBeUndefined();
+    expect(extractRoleUserMap(42)).toBeUndefined();
+  });
+});
+
+// ── Route registration dedup ─────────────────────────────
+
+describe('route registration — /mine dedup', () => {
+  it('registers exactly one /mine handler across kanban + mine', async () => {
+    const { default: express } = await import('express');
+    const router = express.Router();
+    const { registerCoreKanbanRoutes } = await import('../routes/requirements/core-kanban.js');
+    const { registerCoreMineRoutes } = await import('../routes/requirements/core-mine.js');
+    registerCoreKanbanRoutes(router);
+    registerCoreMineRoutes(router);
+    const layers = router.stack.filter((l: any) => l.route?.path === '/mine');
+    expect(layers).toHaveLength(1);
   });
 });

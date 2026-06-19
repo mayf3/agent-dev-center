@@ -13,7 +13,7 @@ import { requirementIdSchema } from '../../schemas/requirements.js';
 import { rejectStepSchema } from '../../schemas/workflow.js';
 import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
 import {
-  parseSteps,
+  getWorkflowSteps,
   getCurrentStep,
   getPreviousStep,
   mapUserRole,
@@ -44,7 +44,7 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
       if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
 
-      const steps = parseSteps(requirement.workflow.steps);
+      const steps = getWorkflowSteps(requirement);
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 

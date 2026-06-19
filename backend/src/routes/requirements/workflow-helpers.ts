@@ -84,6 +84,48 @@ export function extractRoleUserMap(stepsJson: unknown): Record<string, string> |
   return undefined;
 }
 
+/**
+ * Resolve the workflow steps JSON source for a requirement.
+ * Priority: workflowSnapshot (immutable) > workflow.steps (legacy fallback)
+ *
+ * Returns the raw JSONB value from either snapshot or template.
+ * Returns null if no workflow is associated.
+ */
+export function getWorkflowRawJson(
+  requirement: {
+    workflowSnapshot?: unknown;
+    workflow?: { steps: unknown } | null;
+  } | null | undefined,
+): unknown {
+  if (!requirement) return null;
+  // Snapshot first — immutable copy taken at assign time
+  if (requirement.workflowSnapshot !== null && requirement.workflowSnapshot !== undefined) {
+    return requirement.workflowSnapshot;
+  }
+  // Legacy fallback — live template steps
+  if (requirement.workflow?.steps !== undefined && requirement.workflow?.steps !== null) {
+    return requirement.workflow.steps;
+  }
+  return null;
+}
+
+/**
+ * Get parsed workflow steps for a requirement.
+ * Uses workflowSnapshot first, falls back to workflow.steps for legacy data.
+ *
+ * Returns an empty array if no workflow is associated.
+ */
+export function getWorkflowSteps(
+  requirement: {
+    workflowSnapshot?: unknown;
+    workflow?: { steps: unknown } | null;
+  } | null | undefined,
+): WorkflowStep[] {
+  const rawJson = getWorkflowRawJson(requirement);
+  if (!rawJson) return [];
+  return parseSteps(rawJson);
+}
+
 /** Get current step definition from workflow */
 export function getCurrentStep(steps: WorkflowStep[], stepName: string): WorkflowStep | undefined {
   return steps.find(s => s.name === stepName);
