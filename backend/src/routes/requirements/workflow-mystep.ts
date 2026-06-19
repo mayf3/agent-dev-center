@@ -9,7 +9,7 @@ import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { canReadRequirement } from './utils.js';
 import {
-  parseSteps,
+  getWorkflowSteps,
   getCurrentStep,
   getNextStep,
   mapUserRole,
@@ -44,7 +44,7 @@ export function registerWorkflowMyStepRoutes(router: import('express').Router): 
         });
       }
 
-      const steps = parseSteps(requirement.workflow.steps);
+      const steps = getWorkflowSteps(requirement);
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) {
         return res.json({

@@ -9,17 +9,9 @@
  * 安全：只更新 assigneeId，不修改其他字段。可重复运行（幂等）。
  */
 import { PrismaClient } from '@prisma/client';
+import { getWorkflowRawJson, getWorkflowSteps, extractRoleUserMap } from '../routes/requirements/workflow-helpers.js';
 
 const prisma = new PrismaClient();
-
-/** 从模板 JSON 中提取 roleUserMap（兼容新旧格式） */
-function extractRoleUserMap(stepsJson: unknown): Record<string, string> | undefined {
-  if (!stepsJson || typeof stepsJson !== 'object') return undefined;
-  if (!Array.isArray(stepsJson) && 'roleUserMap' in stepsJson) {
-    return (stepsJson as Record<string, unknown>).roleUserMap as Record<string, string> | undefined;
-  }
-  return undefined;
-}
 
 async function main() {
   console.log('=== 批量修复 assignee 漂移 ===');
@@ -40,6 +32,8 @@ async function main() {
       assigneeId: true,
       requesterId: true,
       workflowId: true,
+      workflowSnapshot: true,
+      workflow: { select: { steps: true } },
     },
     orderBy: { createdAt: 'asc' },
   });
@@ -52,27 +46,22 @@ async function main() {
 
   for (const req of requirements) {
     try {
-      const template = await prisma.workflowTemplate.findUnique({
-        where: { id: req.workflowId! },
-        select: { name: true, displayName: true, steps: true },
-      });
-      if (!template) {
-        console.log(`  ⏭ [${req.id.slice(0, 8)}] 模板不存在，跳过`);
+      const rawSteps = getWorkflowRawJson(req);
+      if (!rawSteps) {
+        console.log(`  ⏭ [${req.id.slice(0, 8)}] 工作流数据不存在，跳过`);
         skipped++;
         continue;
       }
 
-      const steps = (template.steps as unknown);
-      // 兼容新格式：{ steps: [...], roleUserMap: {...} }
-      const stepsArray: any[] = Array.isArray(steps) ? steps : ((steps as any).steps ?? []);
-      const stepDef = stepsArray.find((s: any) => s.name === req.currentStep);
+      const stepsArray = getWorkflowSteps(req);
+      const stepDef = stepsArray.find(s => s.name === req.currentStep);
       if (!stepDef) {
-        console.log(`  ⏭ [${req.id.slice(0, 8)}] 步骤「${req.currentStep}」在模板中不存在，跳过`);
+        console.log(`  ⏭ [${req.id.slice(0, 8)}] 步骤「${req.currentStep}」在工作流中不存在，跳过`);
         skipped++;
         continue;
       }
 
-      const roleUserMap = !Array.isArray(steps) ? extractRoleUserMap(template.steps) : undefined;
+      const roleUserMap = extractRoleUserMap(rawSteps);
 
       // 计算正确的 assignee
       let correctAssigneeId: string | null = null;

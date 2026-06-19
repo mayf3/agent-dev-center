@@ -46,8 +46,13 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
       } else {
         targetStep = steps[0];
       }
+
+      // Deep copy template steps as immutable snapshot, preserving roleUserMap
+      const workflowSnapshot = JSON.parse(JSON.stringify(template.steps));
+
       const updateData: any = {
         workflowId: template.id,
+        workflowSnapshot,
         currentStep: targetStep.name,
       };
 

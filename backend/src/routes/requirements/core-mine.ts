@@ -7,7 +7,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { serializeRequirement } from '../../utils/status.js';
-import { parseSteps, getCurrentStep, mapUserRole } from './workflow-helpers.js';
+import { getWorkflowSteps, getCurrentStep, mapUserRole } from './workflow-helpers.js';
 
 export function registerCoreMineRoutes(router: import('express').Router): void {
 
@@ -49,9 +49,9 @@ router.get(
       let nextAction: string | null = null;
       let requiredReports: string[] = [];
 
-      if (r.workflow && r.currentStep) {
+      if ((r.workflow || r.workflowSnapshot) && r.currentStep) {
         try {
-          const steps = parseSteps(r.workflow.steps as any);
+          const steps = getWorkflowSteps(r);
           const currentStepDef = getCurrentStep(steps, r.currentStep);
           if (currentStepDef) {
             requiredReports = currentStepDef.requiredReports;

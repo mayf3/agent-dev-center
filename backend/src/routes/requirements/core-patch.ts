@@ -14,6 +14,7 @@ import { serializeRequirement } from '../../utils/status.js';
 import { validateAssigneeRoleMatch, resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { canEditRequirement } from './utils.js';
+import { getWorkflowSteps, getCurrentStep } from './workflow-helpers.js';
 
 const requirementInclude = {
   tasks: true,
@@ -27,7 +28,10 @@ router.patch(
   '/:id',
   asyncHandler(async (req, res) => {
     const { params, body } = patchRequirementSchema.parse({ params: req.params, body: req.body });
-    const existing = await prisma.requirement.findUnique({ where: { id: params.id } });
+    const existing = await prisma.requirement.findUnique({
+      where: { id: params.id },
+      include: { workflow: { select: { steps: true } } },
+    });
     if (!existing) throw new HttpError(404, 'requirement not found');
     if (!canEditRequirement(req.user!, existing)) throw new HttpError(403, 'forbidden');
 
@@ -103,21 +107,21 @@ router.patch(
       }
     }
 
-    // auto-resolve assignee when step changed and assignee not manually specified
+    // Guard: PATCH must not directly set workflowId
+    if (body.workflowId !== undefined) {
+      throw new HttpError(400, 'Cannot directly modify workflowId via PATCH. Use workflow/assign endpoint.');
+    }
+
+    // auto-resolve assignee when step changed and assignee not manually specified (snapshot-first)
     if (stepChanged && !body.assignee) {
       if (existing.workflowId) {
-        const workflow = await prisma.workflowTemplate.findUnique({
-          where: { id: existing.workflowId },
-          select: { steps: true },
-        });
-        if (workflow) {
-          const targetStep = (workflow.steps as any[]).find((s: any) => s.name === newStep);
-          if (targetStep?.role) {
-            const resolvedId = await resolveAssigneeForStep(targetStep.role, existing.assigneeId);
-            if (resolvedId) {
-              assigneeId = resolvedId;
-              assigneeName = await getAssigneeName(resolvedId);
-            }
+        const existingSteps = getWorkflowSteps(existing);
+        const targetStepDef = getCurrentStep(existingSteps, newStep ?? '');
+        if (targetStepDef?.role) {
+          const resolvedId = await resolveAssigneeForStep(targetStepDef.role, existing.assigneeId);
+          if (resolvedId) {
+            assigneeId = resolvedId;
+            assigneeName = await getAssigneeName(resolvedId);
           }
         }
       }
@@ -133,7 +137,6 @@ router.patch(
     };
     if (body.title !== undefined) patchData.title = body.title;
     if (body.description !== undefined) patchData.description = body.description;
-    if (body.workflowId !== undefined) patchData.workflowId = body.workflowId;
 
     const updated = await prisma.requirement.update({
       where: { id: params.id },
