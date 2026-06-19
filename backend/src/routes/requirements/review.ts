@@ -3,10 +3,10 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { requireInternalRole } from '../../middleware/internal-workflow.js';
+import { executeAdminTransition } from '../../lib/workflow-transition/index.js';
 
 export function registerReviewRoutes(router: import('express').Router): void {
 
-// POST /:id/pm-approve - PM 审批 P0/P1 需求
 router.post(
   '/:id/pm-approve',
   requireInternalRole('pm'),
@@ -30,14 +30,28 @@ router.post(
     }
 
     if (!approved) {
-      const updated = await prisma.requirement.update({
-        where: { id },
-        data: { currentStep: 'rejected', rejectReason: comment || 'PM 审批未通过' }
+      const result = await executeAdminTransition({
+        requirementId: id,
+        fromStep: existing.currentStep,
+        toStep: 'rejected',
+        expectedStateVersion: existing.stateVersion,
+        action: 'pm-reject',
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorRole: req.user!.internalRole ?? req.user!.role,
+        assigneeId: existing.assigneeId,
+        rejectReason: comment || 'PM 审批未通过',
+        comment: comment,
       });
-      void notifyEvent('requirement.updated' as any, {
-        id: updated.id, title: updated.title, pm: req.user!.name, comment: (comment || '') as string,
-      } as any);
-      return res.json({ requirement: updated, message: 'PM 审批未通过' });
+
+      void notifyEvent('requirement.updated', {
+        id: result.requirementId,
+        title: existing.title,
+        actor: req.user!.name,
+        pm: req.user!.name,
+        comment: comment || '',
+      });
+      return res.json({ requirement: { ...existing, currentStep: 'rejected', stateVersion: result.newStateVersion }, message: 'PM 审批未通过' });
     }
 
     const updated = await prisma.requirement.update({
@@ -45,9 +59,13 @@ router.post(
       data: { pmApprovedAt: new Date(), pmApprovedBy: req.user!.name }
     });
 
-    void notifyEvent('requirement.updated' as any, {
-      id: updated.id, title: updated.title, pm: req.user!.name, comment: (comment || '') as string,
-    } as any);
+    void notifyEvent('requirement.updated', {
+      id: updated.id,
+      title: updated.title,
+      actor: req.user!.name,
+      pm: req.user!.name,
+      comment: comment || '',
+    });
 
     res.json({ requirement: updated, message: 'PM 审批通过' });
   })

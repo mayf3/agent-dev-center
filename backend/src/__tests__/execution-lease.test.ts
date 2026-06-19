@@ -366,7 +366,7 @@ describe('execution-lease-service', () => {
         return result;
       });
       const { renewExecutionLease } = await loadSvc();
-      const result = await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+      const result = await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
         idempotencyKey: 'renew-1', sessionId: 'session-1', ttlSeconds: 3600,
       });
       expect(result.replayed).toBe(false);
@@ -386,7 +386,7 @@ describe('execution-lease-service', () => {
       });
       const { renewExecutionLease } = await loadSvc();
       try {
-        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', { idempotencyKey: 'r1', sessionId: 's1', ttlSeconds: 3600 });
+        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, { idempotencyKey: 'r1', sessionId: 's1', ttlSeconds: 3600 });
         expect.unreachable();
       } catch (e) {
         expect((e as HttpError).statusCode).toBe(404);
@@ -407,7 +407,7 @@ describe('execution-lease-service', () => {
       });
       const { renewExecutionLease } = await loadSvc();
       try {
-        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', { idempotencyKey: 'r1', sessionId: 's1', ttlSeconds: 3600 });
+        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, { idempotencyKey: 'r1', sessionId: 's1', ttlSeconds: 3600 });
         expect.unreachable();
       } catch (e) {
         expect((e as HttpError).statusCode).toBe(403);
@@ -428,7 +428,7 @@ describe('execution-lease-service', () => {
       });
       const { renewExecutionLease } = await loadSvc();
       try {
-        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', { idempotencyKey: 'r1', sessionId: 's1', ttlSeconds: 3600 });
+        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, { idempotencyKey: 'r1', sessionId: 's1', ttlSeconds: 3600 });
         expect.unreachable();
       } catch (e) {
         expect((e as HttpError).statusCode).toBe(403);
@@ -449,7 +449,7 @@ describe('execution-lease-service', () => {
       });
       const { renewExecutionLease } = await loadSvc();
       try {
-        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', { idempotencyKey: 'r1', sessionId: 's1', ttlSeconds: 3600 });
+        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, { idempotencyKey: 'r1', sessionId: 's1', ttlSeconds: 3600 });
         expect.unreachable();
       } catch (e) {
         expect((e as HttpError).statusCode).toBe(409);
@@ -477,7 +477,7 @@ describe('execution-lease-service', () => {
       });
       const { renewExecutionLease } = await loadSvc();
       try {
-        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', { idempotencyKey: 'r1', sessionId: 'session-1', ttlSeconds: 3600 });
+        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, { idempotencyKey: 'r1', sessionId: 'session-1', ttlSeconds: 3600 });
         expect.unreachable();
       } catch (e) {
         expect((e as HttpError).statusCode).toBe(409);
@@ -489,7 +489,7 @@ describe('execution-lease-service', () => {
       mockPrisma.executionLeaseEvent.findUnique.mockResolvedValue({ id: 'e1', eventType: 'RENEWED', lease: mkLease(), metadata: { ttl: 7200 } });
       const { renewExecutionLease } = await loadSvc();
       try {
-        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', { idempotencyKey: 'k1', sessionId: 'session-1', ttlSeconds: 3600 });
+        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, { idempotencyKey: 'k1', sessionId: 'session-1', ttlSeconds: 3600 });
         expect.unreachable();
       } catch (e) {
         expect((e as HttpError).statusCode).toBe(409);
@@ -500,7 +500,7 @@ describe('execution-lease-service', () => {
     it('replays successfully on exact match', async () => {
       mockPrisma.executionLeaseEvent.findUnique.mockResolvedValue({ id: 'e1', eventType: 'RENEWED', lease: mkLease(), metadata: { ttl: 3600 } });
       const { renewExecutionLease } = await loadSvc();
-      const result = await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+      const result = await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
         idempotencyKey: 'k1', sessionId: 'session-1', ttlSeconds: 3600,
       });
       expect(result.replayed).toBe(true);
@@ -528,7 +528,7 @@ describe('execution-lease-service', () => {
       });
       const { renewExecutionLease } = await loadSvc();
       try {
-        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+        await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
           idempotencyKey: 'r1', sessionId: 'session-1', ttlSeconds: 3600,
         });
         expect.unreachable();
@@ -557,7 +557,7 @@ describe('execution-lease-service', () => {
         return cb(tx);
       });
       const { updateLeaseWorktree } = await loadSvc();
-      const lease = await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+      const lease = await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
         idempotencyKey: 'wt-1', sessionId: 'session-1',
         worktreePath: '/worktree/path', gitBranch: 'feat/req-uuid-1-my-feature',
       });
@@ -567,7 +567,7 @@ describe('execution-lease-service', () => {
     it('rejects invalid gitBranch with HttpError 400', async () => {
       const { updateLeaseWorktree } = await loadSvc();
       try {
-        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
           idempotencyKey: 'wt-1', sessionId: 'session-1',
           worktreePath: '/worktree/path', gitBranch: 'invalid',
         });
@@ -582,7 +582,7 @@ describe('execution-lease-service', () => {
       mockPrisma.executionLeaseEvent.findUnique.mockResolvedValue({ id: 'e1', eventType: 'WORKTREE_BOUND', lease: mkLease(), metadata: { worktreePath: '/other/path', gitBranch: 'feat/req-uuid-1-my-feature' } });
       const { updateLeaseWorktree } = await loadSvc();
       try {
-        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
           idempotencyKey: 'k1', sessionId: 'session-1',
           worktreePath: '/worktree/path', gitBranch: 'feat/req-uuid-1-my-feature',
         });
@@ -597,7 +597,7 @@ describe('execution-lease-service', () => {
       mockPrisma.executionLeaseEvent.findUnique.mockResolvedValue({ id: 'e1', eventType: 'WORKTREE_BOUND', lease: mkLease(), metadata: { worktreePath: '/worktree/path', gitBranch: 'feat/req-uuid-1-other-branch' } });
       const { updateLeaseWorktree } = await loadSvc();
       try {
-        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
           idempotencyKey: 'k1', sessionId: 'session-1',
           worktreePath: '/worktree/path', gitBranch: 'feat/req-uuid-1-my-feature',
         });
@@ -620,7 +620,7 @@ describe('execution-lease-service', () => {
       });
       const { updateLeaseWorktree } = await loadSvc();
       try {
-        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
           idempotencyKey: 'wt-1', sessionId: 'session-1',
           worktreePath: '/worktree/path', gitBranch: 'feat/wrong-id-slug',
         });
@@ -648,7 +648,7 @@ describe('execution-lease-service', () => {
       });
       const { updateLeaseWorktree } = await loadSvc();
       try {
-        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
           idempotencyKey: 'wt-loser', sessionId: 'session-1',
           worktreePath: '/different/path', gitBranch: 'feat/req-uuid-1-loser-branch',
         });
@@ -681,7 +681,7 @@ describe('execution-lease-service', () => {
       });
       const { updateLeaseWorktree } = await loadSvc();
       try {
-        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+        await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
           idempotencyKey: 'wt-expired', sessionId: 'session-1',
           worktreePath: '/new/path', gitBranch: 'feat/req-uuid-1-my-feature',
         });
@@ -707,7 +707,7 @@ describe('execution-lease-service', () => {
         return cb(tx);
       });
       const { releaseExecutionLease } = await loadSvc();
-      const lease = await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+      const lease = await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
         idempotencyKey: 'rel-1', sessionId: 'session-1', outcome: 'SUCCEEDED', reason: 'task completed',
       });
       expect(lease.status).toBe('ACTIVE');
@@ -719,7 +719,7 @@ describe('execution-lease-service', () => {
       });
       const { releaseExecutionLease } = await loadSvc();
       try {
-        await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+        await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
           idempotencyKey: 'k1', sessionId: 'session-1', outcome: 'ABANDONED',
         });
         expect.unreachable();
@@ -735,7 +735,7 @@ describe('execution-lease-service', () => {
       });
       const { releaseExecutionLease } = await loadSvc();
       try {
-        await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+        await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
           idempotencyKey: 'k1', sessionId: 'session-1', outcome: 'FAILED',
         });
         expect.unreachable();
@@ -750,7 +750,7 @@ describe('execution-lease-service', () => {
         id: 'e1', eventType: 'RELEASED', lease: mkLease({ status: 'RELEASED' }), metadata: { outcome: 'SUCCEEDED', reason: 'task completed' },
       });
       const { releaseExecutionLease } = await loadSvc();
-      const lease = await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+      const lease = await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
         idempotencyKey: 'k1', sessionId: 'session-1', outcome: 'SUCCEEDED', reason: 'task completed',
       });
       expect(lease.status).toBe('RELEASED');
@@ -762,7 +762,7 @@ describe('execution-lease-service', () => {
       });
       const { releaseExecutionLease } = await loadSvc();
       try {
-        await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+        await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
           idempotencyKey: 'k1', sessionId: 'session-1', outcome: 'SUCCEEDED', reason: 'different reason',
         });
         expect.unreachable();
@@ -777,7 +777,7 @@ describe('execution-lease-service', () => {
         id: 'e1', eventType: 'FAILED', lease: mkLease({ status: 'FAILED' }), metadata: { outcome: 'FAILED', reason: null },
       });
       const { releaseExecutionLease } = await loadSvc();
-      const lease = await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+      const lease = await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
         idempotencyKey: 'k1', sessionId: 'session-1', outcome: 'FAILED',
       });
       expect(lease.status).toBe('FAILED');
@@ -805,7 +805,7 @@ describe('execution-lease-service', () => {
       });
       const { releaseExecutionLease } = await loadSvc();
       try {
-        await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', {
+        await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', null, {
           idempotencyKey: 'rel-1', sessionId: 'session-1', outcome: 'SUCCEEDED',
         });
         expect.unreachable();
@@ -1151,6 +1151,149 @@ describe('ownerAgent enforcement', () => {
       idempotencyKey: 'k1', expectedStep: 'dev_self_check', expectedStateVersion: 0, sessionId: 'session-1', ttlSeconds: 3600,
     });
     expect(result.replayed).toBe(true);
+  });
+
+  it('renew normal mismatch ownerAgentId returns 403 and no event.create', async () => {
+    mockPrisma.executionLeaseEvent.findUnique.mockResolvedValue(null);
+    let eventCreated = false;
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        executionLease: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          findUnique: vi.fn().mockResolvedValue(mkLease({ ownerAgentId: null })),
+        },
+        executionLeaseEvent: { create: vi.fn().mockImplementation(() => { eventCreated = true; return {}; }) },
+      };
+      return cb(tx);
+    });
+    const { renewExecutionLease } = await loadSvc();
+    try {
+      await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', 'agent-2', {
+        idempotencyKey: 'r1', sessionId: 'session-1', ttlSeconds: 3600,
+      });
+      expect.unreachable();
+    } catch (e) {
+      expect((e as HttpError).statusCode).toBe(403);
+      expect((e as HttpError).message).toContain('different agent');
+      expect(eventCreated).toBe(false);
+    }
+  });
+
+  it('renew idempotent replay different ownerAgentId returns 409', async () => {
+    mockPrisma.executionLeaseEvent.findUnique.mockResolvedValue({
+      id: 'e1', eventType: 'RENEWED', lease: mkLease({ ownerAgentId: 'agent-1' }),
+      metadata: { ttl: 3600 },
+    });
+    const { renewExecutionLease } = await loadSvc();
+    try {
+      await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', 'agent-2', {
+        idempotencyKey: 'r1', sessionId: 'session-1', ttlSeconds: 3600,
+      });
+      expect.unreachable();
+    } catch (e) {
+      expect((e as HttpError).statusCode).toBe(409);
+      expect((e as HttpError).message).toContain('ownerAgentId');
+    }
+  });
+
+  it('renew idempotent replay exact same agentId succeeds', async () => {
+    mockPrisma.executionLeaseEvent.findUnique.mockResolvedValue({
+      id: 'e1', eventType: 'RENEWED', lease: mkLease({ ownerAgentId: 'agent-1' }),
+      metadata: { ttl: 3600 },
+    });
+    const { renewExecutionLease } = await loadSvc();
+    const result = await renewExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', 'agent-1', {
+      idempotencyKey: 'r1', sessionId: 'session-1', ttlSeconds: 3600,
+    });
+    expect(result.replayed).toBe(true);
+  });
+
+  it('worktree normal mismatch ownerAgentId returns 403 before mutation/event', async () => {
+    mockPrisma.executionLeaseEvent.findUnique.mockResolvedValue(null);
+    let leaseUpdateManyCalled = false;
+    let eventCreated = false;
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        executionLease: {
+          findUnique: vi.fn().mockResolvedValue(mkLease({ ownerAgentId: null, requirement: { currentStep: 'dev_self_check', stateVersion: 0, assigneeId: 'user-uuid-1', repoPath: '/repo' } })),
+          updateMany: vi.fn().mockImplementation(() => { leaseUpdateManyCalled = true; return { count: 1 }; }),
+        },
+        executionLeaseEvent: { create: vi.fn().mockImplementation(() => { eventCreated = true; return {}; }) },
+      };
+      return cb(tx);
+    });
+    const { updateLeaseWorktree } = await loadSvc();
+    try {
+      await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', 'agent-2', {
+        idempotencyKey: 'w1', sessionId: 'session-1', worktreePath: '/worktree/test', gitBranch: 'feat/req-uuid-1-feature',
+      });
+      expect.unreachable();
+    } catch (e) {
+      expect((e as HttpError).statusCode).toBe(403);
+      expect((e as HttpError).message).toContain('different agent');
+      expect(leaseUpdateManyCalled).toBe(false);
+      expect(eventCreated).toBe(false);
+    }
+  });
+
+  it('worktree idempotent replay different ownerAgentId returns 409', async () => {
+    mockPrisma.executionLeaseEvent.findUnique.mockResolvedValue({
+      id: 'e1', eventType: 'WORKTREE_BOUND', lease: mkLease({ ownerAgentId: 'agent-1' }),
+      metadata: { worktreePath: '/wt', gitBranch: 'feat/req-uuid-1-feature' },
+    });
+    const { updateLeaseWorktree } = await loadSvc();
+    try {
+      await updateLeaseWorktree('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', 'agent-2', {
+        idempotencyKey: 'w1', sessionId: 'session-1', worktreePath: '/wt', gitBranch: 'feat/req-uuid-1-feature',
+      });
+      expect.unreachable();
+    } catch (e) {
+      expect((e as HttpError).statusCode).toBe(409);
+      expect((e as HttpError).message).toContain('ownerAgentId');
+    }
+  });
+
+  it('release normal mismatch ownerAgentId returns 403 and no event.create', async () => {
+    mockPrisma.executionLeaseEvent.findUnique.mockResolvedValue(null);
+    let eventCreated = false;
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        executionLease: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          findUnique: vi.fn().mockResolvedValue(mkLease({ ownerAgentId: null })),
+        },
+        executionLeaseEvent: { create: vi.fn().mockImplementation(() => { eventCreated = true; return {}; }) },
+      };
+      return cb(tx);
+    });
+    const { releaseExecutionLease } = await loadSvc();
+    try {
+      await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', 'agent-2', {
+        idempotencyKey: 'rel-1', sessionId: 'session-1', outcome: 'SUCCEEDED',
+      });
+      expect.unreachable();
+    } catch (e) {
+      expect((e as HttpError).statusCode).toBe(403);
+      expect((e as HttpError).message).toContain('different agent');
+      expect(eventCreated).toBe(false);
+    }
+  });
+
+  it('release idempotent replay different ownerAgentId returns 409', async () => {
+    mockPrisma.executionLeaseEvent.findUnique.mockResolvedValue({
+      id: 'e1', eventType: 'RELEASED', lease: mkLease({ ownerAgentId: 'agent-1' }),
+      metadata: { outcome: 'SUCCEEDED' },
+    });
+    const { releaseExecutionLease } = await loadSvc();
+    try {
+      await releaseExecutionLease('req-uuid-1', 'lease-uuid-1', 'user-uuid-1', 'agent-2', {
+        idempotencyKey: 'rel-1', sessionId: 'session-1', outcome: 'SUCCEEDED',
+      });
+      expect.unreachable();
+    } catch (e) {
+      expect((e as HttpError).statusCode).toBe(409);
+      expect((e as HttpError).message).toContain('ownerAgentId');
+    }
   });
 });
 

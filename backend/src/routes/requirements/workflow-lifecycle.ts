@@ -1,14 +1,8 @@
-/**
- * Workflow Lifecycle Routes
- *
- * POST /:id/workflow/abandon  — abandon requirement (rejected -> abandoned)
- * POST /:id/workflow/to-draft — reactivate requirement (abandoned -> draft)
- */
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
-import { logTransition } from './workflow-helpers.js';
+import { executeAdminTransition } from '../../lib/workflow-transition/index.js';
 
 export function registerWorkflowLifecycleRoutes(router: import('express').Router): void {
 
@@ -19,7 +13,7 @@ export function registerWorkflowLifecycleRoutes(router: import('express').Router
 
       const requirement = await prisma.requirement.findUnique({
         where: { id: params.id },
-        select: { id: true, currentStep: true, requesterId: true, assigneeId: true },
+        select: { id: true, currentStep: true, stateVersion: true, requesterId: true, assigneeId: true },
       });
       if (!requirement) throw new HttpError(404, 'requirement not found');
 
@@ -36,31 +30,26 @@ export function registerWorkflowLifecycleRoutes(router: import('express').Router
         throw new HttpError(400, `current step「${requirement.currentStep}」cannot be abandoned, allowed: ${abandonableSteps.join('/')}`);
       }
 
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: {
-          currentStep: 'abandoned',
-          assigneeId: null,
-        },
-      });
-
-      await logTransition({
+      const result = await executeAdminTransition({
         requirementId: params.id,
-        fromStep: requirement.currentStep ?? '',
+        fromStep: requirement.currentStep,
         toStep: 'abandoned',
+        expectedStateVersion: requirement.stateVersion,
         action: 'abandon',
         actorId: user.id,
         actorName: user.name,
         actorRole: user.internalRole ?? user.role,
+        assigneeId: null,
         comment: req.body?.comment,
       });
 
       res.json({
         success: true,
         data: {
-          requirementId: updated.id,
+          requirementId: result.requirementId,
           fromStep: requirement.currentStep,
           toStep: 'abandoned',
+          newStateVersion: result.newStateVersion,
         },
       });
     }),
@@ -73,7 +62,7 @@ export function registerWorkflowLifecycleRoutes(router: import('express').Router
 
       const requirement = await prisma.requirement.findUnique({
         where: { id: params.id },
-        select: { id: true, currentStep: true, requesterId: true, assigneeId: true },
+        select: { id: true, currentStep: true, stateVersion: true, requesterId: true, assigneeId: true },
       });
       if (!requirement) throw new HttpError(404, 'requirement not found');
       if (requirement.currentStep !== 'abandoned') {
@@ -88,31 +77,26 @@ export function registerWorkflowLifecycleRoutes(router: import('express').Router
         throw new HttpError(403, 'only requester, assignee or admin can reactivate');
       }
 
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: {
-          currentStep: 'draft',
-          assigneeId: null,
-        },
-      });
-
-      await logTransition({
+      const result = await executeAdminTransition({
         requirementId: params.id,
         fromStep: 'abandoned',
         toStep: 'draft',
+        expectedStateVersion: requirement.stateVersion,
         action: 'reactivate',
         actorId: user.id,
         actorName: user.name,
         actorRole: user.internalRole ?? user.role,
+        assigneeId: null,
         comment: req.body?.comment,
       });
 
       res.json({
         success: true,
         data: {
-          requirementId: updated.id,
+          requirementId: result.requirementId,
           fromStep: 'abandoned',
           toStep: 'draft',
+          newStateVersion: result.newStateVersion,
         },
       });
     }),

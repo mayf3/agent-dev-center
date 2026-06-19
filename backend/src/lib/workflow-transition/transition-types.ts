@@ -49,11 +49,11 @@ export type TransitionSentinel =
   | { __stale: true; reason: string };
 
 export function isExpiredSentinel(v: unknown): v is { __expired: true; reason: string } {
-  return typeof v === 'object' && v !== null && (v as any).__expired === true;
+  return typeof v === 'object' && v !== null && (v as Record<string, unknown>).__expired === true;
 }
 
 export function isStaleSentinel(v: unknown): v is { __stale: true; reason: string } {
-  return typeof v === 'object' && v !== null && (v as any).__stale === true;
+  return typeof v === 'object' && v !== null && (v as Record<string, unknown>).__stale === true;
 }
 
 export function isTransitionSentinel(v: unknown): v is TransitionSentinel {

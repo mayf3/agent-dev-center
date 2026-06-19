@@ -9,14 +9,14 @@ import type { ClaimBody, RenewBody, WorktreeBody, ReleaseBody } from './lease-co
 export const claimExecutionLease = (requirementId: string, ownerUserId: string, ownerAgentId: string | null | undefined, body: ClaimBody) =>
   claimFn(prisma as any, requirementId, ownerUserId, ownerAgentId ?? null, body);
 
-export const renewExecutionLease = (requirementId: string, leaseId: string, ownerUserId: string, body: RenewBody) =>
-  renewFn(prisma as any, requirementId, leaseId, ownerUserId, body);
+export const renewExecutionLease = (requirementId: string, leaseId: string, ownerUserId: string, ownerAgentId: string | null | undefined, body: RenewBody) =>
+  renewFn(prisma as any, requirementId, leaseId, ownerUserId, ownerAgentId ?? null, body);
 
-export const updateLeaseWorktree = (requirementId: string, leaseId: string, ownerUserId: string, body: WorktreeBody) =>
-  worktreeFn(prisma as any, requirementId, leaseId, ownerUserId, body);
+export const updateLeaseWorktree = (requirementId: string, leaseId: string, ownerUserId: string, ownerAgentId: string | null | undefined, body: WorktreeBody) =>
+  worktreeFn(prisma as any, requirementId, leaseId, ownerUserId, ownerAgentId ?? null, body);
 
-export const releaseExecutionLease = (requirementId: string, leaseId: string, ownerUserId: string, body: ReleaseBody) =>
-  releaseFn(prisma as any, requirementId, leaseId, ownerUserId, body);
+export const releaseExecutionLease = (requirementId: string, leaseId: string, ownerUserId: string, ownerAgentId: string | null | undefined, body: ReleaseBody) =>
+  releaseFn(prisma as any, requirementId, leaseId, ownerUserId, ownerAgentId ?? null, body);
 
 export const getExecutionLease = (requirementId: string) =>
   getFn(prisma as any, requirementId);

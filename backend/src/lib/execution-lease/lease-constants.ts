@@ -21,6 +21,10 @@ export const LEASE_INCLUDE = {
 
 export type LeaseWithDetails = Prisma.ExecutionLeaseGetPayload<{ include: typeof LEASE_INCLUDE }>;
 
+export type LeaseEventWithDetails = Prisma.ExecutionLeaseEventGetPayload<{
+  include: { lease: { include: typeof LEASE_INCLUDE } }
+}>;
+
 export const EVENT_TYPE = {
   CLAIMED: 'CLAIMED',
   RENEWED: 'RENEWED',

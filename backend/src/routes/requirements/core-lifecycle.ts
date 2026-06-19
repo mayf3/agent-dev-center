@@ -1,10 +1,3 @@
-/**
- * Core Lifecycle Routes
- *
- * GET /:id/revisions    — 修订历史
- * POST /:id/abandon     — 放弃需求（rejected → abandoned）
- * POST /:id/reactivate  — 重新激活（abandoned → draft）
- */
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
@@ -13,10 +6,16 @@ import { listRevisionsSchema } from '../../schemas/revision.js';
 import { serializeRequirement } from '../../utils/status.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { canReadRequirement } from './utils.js';
+import { executeAdminTransition } from '../../lib/workflow-transition/index.js';
+
+const lifecycleInclude = {
+  tasks: true,
+  assigneeUser: { select: { name: true } },
+  project: { select: { id: true, name: true, boundaries: true } },
+} as const;
 
 export function registerCoreLifecycleRoutes(router: import('express').Router): void {
 
-// GET /:id/revisions - 修订历史
 router.get(
   '/:id/revisions',
   asyncHandler(async (req, res) => {
@@ -43,7 +42,6 @@ router.get(
   })
 );
 
-// e1d273f5: POST /:id/abandon — 放弃需求（rejected → abandoned）
 router.post(
   '/:id/abandon',
   asyncHandler(async (req, res) => {
@@ -54,20 +52,32 @@ router.post(
     if (!['rejected', 'review_rejected', 'acceptance_rejected'].includes(existing.currentStep ?? '')) {
       throw new HttpError(400, `只能放弃被驳回的需求，当前步骤：${existing.currentStep}`);
     }
-    // 只有需求提交者或 admin 可以放弃
     if (existing.requesterId !== req.user.id && req.user.role !== 'admin') {
       throw new HttpError(403, '只有需求提交者或管理员可以放弃需求');
     }
-    const updated = await prisma.requirement.update({
-      where: { id: params.id },
-      data: { currentStep: 'abandoned' },
+
+    const result = await executeAdminTransition({
+      requirementId: params.id,
+      fromStep: existing.currentStep,
+      toStep: 'abandoned',
+      expectedStateVersion: existing.stateVersion,
+      action: 'abandon',
+      actorId: req.user.id,
+      actorName: req.user.name,
+      actorRole: req.user.internalRole ?? req.user.role,
+      assigneeId: existing.assigneeId,
     });
+
+    const updated = await prisma.requirement.findUnique({
+      where: { id: params.id },
+      include: lifecycleInclude,
+    });
+    if (!updated) throw new HttpError(404, '需求已删除');
     void notifyEvent('requirement.updated', { id: updated.id, title: updated.title, actor: req.user.name });
     res.json(serializeRequirement(updated));
   })
 );
 
-// e1d273f5: POST /:id/reactivate — 重新激活（abandoned → draft）
 router.post(
   '/:id/reactivate',
   asyncHandler(async (req, res) => {
@@ -81,10 +91,24 @@ router.post(
     if (existing.requesterId !== req.user.id && req.user.role !== 'admin') {
       throw new HttpError(403, '只有需求提交者或管理员可以重新激活需求');
     }
-    const updated = await prisma.requirement.update({
-      where: { id: params.id },
-      data: { currentStep: 'draft' },
+
+    const result = await executeAdminTransition({
+      requirementId: params.id,
+      fromStep: 'abandoned',
+      toStep: 'draft',
+      expectedStateVersion: existing.stateVersion,
+      action: 'reactivate',
+      actorId: req.user.id,
+      actorName: req.user.name,
+      actorRole: req.user.internalRole ?? req.user.role,
+      assigneeId: null,
     });
+
+    const updated = await prisma.requirement.findUnique({
+      where: { id: params.id },
+      include: lifecycleInclude,
+    });
+    if (!updated) throw new HttpError(404, '需求已删除');
     void notifyEvent('requirement.updated', { id: updated.id, title: updated.title, actor: req.user.name });
     res.json(serializeRequirement(updated));
   })

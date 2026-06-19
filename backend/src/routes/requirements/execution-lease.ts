@@ -44,6 +44,7 @@ export function registerExecutionLeaseRoutes(router: import('express').Router): 
           workflowStep: result.lease.workflowStep,
           expectedStateVersion: result.lease.expectedStateVersion,
           ownerUserId: result.lease.ownerUserId,
+          ownerAgentId: result.lease.ownerAgentId,
           sessionId: result.lease.sessionId,
           replayed: result.replayed,
         },
@@ -57,7 +58,7 @@ export function registerExecutionLeaseRoutes(router: import('express').Router): 
       const { params } = leaseIdParamsSchema.parse({ params: req.params });
       const { body } = renewLeaseSchema.parse({ body: req.body });
 
-      const result = await renewExecutionLease(params.id, params.leaseId, req.user!.id, {
+      const result = await renewExecutionLease(params.id, params.leaseId, req.user!.id, req.user!.agentId, {
         idempotencyKey: body.idempotencyKey,
         sessionId: body.sessionId,
         ttlSeconds: body.ttlSeconds,
@@ -81,7 +82,7 @@ export function registerExecutionLeaseRoutes(router: import('express').Router): 
       const { params } = leaseIdParamsSchema.parse({ params: req.params });
       const { body } = updateWorktreeSchema.parse({ body: req.body });
 
-      const lease = await updateLeaseWorktree(params.id, params.leaseId, req.user!.id, {
+      const lease = await updateLeaseWorktree(params.id, params.leaseId, req.user!.id, req.user!.agentId, {
         idempotencyKey: body.idempotencyKey,
         sessionId: body.sessionId,
         worktreePath: body.worktreePath,
@@ -105,7 +106,7 @@ export function registerExecutionLeaseRoutes(router: import('express').Router): 
       const { params } = leaseIdParamsSchema.parse({ params: req.params });
       const { body } = releaseLeaseSchema.parse({ body: req.body });
 
-      const lease = await releaseExecutionLease(params.id, params.leaseId, req.user!.id, {
+      const lease = await releaseExecutionLease(params.id, params.leaseId, req.user!.id, req.user!.agentId, {
         idempotencyKey: body.idempotencyKey,
         sessionId: body.sessionId,
         outcome: body.outcome,

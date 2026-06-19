@@ -85,7 +85,7 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         }
       }
 
-      const reqType = (requirement as any).type;
+      const reqType = requirement.type;
       const isNonSecurityType = reqType !== 'SECURITY';
       const currentReports = isNonSecurityType
         ? currentStep.requiredReports.filter(r => r !== 'SECURITY_REVIEW')

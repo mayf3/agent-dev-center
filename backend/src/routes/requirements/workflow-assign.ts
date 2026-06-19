@@ -1,16 +1,13 @@
-/**
- * Workflow Assign Route
- *
- * POST /:id/workflow/assign — assign workflow (admin/cto only)
- */
+import { Prisma } from '@prisma/client';
 import { requireRoles } from '../../middleware/auth.js';
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { assignWorkflowSchema } from '../../schemas/workflow.js';
-import { parseSteps, logTransition, extractRoleUserMap } from './workflow-helpers.js';
+import { parseSteps, extractRoleUserMap, WorkflowStep } from './workflow-helpers.js';
 import { resolveAssigneeForStep } from '../../lib/assignee-resolver.js';
+import { executeAssignTransition } from '../../lib/workflow-transition/index.js';
 
 export function registerWorkflowAssignRoutes(router: import('express').Router): void {
 
@@ -37,7 +34,7 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
         throw new HttpError(400, `template uses deprecated generic role 'developer' (steps: ${genericDevSteps.map(s => s.name).join(', ')}), use specific role template`);
       }
 
-      let targetStep;
+      let targetStep: WorkflowStep | undefined;
       if (body.startStep) {
         targetStep = steps.find(s => s.name === body.startStep);
         if (!targetStep) {
@@ -46,28 +43,20 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
       } else {
         targetStep = steps[0];
       }
+      if (!targetStep) throw new HttpError(400, 'no target step resolved');
 
-      // Deep copy template steps as immutable snapshot, preserving roleUserMap
-      const workflowSnapshot = JSON.parse(JSON.stringify(template.steps));
-
-      const updateData: any = {
-        workflowId: template.id,
-        workflowSnapshot,
-        currentStep: targetStep.name,
-      };
-
+      let newAssigneeId: string | null;
       if (targetStep.name === 'draft' && requirement.requesterId) {
-        updateData.assigneeId = requirement.requesterId;
+        newAssigneeId = requirement.requesterId;
       } else if (targetStep.role === 'requester' && requirement.requesterId) {
-        updateData.assigneeId = requirement.requesterId;
+        newAssigneeId = requirement.requesterId;
       } else {
         const roleUserMap = extractRoleUserMap(template.steps);
         try {
           const resolvedId = await resolveAssigneeForStep(
-            targetStep.role,
-            requirement.assigneeId,
+            targetStep.role, requirement.assigneeId,
             {
-              assigneeMode: (targetStep as any).assigneeMode,
+              assigneeMode: targetStep.assigneeMode,
               roleUserMap,
               requirement: {
                 id: requirement.id,
@@ -76,45 +65,39 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
               },
             },
           );
-          updateData.assigneeId = resolvedId;
+          newAssigneeId = resolvedId;
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           throw new HttpError(400, `assignee resolution failed: ${msg}`);
         }
       }
 
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: updateData,
-      });
-
-      await logTransition({
+      const result = await executeAssignTransition({
         requirementId: params.id,
-        fromStep: 'approved',
+        fromStep: requirement.currentStep,
         toStep: targetStep.name,
-        action: 'assign-workflow',
+        toStepDisplayName: targetStep.displayName,
+        expectedStateVersion: requirement.stateVersion,
+        workflowId: template.id,
+        workflowName: template.name,
+        workflowDisplayName: template.displayName,
+        workflowSnapshot: template.steps as Prisma.InputJsonValue,
+        assigneeId: newAssigneeId,
         actorId: req.user!.id,
         actorName: req.user!.name,
         actorRole: req.user!.role,
-        metadata: { workflowName: template.name, templateId: template.id, startStep: body.startStep },
+        startStep: body.startStep,
+        steps: steps.map(s => ({
+          name: s.name,
+          displayName: s.displayName,
+          role: s.role,
+          requiredReports: s.requiredReports,
+        })),
       });
 
       res.json({
         success: true,
-        data: {
-          requirementId: updated.id,
-          workflowId: template.id,
-          workflowName: template.name,
-          workflowDisplayName: template.displayName,
-          currentStep: targetStep.name,
-          currentStepDisplayName: targetStep.displayName,
-          steps: steps.map(s => ({
-            name: s.name,
-            displayName: s.displayName,
-            role: s.role,
-            requiredReports: s.requiredReports,
-          })),
-        },
+        data: result,
       });
     }),
   );

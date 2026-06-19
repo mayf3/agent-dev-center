@@ -11,6 +11,7 @@ const mockPrisma = {
   executionLeaseEvent: { findUnique: vi.fn(), create: vi.fn() },
   testEnvLock: { findUnique: vi.fn(), upsert: vi.fn(), delete: vi.fn() },
   $transaction: vi.fn(),
+  workflowTemplate: { findFirst: vi.fn() },
 };
 
 vi.mock('../lib/prisma.js', () => ({ prisma: mockPrisma }));
@@ -1606,6 +1607,235 @@ describe('P0-B1: failed atomic update leaves no lease terminal/event/lock', () =
       expect.unreachable();
     } catch (e) {
       expect((e as HttpError).statusCode).toBe(409);
+    }
+  });
+});
+
+describe('P0-B2a: admin transition kernel', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('CAS with preflight expectedStateVersion + stateVersion+1 + transition + lease invalidation', async () => {
+    let capturedTx: any = null;
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        requirement: {
+          findUnique: vi.fn()
+            .mockResolvedValueOnce({ id: 'r1', currentStep: 'draft', stateVersion: 2, assigneeId: 'u1' })
+            .mockResolvedValue({ id: 'r1', currentStep: 'abandoned', stateVersion: 3, assigneeId: null }),
+          updateMany: vi.fn().mockImplementation(({ where, data }: any) => {
+            expect(where.stateVersion).toBe(1);
+            expect(data.stateVersion).toEqual({ increment: 1 });
+            return { count: 1 };
+          }),
+        },
+        workflowTransition: { create: vi.fn().mockResolvedValue({}) },
+        executionLease: { findFirst: vi.fn().mockResolvedValue({ id: 'l1' }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        executionLeaseEvent: { create: vi.fn().mockResolvedValue({}) },
+      };
+      capturedTx = tx;
+      return cb(tx);
+    });
+    const { executeAdminTransition } = await import('../lib/workflow-transition/transition-admin.js');
+    const result = await executeAdminTransition({
+      requirementId: 'r1', fromStep: 'draft', toStep: 'abandoned',
+      expectedStateVersion: 1, action: 'abandon', actorId: 'u1', actorName: 'User', actorRole: 'developer',
+    });
+    expect(result.newStateVersion).toBe(2);
+    expect(capturedTx.workflowTransition.create).toHaveBeenCalled();
+    expect(capturedTx.executionLease.findFirst).toHaveBeenCalled();
+  });
+
+  it('authoritative stateVersion=2 but preflight expectedVersion=1 → CAS=0, no artifacts', async () => {
+    let capturedWhereStateVersion: number | undefined;
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        requirement: {
+          findUnique: vi.fn()
+            .mockResolvedValueOnce({ id: 'r1', currentStep: 'draft', stateVersion: 2, assigneeId: 'u1' })
+            .mockResolvedValueOnce({ id: 'r1' }),
+          updateMany: vi.fn().mockImplementation(({ where }: any) => {
+            capturedWhereStateVersion = where.stateVersion;
+            return { count: 0 };
+          }),
+        },
+        executionLease: { findFirst: vi.fn(), updateMany: vi.fn() },
+        executionLeaseEvent: { create: vi.fn() },
+        workflowTransition: { create: vi.fn() },
+      };
+      try {
+        return await cb(tx);
+      } catch {
+        // cb threw — let it propagate through $transaction reject
+        throw new HttpError(409, 'concurrent modification: requirement state changed');
+      }
+    });
+    const { executeAdminTransition } = await import('../lib/workflow-transition/transition-admin.js');
+    try {
+      await executeAdminTransition({
+        requirementId: 'r1', fromStep: 'draft', toStep: 'abandoned',
+        expectedStateVersion: 1, action: 'abandon', actorId: 'u1', actorName: 'User', actorRole: 'developer',
+      });
+      expect.unreachable();
+    } catch (e) {
+      // New correct impl: CAS uses preflight expectedStateVersion=1, not authoritative version=2
+      // If old wrong impl used authoritative version=2, CAS would have succeeded (count=1) ← wrong
+      expect(capturedWhereStateVersion).toBe(1);
+      expect((e as HttpError).statusCode).toBe(409);
+    }
+  });
+
+  it('admin kernel metadata uses Prisma.InputJsonValue not as any', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync(
+      new URL('../lib/workflow-transition/transition-admin.ts', import.meta.url),
+      'utf-8',
+    );
+    expect(content).toContain('Prisma.InputJsonValue');
+    expect(content).not.toContain('as any');
+    expect(content).not.toContain('extraFields');
+    expect(content).toContain('expectedStateVersion');
+    expect(content).toContain('rejectReason');
+  });
+
+  it('generic PATCH body.currentStep returns 400', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync(
+      new URL('../routes/requirements/core-patch.ts', import.meta.url),
+      'utf-8',
+    );
+    expect(content).toMatch(/currentStep[\s\S]*status[\s\S]*400/);
+    expect(content).not.toContain('currentStep: existing.currentStep');
+    // PATCH should not call executeAdminTransition (uses prisma.requirement.update)
+    expect(content).toContain('prisma.requirement.update');
+    expect(content).not.toContain('executeAdminTransition');
+  });
+
+  it('PATCH handler throws 400 without touching DB when currentStep sent', async () => {
+    const { registerCorePatchRoutes } = await import('../routes/requirements/core-patch.js');
+    const router = { patch: vi.fn() } as any;
+    registerCorePatchRoutes(router);
+    const handler = router.patch.mock.calls[0][1]; // asyncHandler-wrapped handler
+    const req = {
+      params: { id: '00000000-0000-0000-0000-000000000001' },
+      body: { currentStep: 'testing' },
+      user: { id: 'u1', name: 'T', role: 'developer' },
+    };
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() };
+    const next = vi.fn();
+    await handler(req, res, next);
+    // asyncHandler catches 400 and passes to next
+    const err = next.mock.calls[0]?.[0];
+    expect(err).toBeDefined();
+    expect((err as any).statusCode).toBe(400);
+    // DB should not have been called
+    expect(mockPrisma.requirement.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.requirement.update).not.toHaveBeenCalled();
+  });
+
+  it('routes pass expectedStateVersion to admin kernel', async () => {
+    const fs = await import('fs');
+    const files = [
+      'routes/requirements/core-lifecycle.ts',
+      'routes/requirements/workflow-lifecycle.ts',
+      'routes/requirements/review.ts',
+    ];
+    const base = new URL('..', import.meta.url);
+    for (const f of files) {
+      const content = fs.readFileSync(new URL(f, base), 'utf-8');
+      expect(content).toContain('expectedStateVersion:');
+    }
+  });
+});
+
+describe('P0-B2a: workflow assign transaction kernel', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('old currentStep=null, preflight version=3, CAS where:null + version=3, data has workflow+snapshot+assignee+increment', async () => {
+    let capturedTx: any = null;
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        requirement: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'r1' }),
+          updateMany: vi.fn().mockImplementation(({ where, data }: any) => {
+            expect(where.currentStep).toBeNull();
+            expect(where.stateVersion).toBe(3);
+            expect(data.workflowId).toBe('tmpl-1');
+            expect(data.workflowSnapshot).toBeDefined();
+            expect(data.currentStep).toBe('dev_self_check');
+            expect(data.assigneeId).toBe('u2');
+            expect(data.stateVersion).toEqual({ increment: 1 });
+            return { count: 1 };
+          }),
+        },
+        workflowTransition: { create: vi.fn().mockResolvedValue({}) },
+        executionLease: { findFirst: vi.fn().mockResolvedValue({ id: 'l1' }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        executionLeaseEvent: { create: vi.fn().mockResolvedValue({}) },
+      };
+      capturedTx = tx;
+      return cb(tx);
+    });
+    const { executeAssignTransition } = await import('../lib/workflow-transition/transition-assign.js');
+    const result = await executeAssignTransition({
+      requirementId: 'r1',
+      fromStep: null,
+      toStep: 'dev_self_check',
+      toStepDisplayName: '开发自检',
+      expectedStateVersion: 3,
+      workflowId: 'tmpl-1',
+      workflowName: 'Standard',
+      workflowDisplayName: '标准工作流',
+      workflowSnapshot: ['step1'] as any,
+      assigneeId: 'u2',
+      actorId: 'u1', actorName: 'Admin', actorRole: 'admin',
+      steps: [{ name: 'dev_self_check', displayName: '开发自检', role: 'developer' }],
+    });
+    expect(result.stateVersion).toBe(4);
+    expect(capturedTx.workflowTransition.create).toHaveBeenCalled();
+    expect(capturedTx.executionLease.findFirst).toHaveBeenCalled();
+    expect(capturedTx.executionLease.updateMany).toHaveBeenCalled();
+  });
+
+  it('updateMany count=0 prevents transition, lease, and event', async () => {
+    let capturedTx: any = null;
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        requirement: {
+          findUnique: vi.fn()
+            .mockResolvedValueOnce({ id: 'r1' })
+            .mockResolvedValueOnce({ id: 'r1' }),
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+        workflowTransition: { create: vi.fn() },
+        executionLease: { findFirst: vi.fn(), updateMany: vi.fn() },
+        executionLeaseEvent: { create: vi.fn() },
+      };
+      capturedTx = tx;
+      return cb(tx);
+    });
+    const { executeAssignTransition } = await import('../lib/workflow-transition/transition-assign.js');
+    try {
+      await executeAssignTransition({
+        requirementId: 'r1',
+        fromStep: 'draft',
+        toStep: 'dev_self_check',
+        toStepDisplayName: '开发自检',
+        expectedStateVersion: 3,
+        workflowId: 'tmpl-1',
+        workflowName: 'Standard',
+        workflowDisplayName: '标准工作流',
+        workflowSnapshot: ['step1'] as any,
+        assigneeId: 'u2',
+        actorId: 'u1', actorName: 'Admin', actorRole: 'admin',
+        steps: [{ name: 'dev_self_check', displayName: '开发自检', role: 'developer' }],
+      });
+      expect.unreachable();
+    } catch (e) {
+      expect((e as HttpError).statusCode).toBe(409);
+      // count=0 means CAS failed — no transition, lease, or event should survive
+      expect(capturedTx.workflowTransition.create).not.toHaveBeenCalled();
+      expect(capturedTx.executionLease.findFirst).not.toHaveBeenCalled();
+      expect(capturedTx.executionLease.updateMany).not.toHaveBeenCalled();
+      expect(capturedTx.executionLeaseEvent.create).not.toHaveBeenCalled();
     }
   });
 });
