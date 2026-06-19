@@ -8,7 +8,7 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { rejectStepSchema } from '../../schemas/workflow.js';
-import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
+import { getAssigneeName } from '../../lib/assignee-resolver.js';
 import {
   parseSteps,
   getCurrentStep,
@@ -92,9 +92,8 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       }
 
       // 自动解析回退步骤的 assigneeId
-      let newAssigneeId = targetStepDef
-        ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
-        : requirement.assigneeId;
+      // reject 场景：保持原 assignee，不重置为角色默认用户
+      let newAssigneeId = requirement.assigneeId;
 
       // 回退到 draft 时 assignee 设为需求提出者（requester 需要修改后重新提交）
       if (targetStepName === 'draft' && requirement.requesterId) {
