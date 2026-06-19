@@ -287,7 +287,8 @@ export function registerWorkflowRoutes(router: import('express').Router): void {
         }
       }
 
-      // 目标步骤的报告校验（进入下一步必须满足该步骤的 requiredReports）
+      // [1a204fd8] 目标步骤的报告校验（进入下一步必须满足该步骤的 requiredReports）
+      // 0e6d74b 重构拆分 workflow.ts 时丢失了 targetStep.requiredReports 检查，此处补回。
       // 2026-06-10：如果安全步骤被跳过，自动过滤 SECURITY_REVIEW 要求
       const targetReports = securitySkipped
         ? targetStep.requiredReports.filter(r => r !== 'SECURITY_REVIEW')
