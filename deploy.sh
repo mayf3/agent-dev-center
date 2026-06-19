@@ -133,7 +133,8 @@ tar \
   package.json \
   package-lock.json \
   backend \
-  frontend
+  frontend \
+  scripts
 
 log "Preparing ${REMOTE_DIR} on remote host"
 ssh_cmd "mkdir -p '${REMOTE_DIR}'"
@@ -151,13 +152,13 @@ set -Eeuo pipefail
 
 cd "${REMOTE_DIR}"
 
+tar -xzf "${REMOTE_ARCHIVE}" -C "${REMOTE_DIR}"
+
 # 加载回滚工具库
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="${REMOTE_DIR}"
 if [ -f "${SCRIPT_DIR}/scripts/rollback-utils.sh" ]; then
   source "${SCRIPT_DIR}/scripts/rollback-utils.sh"
 fi
-
-tar -xzf "${REMOTE_ARCHIVE}" -C "${REMOTE_DIR}"
 rm -f "${REMOTE_ARCHIVE}"
 chmod 600 "${ENV_FILE}"
 
