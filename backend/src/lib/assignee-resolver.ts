@@ -9,6 +9,7 @@
  * 向后兼容：当不传 options 时，回退到旧的 internalRole 查找逻辑（用于旧调用方）
  */
 import { prisma } from './prisma.js';
+import { getWorkflowRawJson, parseSteps, extractRoleUserMap } from '../routes/requirements/workflow-helpers.js';
 
 /** 工作流步骤 role → InternalRole 映射（向后兼容用） */
 const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
@@ -153,22 +154,18 @@ export async function validateAssigneeRoleMatch(
 
   const requirement = await prisma.requirement.findUnique({
     where: { id: requirementId },
-    select: { workflowId: true, currentStep: true },
+    select: { workflowId: true, workflowSnapshot: true, currentStep: true, workflow: { select: { steps: true } } },
   });
   if (!requirement?.workflowId || !requirement.currentStep) return { ok: true };
 
-  // 获取工作流模板
-  const template = await prisma.workflowTemplate.findFirst({
-    where: { id: requirement.workflowId, isActive: true },
-    select: { steps: true },
-  });
-  if (!template) return { ok: true };
+  const rawData = getWorkflowRawJson(requirement);
+  if (!rawData) return { ok: true };
 
-  const steps = template.steps as Array<{ name: string; role: string; displayName: string }>;
+  const stepsArray = parseSteps(rawData);
 
   // 确定用于校验的步骤
   const stepForValidation = targetStepName ?? requirement.currentStep;
-  const stepDef = steps.find(s => s.name === stepForValidation);
+  const stepDef = stepsArray.find(s => s.name === stepForValidation);
   if (!stepDef) return { ok: true };
 
   const stepRole = stepDef.role;
@@ -176,9 +173,8 @@ export async function validateAssigneeRoleMatch(
   // 特殊处理：requester 角色不校验
   if (stepRole === 'requester') return { ok: true };
 
-  // 从模板的 roleUserMap 校验
-  const templateData = template.steps as any;
-  const roleUserMap: Record<string, string> | undefined = templateData.roleUserMap;
+  // 从 roleUserMap 校验 (snapshot or template)
+  const roleUserMap = extractRoleUserMap(rawData);
 
   if (roleUserMap && roleUserMap[stepRole]) {
     if (roleUserMap[stepRole] !== assigneeUserId) {

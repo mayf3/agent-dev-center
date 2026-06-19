@@ -351,6 +351,11 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
  * Upsert all default workflow templates.
  * Safe to call on every startup — will only insert if missing, update if changed.
  * Deactivated templates: standard-dev, fullstack-dev (replaced by role-specific templates).
+ *
+ * IMPORTANT: This function maintains the template CATALOG only.
+ * It does NOT affect in-flight requirements with a workflowSnapshot.
+ * Once a requirement is assigned a workflow, its steps are deep-copied
+ * into workflowSnapshot at assign time and never read from this catalog again.
  */
 export async function ensureWorkflowTemplates(): Promise<void> {
   for (const tmpl of DEFAULT_TEMPLATES) {

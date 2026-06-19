@@ -10,6 +10,7 @@ import { resolveAssigneeForStep, getAssigneeName } from '../lib/assignee-resolve
 import { ReportType } from '@prisma/client';
 import { requireInternalRole } from '../middleware/internal-workflow.js';
 import { getPlatformRoles, hasPlatformRole, isPlatformAdmin } from '../lib/platform-roles.js';
+import { getWorkflowRawJson, parseSteps } from './requirements/workflow-helpers.js';
 import {
   submitReportSchema,
   listReportsSchema,
@@ -379,7 +380,7 @@ reportsRouter.patch(
     if (body.status === 'rejected' || body.status === 'changes_requested') {
       const reqInfo = await prisma.requirement.findUnique({
         where: { id: report.requirementId },
-        select: { title: true, currentStep: true, workflowId: true, assigneeId: true, assignee: true },
+        select: { title: true, currentStep: true, workflowId: true, workflowSnapshot: true, assigneeId: true, assignee: true, workflow: { select: { steps: true } } },
       });
 
       if (reqInfo?.workflowId && reqInfo.currentStep) {
@@ -406,18 +407,15 @@ reportsRouter.patch(
             targetStep = reqInfo.currentStep;
         }
 
-        // 获取工作流步骤，确保 targetStep 在当前步骤之前
-        const wf = await prisma.workflowTemplate.findUnique({
-          where: { id: reqInfo.workflowId },
-          select: { steps: true },
-        });
-        if (wf) {
-          const steps = (wf.steps as any[]) || [];
-          const currentIdx = steps.findIndex((s: any) => s.name === reqInfo.currentStep);
-          const targetIdx = steps.findIndex((s: any) => s.name === targetStep);
+        // Get workflow steps (snapshot-first, legacy fallback)
+        const rawJson = getWorkflowRawJson(reqInfo);
+        if (rawJson) {
+          const steps = parseSteps(rawJson);
+          const currentIdx = steps.findIndex(s => s.name === reqInfo.currentStep!);
+          const targetIdx = steps.findIndex(s => s.name === targetStep);
           const actualTarget = targetIdx >= 0 && targetIdx < currentIdx
             ? targetStep
-            : currentIdx > 0 ? steps[currentIdx - 1]?.name ?? targetStep : targetStep;
+            : currentIdx > 0 ? steps[currentIdx - 1].name : targetStep;
 
           if (actualTarget !== reqInfo.currentStep) {
             await prisma.requirement.update({
@@ -459,17 +457,20 @@ reportsRouter.patch(
     const report = await prisma.requirementReport.findUnique({ where: { id: params.reportId } });
     if (!report) throw new HttpError(404, '报告不存在');
 
-    // 查需求的工作流当前步骤
+    // 查需求的工作流当前步骤（snapshot-first）
     const requirement = await prisma.requirement.findUnique({
       where: { id: report.requirementId },
-      include: { workflow: true },
+      select: { id: true, currentStep: true, workflowSnapshot: true, workflow: { select: { steps: true } } },
     });
-    if (!requirement?.workflow?.steps || !requirement.currentStep) {
+    if (!requirement?.currentStep) {
       throw new HttpError(403, '只有 CTO 可以审批报告');
     }
-
-    const steps = requirement.workflow.steps as Array<{ name: string; role: string; requiredReports?: string[] }>;
-    const currentStep = steps.find(s => s.name === requirement.currentStep);
+    const rawJson = getWorkflowRawJson(requirement);
+    if (!rawJson) {
+      throw new HttpError(403, '只有 CTO 可以审批报告');
+    }
+    const stepsArray = parseSteps(rawJson);
+    const currentStep = stepsArray.find(s => s.name === requirement.currentStep);
     if (!currentStep?.requiredReports?.includes(report.reportType)) {
       throw new HttpError(403, '只有 CTO 可以审批该报告（报告类型不在当前工作流步骤的待审批列表中）');
     }
@@ -539,7 +540,7 @@ reportsRouter.patch(
     // 通知相关方
     const reqInfo = await prisma.requirement.findUnique({
       where: { id: params.id },
-      select: { title: true, requesterId: true, assigneeId: true, assignee: true, currentStep: true, workflowId: true },
+      select: { title: true, requesterId: true, assigneeId: true, assignee: true, currentStep: true, workflowId: true, workflowSnapshot: true, workflow: { select: { steps: true } } },
     });
     const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
     void notifyEvent(reportEvent as any, {
@@ -577,15 +578,15 @@ reportsRouter.patch(
           let rollbackAssigneeName: string | null = null;
 
           if (reqInfo.workflowId) {
-            const wf = await prisma.workflowTemplate.findUnique({
-              where: { id: reqInfo.workflowId },
-              select: { steps: true },
-            });
-            const targetStepDef = wf ? (wf.steps as any[]).find((s: any) => s.name === targetStep) : null;
-            if (targetStepDef?.role) {
-              rollbackAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
-              if (rollbackAssigneeId) {
-                rollbackAssigneeName = await getAssigneeName(rollbackAssigneeId);
+            const rawJson = getWorkflowRawJson(reqInfo);
+            if (rawJson) {
+              const steps = parseSteps(rawJson);
+              const targetStepDef = steps.find(s => s.name === targetStep);
+              if (targetStepDef?.role) {
+                rollbackAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
+                if (rollbackAssigneeId) {
+                  rollbackAssigneeName = await getAssigneeName(rollbackAssigneeId);
+                }
               }
             }
           }

@@ -11,7 +11,8 @@ import { requirementIdSchema } from '../../schemas/requirements.js';
 import { advanceStepSchema } from '../../schemas/workflow.js';
 import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
 import {
-  parseSteps,
+  getWorkflowSteps,
+  getWorkflowRawJson,
   getCurrentStep,
   getNextStep,
   mapUserRole,
@@ -44,7 +45,7 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
       if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
 
-      const steps = parseSteps(requirement.workflow.steps);
+      const steps = getWorkflowSteps(requirement);
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
@@ -130,8 +131,9 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         lockReleased = await releaseTestEnvLock(params.id);
       }
 
-      // --- Resolve assignee for target step ---
-      const roleUserMap = extractRoleUserMap(requirement.workflow.steps);
+      // --- Resolve assignee for target step (snapshot-first) ---
+      const workflowRawJson = getWorkflowRawJson(requirement);
+      const roleUserMap = workflowRawJson ? extractRoleUserMap(workflowRawJson) : undefined;
       let newAssigneeId: string | null;
       try {
         const hasRoleUserMap = roleUserMap && Object.keys(roleUserMap).length > 0;
@@ -175,7 +177,7 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         },
       });
 
-      // --- Auto-advance queue after lock release ---
+      // --- Auto-advance queue after lock release (snapshot-aware via helper) ---
       if (lockReleased) autoAdvanceTestEnvQueue();
     }),
   );

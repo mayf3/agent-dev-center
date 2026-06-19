@@ -103,6 +103,7 @@ model Requirement {
   type                RequirementType       @default(FEATURE)
   tags                String[]              @default([])
   workflowId          String?               @db.Uuid
+  workflowSnapshot    Json?                 @map("workflow_snapshot")
   currentStep         String?
   branch              String?
   repoPath            String?

@@ -10,7 +10,7 @@
  */
 import { prisma } from '../../lib/prisma.js';
 import { HttpError } from '../../utils/http-error.js';
-import { getNextStep, parseSteps, type WorkflowStep } from './workflow-helpers.js';
+import { getNextStep, parseSteps, getWorkflowRawJson, type WorkflowStep } from './workflow-helpers.js';
 
 /**
  * 测试环境锁保护范围
@@ -113,16 +113,15 @@ export function autoAdvanceTestEnvQueue(): void {
       const next = await prisma.requirement.findFirst({
         where: { currentStep: 'test_env_deploy' },
         orderBy: { updatedAt: 'asc' },
+        select: { id: true, title: true, branch: true, workflowSnapshot: true, workflow: { select: { steps: true } } },
       });
       if (!next) return;
 
-      const wf = next.workflowId
-        ? await prisma.workflowTemplate.findUnique({ where: { id: next.workflowId } })
-        : null;
-      if (!wf) return;
+      const rawJson = getWorkflowRawJson(next);
+      if (!rawJson) return;
 
-      const wfSteps = parseSteps(wf.steps);
-      const hasStep = wfSteps.some((s) => s.name === 'test_env_deploy');
+      const steps = parseSteps(rawJson);
+      const hasStep = steps.some(s => s.name === 'test_env_deploy');
       if (!hasStep) return;
 
       await prisma.testEnvLock.upsert({
