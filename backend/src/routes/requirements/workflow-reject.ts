@@ -89,9 +89,22 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       }
 
       // 自动解析回退步骤的 assigneeId
-      let newAssigneeId = targetStepDef
-        ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
-        : requirement.assigneeId;
+      let newAssigneeId = requirement.assigneeId; // 默认保持原 assignee
+      if (targetStepDef) {
+        newAssigneeId = await resolveAssigneeForStep(
+          targetStepDef.role,
+          requirement.assigneeId,
+          {
+            assigneeMode: 'fixed',
+            roleUserMap: undefined,
+            requirement: {
+              id: params.id,
+              requesterId: requirement.requesterId,
+              assigneeId: requirement.assigneeId,
+            },
+          },
+        );
+      }
 
       // 回退到 draft 时 assignee 设为需求提出者
       if (targetStepName === 'draft' && requirement.requesterId) {
