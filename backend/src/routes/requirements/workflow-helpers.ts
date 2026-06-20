@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma.js';
+import { HttpError } from '../../utils/http-error.js';
 
 // ── Types ────────────────────────────────────────────────
 
@@ -137,6 +138,61 @@ export async function getStepWipCount(stepName: string, excludeRequirementId?: s
     where.id = { not: excludeRequirementId };
   }
   return prisma.requirement.count({ where });
+}
+
+// ── Snapshot Helpers (Kernel Phase 2A) ─────────────────────
+
+/**
+ * Normalize raw workflow JSON into a steps array.
+ *
+ * Accepts:
+ * - Structure A: a JSON array of step objects
+ * - Structure B: a JSON object with a "steps" array
+ *
+ * Rejects (throws HttpError 400):
+ * - string, number, boolean, null
+ * - object without a "steps" property
+ * - object whose "steps" is not an array
+ */
+export function getWorkflowSteps(rawJson: unknown): WorkflowStep[] {
+  // Structure A: direct array
+  if (Array.isArray(rawJson)) {
+    return parseSteps(rawJson);
+  }
+  // Structure B: { steps: [...], roleUserMap?: ... }
+  if (rawJson !== null && typeof rawJson === 'object') {
+    const obj = rawJson as Record<string, unknown>;
+    if (!('steps' in obj)) {
+      throw new HttpError(400, '工作流定义缺少 steps 字段');
+    }
+    if (!Array.isArray(obj.steps)) {
+      throw new HttpError(400, '工作流定义中 steps 不是数组');
+    }
+    return parseSteps(obj.steps);
+  }
+  throw new HttpError(400, '工作流定义格式无效：需要数组或包含 steps 数组的对象');
+}
+
+/**
+ * Extract the roleUserMap from a raw workflow JSON object.
+ *
+ * - Array snapshot → returns empty map (no role overrides).
+ * - Object snapshot → reads roleUserMap.
+ * - Missing or JSON null → returns empty map.
+ * - Wrong type (string, number, array) → throws.
+ */
+export function getWorkflowRoleUserMap(rawJson: unknown): Record<string, string> {
+  if (!rawJson || typeof rawJson !== 'object' || Array.isArray(rawJson)) {
+    return {};
+  }
+  const obj = rawJson as Record<string, unknown>;
+  if (!('roleUserMap' in obj)) return {};
+  const rum = obj.roleUserMap;
+  if (rum === null || rum === undefined) return {};
+  if (typeof rum !== 'object' || Array.isArray(rum)) {
+    throw new HttpError(400, '工作流定义中 roleUserMap 类型无效');
+  }
+  return rum as Record<string, string>;
 }
 
 /** Write audit transition log */

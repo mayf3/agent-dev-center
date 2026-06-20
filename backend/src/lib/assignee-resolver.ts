@@ -7,6 +7,14 @@
  * - 工作流 advance/reject 时自动查找下一步骤 role 对应的用户
  */
 import { prisma } from './prisma.js';
+import { getWorkflowSteps } from '../routes/requirements/workflow-helpers.js';
+
+/**
+ * Minimal user lookup interface — accepts any Prisma client (extended or plain)
+ * that provides user.findUnique / user.findFirst.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AssigneeResolverDb = any;
 
 /** 工作流步骤 role → InternalRole 映射 */
 const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
@@ -35,7 +43,9 @@ const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
 export async function resolveAssigneeForStep(
   stepRole: string,
   currentAssigneeId?: string | null,
+  db?: AssigneeResolverDb,
 ): Promise<string | null> {
+  const client = db ?? prisma;
   // requester 角色：返回当前 assignee（需求创建者），不查找 internalRole
   if (stepRole === 'requester') {
     return currentAssigneeId ?? null;
@@ -45,7 +55,7 @@ export async function resolveAssigneeForStep(
 
   // 如果当前 assignee 的角色匹配，保持不变
   if (currentAssigneeId) {
-    const current = await prisma.user.findUnique({
+    const current = await client.user.findUnique({
       where: { id: currentAssigneeId },
       select: { internalRole: true },
     });
@@ -55,7 +65,7 @@ export async function resolveAssigneeForStep(
   }
 
   // 查找匹配角色的用户（按创建时间排序，保证确定性）
-  const match = await prisma.user.findFirst({
+  const match = await client.user.findFirst({
     where: { internalRole: internalRole as any },
     orderBy: { createdAt: 'asc' },
     select: { id: true },
@@ -64,7 +74,7 @@ export async function resolveAssigneeForStep(
   if (match?.id) return match.id;
 
   // 兜底：找不到匹配用户时分配给 CTO（避免 assignee 为空导致任务无人处理）
-  const cto = await prisma.user.findFirst({
+  const cto = await client.user.findFirst({
     where: { internalRole: 'cto' },
     select: { id: true },
   });
@@ -105,18 +115,31 @@ export async function validateAssigneeRoleMatch(
 
   const requirement = await prisma.requirement.findUnique({
     where: { id: requirementId },
-    select: { workflowId: true, currentStep: true },
+    select: { workflowId: true, currentStep: true, workflowSnapshot: true },
   });
   if (!requirement?.workflowId || !requirement.currentStep) return { ok: true };
 
-  // 获取工作流模板
-  const template = await prisma.workflowTemplate.findFirst({
-    where: { id: requirement.workflowId, isActive: true },
-    select: { steps: true },
-  });
-  if (!template) return { ok: true };
+  // Kernel Phase 2A: prefer workflowSnapshot over live template
+  let rawSteps: unknown;
+  if (requirement.workflowSnapshot !== null) {
+    rawSteps = requirement.workflowSnapshot;
+  } else {
+    // Legacy fallback: no snapshot → read from live template
+    const template = await prisma.workflowTemplate.findFirst({
+      where: { id: requirement.workflowId, isActive: true },
+      select: { steps: true },
+    });
+    if (!template) return { ok: true };
+    rawSteps = template.steps;
+  }
 
-  const steps = template.steps as Array<{ name: string; role: string; displayName: string }>;
+  // Parse steps using the snapshot helper (supports array and {steps: array} forms)
+  let steps: Array<{ name: string; role: string; displayName: string }>;
+  try {
+    steps = getWorkflowSteps(rawSteps) as any;
+  } catch {
+    return { ok: true };
+  }
 
   // 确定用于校验的步骤：优先 targetStepName（步骤变更场景），否则用 currentStep
   const stepForValidation = targetStepName ?? requirement.currentStep;
