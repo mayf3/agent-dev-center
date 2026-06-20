@@ -126,6 +126,7 @@ model User {
   marketplaceTasks      MarketplaceTask[]     @relation("MarketplaceRequester")
   ownedProjects         Project[]             @relation("ProjectOwner")
   comments              RequirementComment[]  @relation("CommentAuthor")
+  executionLeasesOwned  ExecutionLease[]      @relation("ExecutionLeaseOwner")
 
   @@index([lastLoginAt])
   @@map("users")
@@ -208,6 +209,13 @@ model Requirement {
   assigneeUser  User? @relation("AssigneeRequirements", fields: [assigneeId], references: [id])
 
   comments RequirementComment[] @relation("CommentRequirement")
+
+  // Kernel: workflow snapshot & state version
+  workflowSnapshot Json? @map("workflow_snapshot")
+  stateVersion     Int   @default(0) @map("state_version")
+
+  // Kernel: execution lease
+  executionLeases ExecutionLease[]
 
   @@index([currentStep])
   @@index([priority])
@@ -631,6 +639,58 @@ model WeeklyReport {
   @@index([week])
   @@index([status])
   @@map("weekly_reports")
+}
+
+// ─── Execution Lease (Kernel) ───────────────────────────────
+
+enum ExecutionLeaseStatus {
+  ACTIVE
+  RELEASED
+  EXPIRED
+  FAILED
+}
+
+model ExecutionLease {
+  id                   String                @id @default(uuid()) @db.Uuid
+  requirementId        String                @db.Uuid
+  workflowStep         String
+  expectedStateVersion Int
+  ownerUserId          String                @db.Uuid
+  ownerAgentId         String?
+  sessionId            String
+  claimKey             String                @unique
+  status               ExecutionLeaseStatus  @default(ACTIVE)
+  acquiredAt           DateTime              @default(now()) @db.Timestamptz(3)
+  heartbeatAt          DateTime              @default(now()) @db.Timestamptz(3)
+  expiresAt            DateTime              @db.Timestamptz(3)
+  releasedAt           DateTime?             @db.Timestamptz(3)
+  releaseReason        String?
+  worktreePath         String?
+  gitBranch            String?
+  createdAt            DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @db.Timestamptz(3)
+          requirement          Requirement           @relation(fields: [requirementId], references: [id], onDelete: Restrict)
+          owner                User                  @relation("ExecutionLeaseOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  events               ExecutionLeaseEvent[]
+
+  @@index([requirementId, status])
+  @@index([status, expiresAt])
+  @@map("execution_leases")
+}
+
+model ExecutionLeaseEvent {
+  id             String         @id @default(uuid()) @db.Uuid
+  leaseId        String         @db.Uuid
+  eventType      String
+  idempotencyKey String         @unique
+  actorId        String?        @db.Uuid
+  metadata       Json?
+  createdAt      DateTime       @default(now()) @db.Timestamptz(3)
+  lease          ExecutionLease @relation(fields: [leaseId], references: [id], onDelete: Restrict)
+
+  @@index([leaseId])
+  @@index([createdAt])
+  @@map("execution_lease_events")
 }
 
 // ─── Postmortem Report ──────────────────────────────────────
