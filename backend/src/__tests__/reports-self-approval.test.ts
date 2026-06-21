@@ -352,3 +352,76 @@ describe('M4: roleUserMap user existence check', () => {
       .toBe('user-backend-001');
   });
 });
+
+// ════════════════════════════════════════════════════════════
+// Advance boundary: HttpError (400) vs generic Error (500)
+// ════════════════════════════════════════════════════════════
+import { HttpError } from '../utils/http-error.js';
+
+describe('Advance boundary: error mapping (400 vs 500)', () => {
+
+  it('1. role-based + map missing role → HttpError(400)', async () => {
+    const snapshot = {
+      steps: [{ name: 'qa_review', role: 'qa', displayName: 'QA', requiredReports: [], autoAdvance: false, assigneeMode: 'role-based' as const }],
+      roleUserMap: { backend_developer: 'user-backend-001' },
+    };
+    try {
+      await resolveAssigneeFromSnapshot('qa', 'cur', REQ_DATA, snapshot, 'qa_review', makeMockDb(MOCK_USERS));
+      expect.unreachable('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(HttpError);
+      expect((e as HttpError).statusCode).toBe(400);
+    }
+  });
+
+  it('2. role-based + mapped user not found → HttpError(400)', async () => {
+    const db = makeMockDb({ // user-backend-001 NOT in db
+      'user-cto-001': { id: 'user-cto-001', internalRole: 'cto' },
+    });
+    try {
+      await resolveAssigneeFromSnapshot('backend_developer', 'old', REQ_DATA, SNAPSHOT_WITH_RUM, 'dev_self_check', db);
+      expect.unreachable('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(HttpError);
+      expect((e as HttpError).statusCode).toBe(400);
+    }
+  });
+
+  it('3. fixed + assignee null → HttpError(400)', async () => {
+    try {
+      await resolveAssigneeFromSnapshot('cto', null, REQ_DATA, SNAPSHOT_NO_RUM, 'cto_review', makeMockDb(MOCK_USERS));
+      expect.unreachable('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(HttpError);
+      expect((e as HttpError).statusCode).toBe(400);
+    }
+  });
+
+  it('4. creator + requesterId null → HttpError(400)', async () => {
+    const reqNoRequester = { requesterId: null, assigneeId: 'cur' };
+    try {
+      await resolveAssigneeFromSnapshot('pm', 'cur', reqNoRequester, SNAPSHOT_NO_RUM, 'pm_review', makeMockDb(MOCK_USERS));
+      expect.unreachable('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(HttpError);
+      expect((e as HttpError).statusCode).toBe(400);
+    }
+  });
+
+  it('5. unknown generic Error (e.g. prisma failure) → NOT HttpError, stays 500', async () => {
+    const db = {
+      user: {
+        findUnique: vi.fn(() => { throw new Error('connection refused'); }),
+        findFirst: vi.fn(),
+      },
+    };
+    try {
+      await resolveAssigneeFromSnapshot('backend_developer', 'cur', REQ_DATA, SNAPSHOT_WITH_RUM, 'dev_self_check', db);
+      expect.unreachable('should have thrown');
+    } catch (e) {
+      // Generic errors must NOT be HttpError — they stay 500
+      expect(e).not.toBeInstanceOf(HttpError);
+      expect((e as Error).message).toBe('connection refused');
+    }
+  });
+});

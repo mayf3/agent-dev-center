@@ -268,7 +268,7 @@ integration('assignment integration (needs KERNEL_TEST_DATABASE_URL)', () => {
 
   test('T5: snapshot preserves step-level details (assigneeMode)', async () => {
     const steps = [
-      { name: 'draft', displayName: '草稿', role: 'requester', requiredReports: [], autoAdvance: false, assigneeMode: 'role' },
+      { name: 'draft', displayName: '草稿', role: 'requester', requiredReports: [], autoAdvance: false, assigneeMode: 'role-based' },
     ];
     const tplId = await createTemplate(steps);
     const reqId = await createRequirement();
@@ -276,7 +276,7 @@ integration('assignment integration (needs KERNEL_TEST_DATABASE_URL)', () => {
     const result = await assign(reqId, await getTemplateName(tplId));
 
     const snap = result.workflowSnapshot as any[];
-    expect(snap[0].assigneeMode).toBe('role');
+    expect(snap[0].assigneeMode).toBe('role-based');
   });
 
   // ── T6: Template modification isolation ───────────────────
