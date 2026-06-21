@@ -9,6 +9,7 @@
  */
 import { prisma } from './prisma.js';
 import { getWorkflowSteps, getWorkflowRoleUserMap } from '../routes/requirements/workflow-helpers.js';
+import { HttpError } from '../utils/http-error.js';
 
 /**
  * Minimal user lookup interface — accepts any Prisma client (extended or plain)
@@ -76,14 +77,14 @@ export async function resolveAssigneeFromSnapshot(
   switch (mode) {
     case 'creator': {
       if (!requirement?.requesterId) {
-        throw new Error('assigneeMode=creator 但需求没有 requesterId');
+        throw new HttpError(400, 'assigneeMode=creator 但需求没有 requesterId');
       }
       return requirement.requesterId;
     }
 
     case 'fixed': {
       if (!currentAssigneeId) {
-        throw new Error('assigneeMode=fixed 但当前 assignee 为空，无法保持');
+        throw new HttpError(400, 'assigneeMode=fixed 但当前 assignee 为空，无法保持');
       }
       return currentAssigneeId;
     }
@@ -94,7 +95,8 @@ export async function resolveAssigneeFromSnapshot(
       if (roleUserMap && Object.keys(roleUserMap).length > 0) {
         const userId = roleUserMap[stepRole];
         if (!userId) {
-          throw new Error(
+          throw new HttpError(
+            400,
             `roleUserMap 中未找到 role「${stepRole}」的映射，`
             + `已配置的角色: ${Object.keys(roleUserMap).join(', ')}`,
           );
@@ -106,7 +108,8 @@ export async function resolveAssigneeFromSnapshot(
           select: { id: true },
         });
         if (!user) {
-          throw new Error(
+          throw new HttpError(
+            400,
             `roleUserMap 映射的用户 ${userId} 不存在（role: ${stepRole}）`,
           );
         }
