@@ -1,13 +1,14 @@
 /**
  * Assignee Resolver — 工作流步骤角色 → 用户自动映射
  *
- * 核心原则：
- * - assigneeId 是唯一的真实字段（FK → users.id）
- * - assignee 文本字段废弃，API 输出通过 JOIN assigneeUser.name 获取
- * - 工作流 advance/reject 时自动查找下一步骤 role 对应的用户
+ * v3 (snapshot-first):
+ * - 从 workflowSnapshot 解析 roleUserMap + assigneeMode
+ * - mode 判断在 hasRoleUserMap **之前**（creator/fixed 不依赖 roleUserMap）
+ * - role-based: 有 roleUserMap → 精准分配；无 → internalRole fallback
+ * - roleUserMap 映射的 userId 会做用户存在性检查（M4）
  */
 import { prisma } from './prisma.js';
-import { getWorkflowSteps } from '../routes/requirements/workflow-helpers.js';
+import { getWorkflowSteps, getWorkflowRoleUserMap } from '../routes/requirements/workflow-helpers.js';
 
 /**
  * Minimal user lookup interface — accepts any Prisma client (extended or plain)
@@ -16,7 +17,7 @@ import { getWorkflowSteps } from '../routes/requirements/workflow-helpers.js';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AssigneeResolverDb = any;
 
-/** 工作流步骤 role → InternalRole 映射 */
+/** 工作流步骤 role → InternalRole 映射（向后兼容用） */
 const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
   backend_developer: 'backend_developer',
   frontend_developer: 'frontend_developer',
@@ -29,12 +30,123 @@ const WORKFLOW_ROLE_TO_INTERNAL: Record<string, string> = {
   admin: 'cto',
   ops: 'ops',
   pm: 'pm',
-  qa: 'qa',  // 2026-06-05 新增 QA 步骤支持
-  architect: 'architect',  // 2026-06-13 架构师独立角色
+  qa: 'qa',
+  architect: 'architect',
 };
 
 /**
- * 根据工作流步骤的 role 找到对应的用户 ID
+ * Snapshot-first: 根据 workflowSnapshot 解析目标步骤的 assignee
+ *
+ * 语义（M1 重构）：
+ * 1. requester 角色直接返回 requesterId
+ * 2. mode 判断在 hasRoleUserMap 之前
+ * 3. creator/fixed 不依赖 roleUserMap
+ * 4. role-based: 有 roleUserMap → 精准（检查用户存在性 M4）；无 → internalRole fallback
+ *
+ * @param stepRole - 目标步骤的 role 字段
+ * @param currentAssigneeId - 当前 assignee
+ * @param requirement - 需求对象（需要 requesterId, assigneeId）
+ * @param workflowSnapshot - 工作流快照
+ * @param targetStepName - 目标步骤名称
+ * @param db - 可选的 Prisma client（用于测试和事务内查询）
+ * @returns 目标 assignee 的用户 ID
+ * @throws { Error } 各种业务错误（配置错误、用户不存在等）
+ */
+export async function resolveAssigneeFromSnapshot(
+  stepRole: string,
+  currentAssigneeId: string | null | undefined,
+  requirement: { requesterId: string | null; assigneeId: string | null } | null | undefined,
+  workflowSnapshot: unknown,
+  targetStepName: string,
+  db?: AssigneeResolverDb,
+): Promise<string | null> {
+  const client = db ?? prisma;
+
+  // requester 角色特殊处理 — 不走 mode 判断
+  if (stepRole === 'requester') {
+    return requirement?.requesterId ?? currentAssigneeId ?? null;
+  }
+
+  // 解析 assigneeMode（从 snapshot 中读取目标步骤的 mode）
+  const mode = parseAssigneeMode(workflowSnapshot, targetStepName);
+
+  // 解析 roleUserMap
+  const roleUserMap = getWorkflowRoleUserMap(workflowSnapshot);
+
+  switch (mode) {
+    case 'creator': {
+      if (!requirement?.requesterId) {
+        throw new Error('assigneeMode=creator 但需求没有 requesterId');
+      }
+      return requirement.requesterId;
+    }
+
+    case 'fixed': {
+      if (!currentAssigneeId) {
+        throw new Error('assigneeMode=fixed 但当前 assignee 为空，无法保持');
+      }
+      return currentAssigneeId;
+    }
+
+    case 'role-based':
+    default: {
+      // 有 roleUserMap → 精准分配
+      if (roleUserMap && Object.keys(roleUserMap).length > 0) {
+        const userId = roleUserMap[stepRole];
+        if (!userId) {
+          throw new Error(
+            `roleUserMap 中未找到 role「${stepRole}」的映射，`
+            + `已配置的角色: ${Object.keys(roleUserMap).join(', ')}`,
+          );
+        }
+
+        // M4: 用户存在性检查
+        const user = await client.user.findUnique({
+          where: { id: userId },
+          select: { id: true },
+        });
+        if (!user) {
+          throw new Error(
+            `roleUserMap 映射的用户 ${userId} 不存在（role: ${stepRole}）`,
+          );
+        }
+
+        return userId;
+      }
+
+      // 无/null/空 map → internalRole fallback（历史兼容）
+      return resolveAssigneeByInternalRole(stepRole, currentAssigneeId, client);
+    }
+  }
+}
+
+/**
+ * 从 snapshot 中解析目标步骤的 assigneeMode
+ */
+function parseAssigneeMode(
+  workflowSnapshot: unknown,
+  targetStepName: string,
+): 'role-based' | 'creator' | 'fixed' {
+  if (!workflowSnapshot) return 'role-based';
+
+  try {
+    const steps = getWorkflowSteps(workflowSnapshot);
+    const targetStep = steps.find(s => s.name === targetStepName);
+    if (targetStep && 'assigneeMode' in targetStep) {
+      const mode = (targetStep as any).assigneeMode;
+      if (mode === 'creator' || mode === 'fixed' || mode === 'role-based') {
+        return mode;
+      }
+    }
+  } catch {
+    // 解析失败使用默认值
+  }
+
+  return 'role-based';
+}
+
+/**
+ * 旧逻辑：根据工作流步骤的 role 找到对应的用户 ID（基于 internalRole）
  *
  * 优先级：
  * 1. 如果传入 currentAssigneeId 且该用户的 internalRole 匹配 → 保持不变
@@ -45,11 +157,20 @@ export async function resolveAssigneeForStep(
   currentAssigneeId?: string | null,
   db?: AssigneeResolverDb,
 ): Promise<string | null> {
+  return resolveAssigneeByInternalRole(stepRole, currentAssigneeId, db);
+}
+
+async function resolveAssigneeByInternalRole(
+  stepRole: string,
+  currentAssigneeId?: string | null,
+  db?: AssigneeResolverDb,
+): Promise<string | null> {
   const client = db ?? prisma;
-  // requester 角色：返回当前 assignee（需求创建者），不查找 internalRole
+
   if (stepRole === 'requester') {
     return currentAssigneeId ?? null;
   }
+
   const internalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
   if (!internalRole) return currentAssigneeId ?? null;
 
@@ -73,7 +194,7 @@ export async function resolveAssigneeForStep(
 
   if (match?.id) return match.id;
 
-  // 兜底：找不到匹配用户时分配给 CTO（避免 assignee 为空导致任务无人处理）
+  // 兜底：找不到匹配用户时分配给 CTO
   const cto = await client.user.findFirst({
     where: { internalRole: 'cto' },
     select: { id: true },
@@ -96,14 +217,7 @@ export async function getAssigneeName(assigneeId: string | null): Promise<string
 /**
  * 验证 assigneeId 是否匹配需求工作流步骤的角色
  *
- * 如果需求有工作流，assigneeId 指向的用户必须拥有目标步骤所需的 internalRole。
- *
- * 2026-06-14 修复 (fe6d34b5): 当步骤发生变更时（PM 打回 draft），应使用
- * targetStep 的 role 校验 assignee，而非 currentStep 的 role。
- * 例：pm_review→draft，PM 设 assignee=requester，应校验 draft 的 role(requester)
- * 而非 pm_review 的 role(pm)。
- *
- * @param targetStepName 可选，步骤变更时传入目标步骤名，用于正确校验角色
+ * @param targetStepName 可选，步骤变更时传入目标步骤名
  * @returns { ok: true } 或 { ok: false; message: string }
  */
 export async function validateAssigneeRoleMatch(
@@ -124,7 +238,6 @@ export async function validateAssigneeRoleMatch(
   if (requirement.workflowSnapshot !== null) {
     rawSteps = requirement.workflowSnapshot;
   } else {
-    // Legacy fallback: no snapshot → read from live template
     const template = await prisma.workflowTemplate.findFirst({
       where: { id: requirement.workflowId, isActive: true },
       select: { steps: true },
@@ -133,7 +246,6 @@ export async function validateAssigneeRoleMatch(
     rawSteps = template.steps;
   }
 
-  // Parse steps using the snapshot helper (supports array and {steps: array} forms)
   let steps: Array<{ name: string; role: string; displayName: string }>;
   try {
     steps = getWorkflowSteps(rawSteps) as any;
@@ -141,21 +253,17 @@ export async function validateAssigneeRoleMatch(
     return { ok: true };
   }
 
-  // 确定用于校验的步骤：优先 targetStepName（步骤变更场景），否则用 currentStep
   const stepForValidation = targetStepName ?? requirement.currentStep;
   const stepDef = steps.find(s => s.name === stepForValidation);
   if (!stepDef) return { ok: true };
 
   const stepRole = stepDef.role;
 
-  // 特殊处理：requester 角色不校验 internalRole（draft 步骤的 assignee 应为需求创建者）
-  // 任何人可以是 requester，跟 internalRole 无关
   if (stepRole === 'requester') return { ok: true };
 
   const expectedInternalRole = WORKFLOW_ROLE_TO_INTERNAL[stepRole];
   if (!expectedInternalRole) return { ok: true };
 
-  // 检查被分配用户的 internalRole
   const assigneeUser = await prisma.user.findUnique({
     where: { id: assigneeUserId },
     select: { name: true, internalRole: true },
