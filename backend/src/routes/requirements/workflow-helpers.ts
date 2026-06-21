@@ -16,6 +16,7 @@ export interface WorkflowStep {
   requiredReports: string[];
   autoAdvance: boolean;
   wipLimit?: number; // WIP 上限：该步骤同时处理的需求数量上限（undefined = 无限制）
+  assigneeMode?: 'role-based' | 'creator' | 'fixed'; // assignee 解析模式（snapshot-first）
 }
 
 // ── Helpers ──────────────────────────────────────────────
@@ -52,6 +53,7 @@ export function parseSteps(stepsJson: unknown): WorkflowStep[] {
     requiredReports: z.array(z.string()),
     autoAdvance: z.boolean().default(false),
     wipLimit: z.number().int().positive().optional(),
+    assigneeMode: z.enum(['role-based', 'creator', 'fixed']).optional(),
   })).parse(stepsJson);
   return steps;
 }

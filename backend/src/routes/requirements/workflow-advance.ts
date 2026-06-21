@@ -9,7 +9,7 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { advanceStepSchema } from '../../schemas/workflow.js';
-import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
+import { resolveAssigneeFromSnapshot, resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
 import {
   parseSteps,
   getCurrentStep,
@@ -171,8 +171,16 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         }
       }
 
-      // 自动解析下一步骤的 assigneeId
-      const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
+      // 自动解析下一步骤的 assigneeId（snapshot-first）
+      const newAssigneeId = requirement.workflowSnapshot
+        ? await resolveAssigneeFromSnapshot(
+            targetStep.role,
+            requirement.assigneeId,
+            { requesterId: requirement.requesterId, assigneeId: requirement.assigneeId },
+            requirement.workflowSnapshot,
+            targetStep.name,
+          )
+        : await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
 
       const updated = await prisma.requirement.update({
         where: { id: params.id },
