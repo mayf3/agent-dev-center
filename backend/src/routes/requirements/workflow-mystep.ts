@@ -111,7 +111,7 @@ export function registerWorkflowMyStepRoutes(router: import('express').Router): 
       const canOperate = !!matchedRole || req.user!.role === 'admin' || req.user!.role === 'cto_agent';
 
       // 检查报告完成情况
-      const { ok: reportsReady, missing } = await checkReportsApproved(params.id, currentStep.requiredReports);
+      const { ok: reportsReady, missing } = await checkReportsApproved(params.id, currentStep.requiredReports, requirement.currentStep);
 
       // 获取下一步信息
       const nextStep = getNextStep(steps, requirement.currentStep);

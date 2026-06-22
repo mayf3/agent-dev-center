@@ -90,7 +90,7 @@ const SELF_CERTIFY_REPORT_TYPES = new Set([
  *  - Self-certify types (DEV_SELF_CHECK, DEPLOY_CONFIRM): status must be 'pending' or 'approved'
  *  - All other types (TEST_REPORT, SECURITY_REVIEW, CTO_REVIEW, etc.): status must be 'approved'
  */
-export async function checkReportsApproved(requirementId: string, requiredReports: string[]): Promise<{ ok: boolean; missing: string[] }> {
+export async function checkReportsApproved(requirementId: string, requiredReports: string[], workflowStep?: string | null): Promise<{ ok: boolean; missing: string[] }> {
   if (requiredReports.length === 0) return { ok: true, missing: [] };
 
   const selfCertify = requiredReports.filter(t => SELF_CERTIFY_REPORT_TYPES.has(t as string));
@@ -105,6 +105,7 @@ export async function checkReportsApproved(requirementId: string, requiredReport
         requirementId,
         reportType: { in: selfCertify as any },
         status: { in: ['pending', 'approved'] },
+        ...(workflowStep ? { workflowStep } : {}),
       },
       select: { reportType: true },
     });
@@ -121,6 +122,7 @@ export async function checkReportsApproved(requirementId: string, requiredReport
         requirementId,
         reportType: { in: needApproval as any },
         status: 'approved',
+        ...(workflowStep ? { workflowStep } : {}),
       },
       select: { reportType: true },
     });

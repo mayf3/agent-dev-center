@@ -71,7 +71,7 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         ? currentStep.requiredReports.filter(r => r !== 'SECURITY_REVIEW')
         : currentStep.requiredReports;
       if (currentReports.length > 0) {
-        const { ok, missing } = await checkReportsApproved(params.id, currentReports);
+        const { ok, missing } = await checkReportsApproved(params.id, currentReports, requirement.currentStep);
         if (!ok) {
           const reportLabels: Record<string, string> = {
             DEV_SELF_CHECK: '开发自检报告',
