@@ -1,0 +1,27 @@
+{
+  "version": "5.22.0",
+  "steps": [
+    {
+      "tag": "CreateTable",
+      "model": "Notification",
+      "table": "notifications",
+      "columns": [
+        { "name": "id", "type": "Uuid", "isRequired": true, "default": { "name": "gen_random_uuid" } },
+        { "name": "userId", "type": "Uuid", "isRequired": false },
+        { "name": "type", "type": "String", "isRequired": true },
+        { "name": "title", "type": "String", "isRequired": true },
+        { "name": "content", "type": "Json", "isRequired": true },
+        { "name": "relatedReqId", "type": "Uuid", "isRequired": false },
+        { "name": "isRead", "type": "Boolean", "isRequired": true, "default": false },
+        { "name": "createdAt", "type": "DateTime", "isRequired": true, "default": { "name": "now" } }
+      ],
+      "primaryKey": { "name": "notifications_pkey", "fields": ["id"] }
+    }
+  ],
+  "indexes": [
+    { "name": "notifications_userId_idx", "columns": ["userId"] },
+    { "name": "notifications_isRead_idx", "columns": ["isRead"] },
+    { "name": "notifications_type_idx", "columns": ["type"] },
+    { "name": "notifications_createdAt_idx", "columns": ["createdAt"] }
+  ]
+}
