@@ -19,6 +19,54 @@ import {
 export function registerWorkflowMyStepRoutes(router: import('express').Router): void {
 
   /**
+   * GET /mine/rejected-reports — 查询当前用户被驳回的报告
+   */
+  router.get(
+    '/mine/rejected-reports',
+    asyncHandler(async (req, res) => {
+      const userId = req.user!.id;
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      const from = req.query.from ? new Date(req.query.from as string) : thirtyDaysAgo;
+      const to = req.query.to ? new Date(req.query.to as string) : now;
+
+      if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+        throw new HttpError(400, 'from/to 日期格式无效，请使用 ISO 8601 格式');
+      }
+
+      const reports = await prisma.requirementReport.findMany({
+        where: {
+          submittedById: userId,
+          status: 'rejected',
+          createdAt: { gte: from, lte: to },
+        },
+        include: {
+          requirement: {
+            select: { id: true, title: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
+
+      res.json({
+        data: reports.map(r => ({
+          requirementId: r.requirementId,
+          requirementTitle: r.requirement.title,
+          reportType: r.reportType,
+          reviewComment: r.reviewComment,
+          createdAt: r.createdAt,
+          reviewedAt: r.reviewedAt,
+        })),
+        total: reports.length,
+        from: from.toISOString(),
+        to: to.toISOString(),
+      });
+    }),
+  );
+
+  /**
    * GET /:id/workflow/myStep — 查看当前用户在该需求的工作流状态
    */
   router.get(
