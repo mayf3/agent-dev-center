@@ -70,7 +70,7 @@ export const listRequirementsSchema = z.object({
 
 export const requirementIdSchema = z.object({
   params: z.object({
-    id: z.string().uuid()
+    id: z.string().min(1)
   })
 });
 

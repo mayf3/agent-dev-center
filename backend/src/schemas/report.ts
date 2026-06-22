@@ -21,9 +21,9 @@ export const reportStatusValues = [
 ] as const;
 
 export const submitReportSchema = z.object({
-  params: z.object({ id: z.string().uuid().optional() }),
+  params: z.object({ id: z.string().min(1).optional() }),
   body: z.object({
-    requirementId: z.string().uuid().optional(),  // autoRegisterRoutes 兼容：平路路径时从 body 传递
+    requirementId: z.string().min(1).optional(),  // autoRegisterRoutes 兼容：平路路径时从 body 传递
     reportType: z.enum(reportTypeValues),
     content: z.record(z.unknown()),
     submittedBy: z.string().min(1).optional(),
@@ -31,16 +31,16 @@ export const submitReportSchema = z.object({
 });
 
 export const listReportsSchema = z.object({
-  params: z.object({ id: z.string().uuid().optional() }),  // autoRegisterRoutes 兼容：平路路径时可为空
+  params: z.object({ id: z.string().min(1).optional() }),  // autoRegisterRoutes 兼容：平路路径时可为空
   query: z.object({
-    requirementId: z.string().uuid().optional(),
+    requirementId: z.string().min(1).optional(),
     reportType: z.enum(reportTypeValues).optional(),
     status: z.enum(reportStatusValues).optional(),
   }),
 });
 
 export const reviewReportSchema = z.object({
-  params: z.object({ id: z.string().uuid().optional(), reportId: z.string().uuid() }),
+  params: z.object({ id: z.string().min(1).optional(), reportId: z.string().min(1) }),
   body: z.object({
     status: z.enum(['approved', 'rejected', 'changes_requested']),
     reviewComment: z.string().max(2000).optional(),
@@ -58,5 +58,5 @@ export const reviewReportSchema = z.object({
 });
 
 export const reportIdSchema = z.object({
-  params: z.object({ id: z.string().uuid(), reportId: z.string().uuid() }),
+  params: z.object({ id: z.string().min(1), reportId: z.string().min(1) }),
 });

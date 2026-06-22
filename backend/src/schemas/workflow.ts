@@ -36,6 +36,6 @@ export const pmRejectStepSchema = z.object({
 
 export const workflowTemplateIdSchema = z.object({
   params: z.object({
-    id: z.string().uuid(),
+    id: z.string().min(1),
   }),
 });
