@@ -191,6 +191,20 @@ reportsRouter.post(
       orderBy: { createdAt: 'desc' },
     });
 
+    // ── 报告内容质量门禁 ──
+    const contentLen = JSON.stringify(body.content).length;
+    const minContentLen = body.reportType === 'TEST_REPORT' ? 200 : 100;
+    if (contentLen < minContentLen) {
+      throw new HttpError(400, `${body.reportType} 报告内容过短（${contentLen} 字符，最低 ${minContentLen} 字符），请提供更详细的报告内容（测试步骤、代码引用、验收证据等）`);
+    }
+    if (body.reportType === 'DEV_SELF_CHECK') {
+      const gitHash = (body.content as Record<string, unknown>)?.gitHash;
+      const hasGitHash = typeof gitHash === 'string' && gitHash.length > 0;
+      if (!hasGitHash) {
+        throw new HttpError(400, 'DEV_SELF_CHECK 报告必须包含 gitHash 字段');
+      }
+    }
+
     let report;
 
     if (existingReport) {
