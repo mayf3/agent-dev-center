@@ -112,11 +112,20 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       });
 
       const updated = await prisma.requirement.update({
-        where: { id: params.id },
+        where: {
+          id: params.id,
+          stateVersion: requirement.stateVersion,  // CAS
+        },
         data: {
           currentStep: targetStepName,
           assigneeId: newAssigneeId,
+          stateVersion: { increment: 1 },
         },
+      }).catch((err: any) => {
+        if (err?.code === 'P2025') {
+          throw new HttpError(409, '并发冲突：该需求已被其他操作修改，请刷新后重试');
+        }
+        throw err;
       });
 
       const newAssigneeName = await getAssigneeName(newAssigneeId);
