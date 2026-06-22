@@ -77,7 +77,7 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
           targetStepDef = draftStep;
         } else {
           // 智能回退：有些步骤驳回一步不能到真正需要修改的人
-          const REJECT_TO_DEV = ['security_review', 'cto_review', 'merge_to_main', 'deploying', 'qa_review_deploy', 'done'];
+          const REJECT_TO_DEV = ['test_env_deploy', 'security_review', 'cto_review', 'merge_to_main', 'deploying', 'qa_review_deploy', 'done'];
           if (REJECT_TO_DEV.includes(currentStep.name ?? '')) {
             const devStep = steps.find(s => s.name === 'dev_self_check');
             targetStepName = devStep?.name ?? 'dev_self_check';
