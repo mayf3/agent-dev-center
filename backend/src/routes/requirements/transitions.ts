@@ -37,4 +37,50 @@ export function registerTransitionRoutes(router: Router): void {
       });
     }),
   );
+
+  // GET /mine/transitions — 查询当前用户参与过的所有需求流转记录
+  router.get(
+    '/mine/transitions',
+    asyncHandler(async (req, res) => {
+      const userId = req.user!.id;
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50));
+      const skip = (page - 1) * pageSize;
+
+      const where = { actorId: userId };
+
+      const [transitions, total] = await prisma.$transaction([
+        prisma.workflowTransition.findMany({
+          where,
+          include: {
+            requirement: {
+              select: { id: true, title: true, currentStep: true },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: pageSize,
+        }),
+        prisma.workflowTransition.count({ where }),
+      ]);
+
+      res.json({
+        data: transitions.map(t => ({
+          id: t.id,
+          requirementId: t.requirementId,
+          requirementTitle: t.requirement.title,
+          fromStep: t.fromStep,
+          toStep: t.toStep,
+          action: t.action,
+          actorName: t.actorName,
+          actorRole: t.actorRole,
+          comment: t.comment,
+          createdAt: t.createdAt,
+        })),
+        total,
+        page,
+        pageSize,
+      });
+    }),
+  );
 }
