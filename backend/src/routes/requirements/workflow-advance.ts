@@ -148,6 +148,17 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       // 进入 test_env_deploy 时加锁，进入 deploying 时释放
       let lockReleased = false;
       if (targetStep.name === 'test_env_deploy') {
+        // 校验 repoPath + gitHash
+        const req = await prisma.requirement.findUnique({
+          where: { id: params.id },
+          select: { repoPath: true, gitHash: true },
+        });
+        const errors: string[] = [];
+        if (!req?.repoPath) errors.push('缺少 repoPath，请设置代码仓库路径');
+        if (!req?.gitHash) errors.push('缺少 gitHash，请先提交代码并更新 gitHash');
+        if (errors.length > 0) {
+          throw new HttpError(400, `推进到 test_env_deploy 验证失败：\n${errors.join('\n')}`);
+        }
         const existingLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
         if (existingLock && existingLock.requirementId !== params.id) {
           throw new HttpError(
