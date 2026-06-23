@@ -18,6 +18,75 @@ import {
   WorkflowStep,
 } from './workflow-helpers.js';
 
+/**
+ * 创建反馈事件记录并通知历史参与者
+ */
+async function createFeedbackEvent(params: {
+  requirementId: string;
+  requirementTitle: string;
+  fromStep: string;
+  toStep: string;
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  reason: string | undefined;
+}): Promise<void> {
+  // 1. 写入 feedback_events 表
+  await prisma.feedbackEvent.create({
+    data: {
+      requirementId: params.requirementId,
+      fromStep: params.fromStep,
+      toStep: params.toStep,
+      actorId: params.actorId,
+      actorName: params.actorName,
+      actorRole: params.actorRole,
+      reason: params.reason,
+    },
+  });
+
+  // 2. 查询该需求历史上参与过 fromStep 的所有参与者
+  //    从 workflow_transitions 中找出所有与此步骤相关的 actor
+  const historicalParticipants = await prisma.workflowTransition.findMany({
+    where: {
+      requirementId: params.requirementId,
+      fromStep: params.fromStep,
+    },
+    select: {
+      actorId: true,
+      actorName: true,
+    },
+    distinct: ['actorId'],
+  });
+
+  // 当前 reject 的操作者不需要再通知自己
+  const notifyTargets = historicalParticipants.filter(
+    p => p.actorId !== params.actorId
+  );
+
+  // 3. 生成通知内容（飞书消息通过现有 notifications 表记录）
+  for (const participant of notifyTargets) {
+    if (!participant.actorId) continue;
+
+    await prisma.notification.create({
+      data: {
+        userId: participant.actorId,
+        type: 'feedback_event',
+        title: `需求「${params.requirementTitle}」被打回`,
+        content: {
+          requirementId: params.requirementId,
+          requirementTitle: params.requirementTitle,
+          fromStep: params.fromStep,
+          toStep: params.toStep,
+          actorName: params.actorName,
+          reason: params.reason,
+          message: `步骤「${params.fromStep}」的评审被 ${params.actorName} 打回${params.reason ? `，原因：${params.reason}` : ''}。你的工作已被退回，请前往查看。`,
+        },
+        relatedReqId: params.requirementId,
+      },
+    });
+  }
+}
+
 export function registerWorkflowRejectRoutes(router: import('express').Router): void {
 
   /**
@@ -113,6 +182,18 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         actorName: req.user!.name,
         actorRole: req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
+      });
+
+      // 写入 FeedbackEvent 并通知历史参与者
+      await createFeedbackEvent({
+        requirementId: params.id,
+        requirementTitle: requirement.title,
+        fromStep: requirement.currentStep,
+        toStep: targetStepName,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorRole: req.user!.internalRole ?? req.user!.role,
+        reason: body.comment,
       });
 
       res.json({

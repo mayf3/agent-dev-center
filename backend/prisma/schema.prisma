@@ -120,6 +120,7 @@ model Requirement {
   workflow            WorkflowTemplate?     @relation(fields: [workflowId], references: [id])
   serviceLinks        ServiceRequirement[]
   tasks               Task[]
+  feedbackEvents      FeedbackEvent[]
   workflowTransitions WorkflowTransition[]
 
   @@index([currentStep])
@@ -562,6 +563,25 @@ model Project {
   requirements Requirement[] @relation("RequirementProject")
 
   @@map("projects")
+}
+
+model FeedbackEvent {
+  id            String      @id @default(uuid()) @db.Uuid
+  requirementId String      @db.Uuid
+  fromStep      String
+  toStep        String
+  actorId       String?     @db.Uuid
+  actorName     String
+  actorRole     String
+  reason        String?
+  createdAt     DateTime    @default(now())
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+
+  @@index([requirementId])
+  @@index([fromStep])
+  @@index([createdAt])
+  @@index([actorId])
+  @@map("feedback_events")
 }
 
 model RequirementComment {
