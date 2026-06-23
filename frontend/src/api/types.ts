@@ -129,6 +129,29 @@ export interface GitCommit {
 export type ReportType = 'DEV_SELF_CHECK' | 'SECURITY_REVIEW' | 'TEST_REPORT' | 'CTO_REVIEW' | 'DEPLOY_CONFIRM' | 'POSTMORTEM';
 export type ReportStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested';
 
+/** QA 审查 findings — 替换 LLM 二元判断为确定性决策 */
+export interface Finding {
+  severity: 'critical' | 'minor';
+  category: 'code_ref_missing' | 'curl_mismatch' | 'coverage_gap' | 'build_fail' | 'logic_error' | 'format_issue' | 'other';
+  description: string;
+}
+
+/** QA 审查类型常量 */
+export const FINDING_SEVERITY_LABELS: Record<Finding['severity'], string> = {
+  critical: '严重',
+  minor: '轻微',
+};
+
+export const FINDING_CATEGORY_LABELS: Record<Finding['category'], string> = {
+  code_ref_missing: '缺少代码引用',
+  curl_mismatch: 'CURL 验证不符',
+  coverage_gap: '覆盖不足',
+  build_fail: '编译失败',
+  logic_error: '逻辑错误',
+  format_issue: '格式问题',
+  other: '其他',
+};
+
 export interface RequirementReport {
   id: string;
   requirementId: string;

@@ -1,12 +1,63 @@
 import { Descriptions, Modal, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
-import type { RequirementReport, ReportType } from '../api/types';
+import type { RequirementReport, ReportType, Finding } from '../api/types';
+import { FINDING_SEVERITY_LABELS, FINDING_CATEGORY_LABELS } from '../api/types';
 import {
   reportStatusColors,
   reportStatusLabels,
   reportTypeLabels,
 } from '../constants/options';
+
+/* ── QA findings renderer ── */
+function renderFindings(findings: Finding[]) {
+  if (!findings || findings.length === 0) return null;
+
+  const sorted = [...findings].sort((a, b) => {
+    const order: Record<string, number> = { critical: 0, minor: 1 };
+    return (order[a.severity] ?? 99) - (order[b.severity] ?? 99);
+  });
+
+  const columns: ColumnsType<Finding> = [
+    {
+      title: '严重程度',
+      dataIndex: 'severity',
+      key: 'severity',
+      width: 90,
+      render: (s: Finding['severity']) => (
+        <Tag color={s === 'critical' ? 'red' : 'blue'}>{FINDING_SEVERITY_LABELS[s]}</Tag>
+      ),
+    },
+    {
+      title: '分类',
+      dataIndex: 'category',
+      key: 'category',
+      width: 140,
+      render: (c: Finding['category']) => FINDING_CATEGORY_LABELS[c] ?? c,
+    },
+    {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+    },
+  ];
+
+  return (
+    <>
+      <Typography.Text strong style={{ display: 'block', marginTop: 16, fontSize: 15 }}>
+        🔍 QA 审查发现 ({findings.length} 项)
+      </Typography.Text>
+      <Table<Finding>
+        rowKey={(_, i) => String(i)}
+        columns={columns}
+        dataSource={sorted}
+        pagination={false}
+        size="small"
+        style={{ marginTop: 8 }}
+      />
+    </>
+  );
+}
 
 function formatDateTime(value?: string | null) {
   return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-';
@@ -350,6 +401,9 @@ export function ReportDetailModal({ report, open, onClose }: ReportDetailModalPr
       </Descriptions>
 
       {renderer(report.content)}
+
+      {/* QA findings (if present in report content) */}
+      {renderFindings((report.content.findings as Finding[]) ?? [])}
 
       {report.reviewComment && (
         <div style={{ marginTop: 16 }}>

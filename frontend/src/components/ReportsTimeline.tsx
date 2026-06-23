@@ -10,7 +10,8 @@ import { App as AntApp, Badge, Button, Card, Descriptions, Modal, Space, Spin, T
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { RequirementReport, ReportType, ReportStatus } from '../api/types';
+import type { RequirementReport, ReportType, ReportStatus, Finding } from '../api/types';
+import { FINDING_SEVERITY_LABELS, FINDING_CATEGORY_LABELS } from '../api/types';
 import {
   reportTypeLabels,
   reportStatusLabels,
@@ -238,6 +239,56 @@ function renderDeployConfirm(content: Record<string, unknown>) {
         </Typography.Paragraph>
       )}
     </>
+  );
+}
+
+/* ── QA findings renderer ── */
+function renderFindings(findings: Finding[]) {
+  if (!findings || findings.length === 0) return null;
+
+  const sorted = [...findings].sort((a, b) => {
+    const order = { critical: 0, minor: 1 };
+    return (order[a.severity] ?? 99) - (order[b.severity] ?? 99);
+  });
+
+  const columns = [
+    {
+      title: '严重程度',
+      dataIndex: 'severity',
+      key: 'severity',
+      width: 90,
+      render: (s: Finding['severity']) => (
+        <Tag color={s === 'critical' ? 'red' : 'blue'}>{FINDING_SEVERITY_LABELS[s]}</Tag>
+      ),
+    },
+    {
+      title: '分类',
+      dataIndex: 'category',
+      key: 'category',
+      width: 140,
+      render: (c: Finding['category']) => FINDING_CATEGORY_LABELS[c] ?? c,
+    },
+    {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+    },
+  ];
+
+  return (
+    <div style={{ marginTop: 16, marginBottom: 16 }}>
+      <Typography.Text strong style={{ fontSize: 15 }}>
+        🔍 QA 审查发现 ({findings.length} 项)
+      </Typography.Text>
+      <Table<Finding>
+        rowKey={(_, i) => String(i)}
+        columns={columns}
+        dataSource={sorted}
+        pagination={false}
+        size="small"
+        style={{ marginTop: 8 }}
+      />
+    </div>
   );
 }
 
@@ -488,6 +539,9 @@ export function ReportsTimeline({ requirementId, isAdmin }: ReportsTimelineProps
             {/* Report content */}
             <Typography.Title level={5}>报告内容</Typography.Title>
             {renderReportContent(detailReport)}
+
+            {/* QA findings (if present) */}
+            {renderFindings((detailReport.content.findings as Finding[]) ?? [])}
           </div>
         )}
       </Modal>
