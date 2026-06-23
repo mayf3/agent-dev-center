@@ -22,6 +22,12 @@ export const reportsRouter = Router({ mergeParams: true });
 // 所有接口需要认证
 reportsRouter.use(authRequired);
 
+// ─── Dashboard 反馈聚合 —— CTO 仪表盘 ───
+import { dashboardRouter } from './dashboard.js';
+// GET /api/reports/dashboard — CTO 反馈聚合数据
+// 必须在 /:id 或 /:reportId 之前注册，否则会被参数路由捕获
+reportsRouter.use('/dashboard', dashboardRouter);
+
 // autoRegisterRoutes 兼容：当路由为平路路径 (/api/reports) 时，从 body/query 读 requirementId
 reportsRouter.use((req, _res, next) => {
   if (!req.params.id) {

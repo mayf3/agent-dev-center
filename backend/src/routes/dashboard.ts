@@ -14,7 +14,7 @@ import { authRequired } from '../middleware/auth.js';
 import { HttpError } from '../utils/http-error.js';
 import { z } from 'zod';
 
-export const dashboardRouter = Router();
+const dashboardRouter = Router();
 
 dashboardRouter.use(authRequired);
 
@@ -221,5 +221,5 @@ dashboardRouter.get(
   }),
 );
 
-export const router = dashboardRouter;
-export const mountPath = '/api/dashboard';
+export { dashboardRouter };
+// 本模块不通过 autoRegisterRoutes 自动注册，由 reports.ts 导入后挂在 /dashboard 路径下
