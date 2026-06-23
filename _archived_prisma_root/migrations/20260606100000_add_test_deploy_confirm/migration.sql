@@ -1,2 +1,0 @@
--- AlterEnum: Add TEST_DEPLOY_CONFIRM report type
-ALTER TYPE "ReportType" ADD VALUE 'TEST_DEPLOY_CONFIRM';
