@@ -23,8 +23,12 @@ export function canReadRequirement(user: Express.AuthUser, requirement: { reques
     return true;
   }
 
-  // 工作流审批角色：可查看所有需求
-  if (user.internalRole === 'qa' || user.internalRole === 'tester' || user.internalRole === 'security' || user.internalRole === 'ops') {
+  // 工作流审批/审查角色：可查看所有需求
+  // 2026-06-23 修复：architect（架构审查）和 pm（产品经理）也需要读所有需求
+  const CAN_READ_ALL_INTERNAL_ROLES = new Set([
+    'qa', 'tester', 'security', 'ops', 'architect', 'pm'
+  ]);
+  if (user.internalRole && CAN_READ_ALL_INTERNAL_ROLES.has(user.internalRole)) {
     return true;
   }
 
