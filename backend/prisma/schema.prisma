@@ -130,6 +130,7 @@ model Requirement {
   serviceLinks        ServiceRequirement[]
   tasks               Task[]
   workflowTransitions WorkflowTransition[]
+  requirementAuditLogs RequirementAuditLog[]
 
   @@index([currentStep])
   @@index([priority])
@@ -451,6 +452,23 @@ model Postmortem {
   @@map("postmortems")
 }
 
+model RequirementAuditLog {
+  id             String      @id @default(uuid()) @db.Uuid
+  requirementId  String      @db.Uuid
+  action         String
+  operatorId     String?     @db.Uuid
+  operatorName   String?
+  detail         Json?
+  stateVersion   Int?
+  createdAt      DateTime    @default(now())
+  requirement    Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+
+  @@index([requirementId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("requirement_audit_logs")
+}
+
 model Identity {
   id                String        @id @default(uuid()) @db.Uuid
   type              EntityType
@@ -638,6 +656,7 @@ enum RequirementStatus {
   clarifying  @map("clarifying")
   draft
   abandoned
+  archived
 }
 
 enum RequirementType {

@@ -19,6 +19,7 @@ export const requirementStatusValues = [
   'deploying',
   'done',
   'abandoned',
+  'archived',
   'draft'
 ] as const;
 

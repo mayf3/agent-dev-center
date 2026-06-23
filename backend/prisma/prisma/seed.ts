@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import { Prisma } from '@prisma/client';
-import { prisma } from '../src/lib/prisma.js';
+import { prisma } from '../../src/lib/prisma.js';
 
 // 生产环境禁止执行 seed
 if (process.env.NODE_ENV === 'production') {
