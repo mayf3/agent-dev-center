@@ -1,4 +1,4 @@
-import { prisma } from '../src/lib/prisma.js';
+import { prisma } from '../../src/lib/prisma.js';
 
 // Layer mapping for agents
 const LAYERS = ['main', 'exploration', 'life', 'infra', 'cross-cutting'] as const;

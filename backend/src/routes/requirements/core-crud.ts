@@ -111,6 +111,41 @@ router.post(
       include: requirementInclude
     });
 
+    // POSTMORTEM 类型自动分配默认工作流（draft → review → archived）
+    if (body.type === 'POSTMORTEM') {
+      let pmTpl = await prisma.workflowTemplate.findFirst({
+        where: { name: 'postmortem', isActive: true },
+      });
+      if (!pmTpl) {
+        const steps = [
+          { name: 'draft', displayName: '草稿', role: 'requester', requiredReports: [], autoAdvance: false },
+          { name: 'review', displayName: '审查', role: 'cto', requiredReports: ['POSTMORTEM'], autoAdvance: false },
+          { name: 'archived', displayName: '已归档', role: 'cto', requiredReports: [], autoAdvance: false },
+        ];
+        pmTpl = await prisma.workflowTemplate.create({
+          data: {
+            name: 'postmortem',
+            displayName: '验尸报告流程',
+            description: 'POSTMORTEM 默认流程：草稿 → 审查 → 归档',
+            steps,
+            isActive: true,
+          },
+        });
+      }
+      if (pmTpl) {
+        await prisma.requirement.update({
+          where: { id: requirement.id },
+          data: {
+            workflowId: pmTpl.id,
+            workflowSnapshot: pmTpl.steps as Prisma.InputJsonValue,
+            currentStep: 'draft',
+            assigneeId: requirement.requesterId,
+            assignee: requirement.requester,
+          },
+        });
+      }
+    }
+
     // 反向更新被依赖的需求的 blockedBy
     if ((body as any).dependsOnIds && (body as any).dependsOnIds.length > 0) {
       // 验证依赖的需求存在
