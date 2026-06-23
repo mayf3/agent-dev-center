@@ -244,3 +244,42 @@ describe('checkReportsApproved', () => {
     expect(result).toEqual({ ok: false, missing: ['DEV_SELF_CHECK', 'TEST_REPORT', 'CTO_REVIEW'] });
   });
 });
+
+// ── Outcome steps ─────────────────────────────────────
+
+const outcomeSteps = [
+  { name: 'testing', displayName: '测试', role: 'tester', requiredReports: ['TEST_REPORT'], autoAdvance: false,
+    outcomes: {
+      passed: { targetStep: 'qa_pre_release', description: '测试通过，进入预发布审查' },
+      failed: { targetStep: 'dev_self_check', description: '测试不通过，退回开发修复' },
+    },
+  },
+  { name: 'dev_self_check', displayName: '开发自检', role: 'developer', requiredReports: ['DEV_SELF_CHECK'], autoAdvance: false },
+  { name: 'qa_pre_release', displayName: '预发布审查', role: 'qa', requiredReports: [], autoAdvance: false },
+  { name: 'done', displayName: '完成', role: 'admin', requiredReports: [], autoAdvance: false },
+];
+
+const gateSteps = [
+  { name: 'arch_review', displayName: '架构审查', role: 'architect', requiredReports: ['ARCH_REVIEW'], autoAdvance: false,
+    gates: { reportCheckMode: 'approved' as const },
+  },
+  { name: 'dev_self_check', displayName: '开发自检', role: 'developer', requiredReports: ['DEV_SELF_CHECK'], autoAdvance: false },
+  { name: 'done', displayName: '完成', role: 'admin', requiredReports: [], autoAdvance: false },
+];
+
+describe('parseSteps with outcomes', () => {
+  it('parses steps with outcome definitions', () => {
+    const result = parseSteps(outcomeSteps);
+    expect(result).toHaveLength(4);
+    expect(result[0].outcomes).toBeDefined();
+    expect(result[0].outcomes!['passed'].targetStep).toBe('qa_pre_release');
+    expect(result[0].outcomes!['failed'].targetStep).toBe('dev_self_check');
+  });
+
+  it('parses steps with gate definitions', () => {
+    const result = parseSteps(gateSteps);
+    expect(result).toHaveLength(3);
+    expect(result[0].gates).toBeDefined();
+    expect(result[0].gates!.reportCheckMode).toBe('approved');
+  });
+});

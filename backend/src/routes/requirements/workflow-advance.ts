@@ -64,25 +64,63 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       }
 
       // 当前步骤的报告校验（离开当前步骤也需要通过该步骤要求的报告）
-      // 2026-06-10：非 SECURITY 类型需求过滤掉 SECURITY_REVIEW（因为安全步骤被跳过了）
-      const reqType = (requirement as any).type;
-      const isNonSecurityType = reqType !== 'SECURITY';
-      const currentReports = (isNonSecurityType)
-        ? currentStep.requiredReports.filter(r => r !== 'SECURITY_REVIEW')
-        : currentStep.requiredReports;
+      // 支持可配置 Evidence Gate：按当前步骤的 gates 配置决定校验模式
+      const currentReports = currentStep.requiredReports;
+      const currentGate = currentStep.gates;
+
       if (currentReports.length > 0) {
-        const { ok, missing } = await checkReportsApproved(params.id, currentReports);
-        if (!ok) {
-          const reportLabels: Record<string, string> = {
-            DEV_SELF_CHECK: '开发自检报告',
-            MERGE_REPORT: '合并报告',
-            TEST_REPORT: '测试报告',
-            SECURITY_REVIEW: '安全检查报告',
-            CTO_REVIEW: 'CTO验收报告',
-            DEPLOY_CONFIRM: '部署确认报告',
-          };
-          const labels = missing.map(t => reportLabels[t] ?? t).join('、');
-          throw new HttpError(400, `推进失败：当前步骤缺少已通过的报告 — ${labels}`);
+        // 根据 gate 配置决定校验方式
+        if (currentGate?.reportCheckMode === 'any') {
+          // "any" 模式：只要有任意一个报告存在即可（宽松模式）
+          const existing = await prisma.requirementReport.findMany({
+            where: {
+              requirementId: params.id,
+              reportType: { in: currentReports as any },
+            },
+            select: { reportType: true },
+          });
+          if (existing.length === 0) {
+            const labels = currentReports.join('、');
+            throw new HttpError(400, `推进失败：当前步骤要求提交至少一份报告 — ${labels}`);
+          }
+        } else if (currentGate?.reportCheckMode === 'approved') {
+          // "approved" 模式：所有报告必须已批准（严格模式）
+          const { ok, missing } = await checkReportsApproved(params.id, currentReports);
+          if (!ok) {
+            const reportLabels: Record<string, string> = {
+              DEV_SELF_CHECK: '开发自检报告',
+              MERGE_REPORT: '合并报告',
+              TEST_REPORT: '测试报告',
+              SECURITY_REVIEW: '安全检查报告',
+              CTO_REVIEW: 'CTO验收报告',
+              DEPLOY_CONFIRM: '部署确认报告',
+            };
+            const labels = missing.map(t => reportLabels[t] ?? t).join('、');
+            throw new HttpError(400, `推进失败：当前步骤缺少已通过的报告 — ${labels}`);
+          }
+        } else {
+          // 默认模式（self-certify）：沿用原有逻辑
+          // 2026-06-10：非 SECURITY 类型需求过滤掉 SECURITY_REVIEW
+          const reqType = (requirement as any).type;
+          const isNonSecurityType = reqType !== 'SECURITY';
+          const reports = (isNonSecurityType)
+            ? currentReports.filter(r => r !== 'SECURITY_REVIEW')
+            : currentReports;
+          if (reports.length > 0) {
+            const { ok, missing } = await checkReportsApproved(params.id, reports);
+            if (!ok) {
+              const reportLabels: Record<string, string> = {
+                DEV_SELF_CHECK: '开发自检报告',
+                MERGE_REPORT: '合并报告',
+                TEST_REPORT: '测试报告',
+                SECURITY_REVIEW: '安全检查报告',
+                CTO_REVIEW: 'CTO验收报告',
+                DEPLOY_CONFIRM: '部署确认报告',
+              };
+              const labels = missing.map(t => reportLabels[t] ?? t).join('、');
+              throw new HttpError(400, `推进失败：当前步骤缺少已通过的报告 — ${labels}`);
+            }
+          }
         }
       }
 
@@ -111,6 +149,26 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         const afterNext = getNextStep(steps, nextStep.name);
         if (afterNext) {
           targetStep = afterNext;
+        }
+      }
+
+      // ── Outcome-driven routing ──
+      // 如果当前步骤定义了 outcomes 且请求中携带了 outcome 参数，按 outcome 路由
+      const selectedOutcome = body.outcome;
+      if (selectedOutcome && currentStep.outcomes && currentStep.outcomes[selectedOutcome]) {
+        const outcomeDef = currentStep.outcomes[selectedOutcome];
+        const outcomeTarget = steps.find(s => s.name === outcomeDef.targetStep);
+        if (!outcomeTarget) {
+          throw new HttpError(400, `outcome「${selectedOutcome}」指定的目标步骤「${outcomeDef.targetStep}」在工作流中不存在`);
+        }
+        targetStep = outcomeTarget;
+
+        // 如果 outcome 分支有独立的报告要求，校验之
+        if (outcomeDef.requiredReports && outcomeDef.requiredReports.length > 0) {
+          const { ok: outcomeOk, missing: outcomeMissing } = await checkReportsApproved(params.id, outcomeDef.requiredReports);
+          if (!outcomeOk) {
+            throw new HttpError(400, `推进失败：outcome「${selectedOutcome}」缺少已通过的报告 — ${outcomeMissing.join('、')}`);
+          }
         }
       }
 
@@ -194,7 +252,11 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         actorName: req.user!.name,
         actorRole: req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
-        metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+        metadata: {
+          skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null,
+          outcome: selectedOutcome ?? null,
+          outcomeTargetStep: (selectedOutcome && currentStep.outcomes?.[selectedOutcome]?.targetStep) ?? null,
+        },
       });
 
       res.json({

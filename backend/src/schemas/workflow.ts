@@ -10,6 +10,7 @@ export const assignWorkflowSchema = z.object({
 export const advanceStepSchema = z.object({
   body: z.object({
     comment: z.string().trim().max(2000).optional(),
+    outcome: z.string().trim().max(64).optional(), // Outcome-driven routing
   }),
 });
 

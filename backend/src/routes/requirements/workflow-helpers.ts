@@ -8,6 +8,19 @@ import { prisma } from '../../lib/prisma.js';
 
 // ── Types ────────────────────────────────────────────────
 
+export interface WorkflowOutcome {
+  targetStep: string;           // 该 outcome 路由到的目标步骤
+  description?: string;         // outcome 的描述
+  requiredReports?: string[];   // 该分支独有的报告要求（选填，不填则用 requiredReports）
+}
+
+export interface ConfigurableGate {
+  reportCheckMode?: 'self-certify' | 'approved' | 'any'; // 报告校验模式
+  selfCertifyTypes?: string[];   // 在该步骤中视为自证类型的报告（覆盖全局）
+  requireAll?: boolean;          // 是否要求所有 requiredReports 都通过（默认 true）
+  gateScript?: string;           // 可选：自定义门禁脚本标识（预留）
+}
+
 export interface WorkflowStep {
   name: string;
   displayName: string;
@@ -15,6 +28,12 @@ export interface WorkflowStep {
   requiredReports: string[];
   autoAdvance: boolean;
   wipLimit?: number; // WIP 上限：该步骤同时处理的需求数量上限（undefined = 无限制）
+
+  // Agent HQ 灵感：Outcome-driven routing
+  outcomes?: Record<string, WorkflowOutcome>;
+
+  // 可配置 Evidence Gate
+  gates?: ConfigurableGate;
 }
 
 // ── Helpers ──────────────────────────────────────────────
@@ -44,6 +63,19 @@ export function mapUserRole(internalRole: string | null | undefined, role: strin
 
 /** Parse steps from JSONB */
 export function parseSteps(stepsJson: unknown): WorkflowStep[] {
+  const outcomeSchema = z.object({
+    targetStep: z.string(),
+    description: z.string().optional(),
+    requiredReports: z.array(z.string()).optional(),
+  });
+
+  const gateSchema = z.object({
+    reportCheckMode: z.enum(['self-certify', 'approved', 'any']).optional(),
+    selfCertifyTypes: z.array(z.string()).optional(),
+    requireAll: z.boolean().optional(),
+    gateScript: z.string().optional(),
+  });
+
   const steps = z.array(z.object({
     name: z.string(),
     displayName: z.string(),
@@ -51,6 +83,8 @@ export function parseSteps(stepsJson: unknown): WorkflowStep[] {
     requiredReports: z.array(z.string()),
     autoAdvance: z.boolean().default(false),
     wipLimit: z.number().int().positive().optional(),
+    outcomes: z.record(z.string(), outcomeSchema).optional(),
+    gates: gateSchema.optional(),
   })).parse(stepsJson);
   return steps;
 }
