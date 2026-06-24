@@ -2,7 +2,7 @@
 
 > 检查日期: 2026-05-12
 > 检查人: miniapp-game-engineer
-> 项目路径: `/Users/yanfenma/workspace/project/agent-dev-center/miniprogram`
+> 项目路径: `{home}/workspace/project/agent-dev-center/miniprogram`
 
 ---
 
@@ -101,7 +101,7 @@
 |------|--------|------|
 | AppID 为 touristappid | P0 | 预览/上传需要真实 AppID |
 | 无微信授权登录 | P1 | 需要后端新增 wechat-login 接口 |
-| 域名未备案 (http://8.163.44.127) | P1 | 小程序正式环境需要 HTTPS |
+| 域名未备案 (http://{your-server-ip}) | P1 | 小程序正式环境需要 HTTPS |
 | 无离线缓存 | P2 | 加载过的需求可考虑本地缓存 |
 | 注册功能未实现 | P2 | 仅支持已有账号登录 |
 | 看板视图未实现 | P2 | 与需求列表功能重叠，优先级较低 |

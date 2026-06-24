@@ -5,7 +5,7 @@ App({
   globalData: {
     token: '',
     userInfo: null,
-    baseUrl: 'http://8.163.44.127/api'
+    baseUrl: 'http://{your-server-ip}/api'
   },
 
   onLaunch() {

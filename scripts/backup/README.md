@@ -1,6 +1,6 @@
 # Agent Dev Center 备份与恢复方案
 
-> 服务器：8.163.44.127 (Ubuntu 24.04) | 制定日期：2026-05-10 | 负责人：ITOps Agent
+> 服务器：{your-server-ip} (Ubuntu 24.04) | 制定日期：2026-05-10 | 负责人：ITOps Agent
 
 ---
 
@@ -18,13 +18,13 @@
 | 位置 | 路径 | 说明 |
 |------|------|------|
 | **服务器** | `/opt/backups/{postgres,redis,configs,docker}/` | 阿里云磁盘 |
-| **本地** | `/Users/yanfenma/workspace/backup/agent-dev-center/` | 本机手动拉取 |
+| **本地** | `{home}/workspace/backup/agent-dev-center/` | 本机手动拉取 |
 
 ### 本地拉取
 
 ```bash
 # 在本机执行
-bash /Users/yanfenma/workspace/project/agent-dev-center/scripts/backup/pull-backup-local.sh
+bash {home}/workspace/project/agent-dev-center/scripts/backup/pull-backup-local.sh
 ```
 
 可加入 macOS crontab 或 launchd 定时执行（建议每日 08:00）。
@@ -46,23 +46,23 @@ bash /Users/yanfenma/workspace/project/agent-dev-center/scripts/backup/pull-back
 
 ```bash
 # 1. 上传脚本到服务器
-scp scripts/backup/*.sh root@8.163.44.127:/opt/agent-dev-center/scripts/backup/
+scp scripts/backup/*.sh root@{your-server-ip}:/opt/agent-dev-center/scripts/backup/
 
 # 2. 赋予执行权限
-ssh root@8.163.44.127 "chmod +x /opt/agent-dev-center/scripts/backup/*.sh"
+ssh root@{your-server-ip} "chmod +x /opt/agent-dev-center/scripts/backup/*.sh"
 
 # 3. 删除旧 crontab，写入新配置
-ssh root@8.163.44.127 "crontab -l | grep -v backup-postgres | grep -v backup-daily | grep -v backup-docker > /tmp/cron.tmp; cat >> /tmp/cron.tmp << 'EOF'
+ssh root@{your-server-ip} "crontab -l | grep -v backup-postgres | grep -v backup-daily | grep -v backup-docker > /tmp/cron.tmp; cat >> /tmp/cron.tmp << 'EOF'
 0 3 * * * /opt/agent-dev-center/scripts/backup/backup-daily.sh >> /opt/backups/backup-master.log 2>&1
 0 4 * * 0 /opt/agent-dev-center/scripts/backup/backup-docker.sh >> /opt/backups/docker/backup-cron.log 2>&1
 EOF
 crontab /tmp/cron.tmp && rm /tmp/cron.tmp"
 
 # 4. 创建备份目录
-ssh root@8.163.44.127 "mkdir -p /opt/backups/{postgres,redis,configs,docker}"
+ssh root@{your-server-ip} "mkdir -p /opt/backups/{postgres,redis,configs,docker}"
 
 # 5. 手动执行一次验证
-ssh root@8.163.44.127 "bash /opt/agent-dev-center/scripts/backup/backup-daily.sh"
+ssh root@{your-server-ip} "bash /opt/agent-dev-center/scripts/backup/backup-daily.sh"
 ```
 
 ---
@@ -73,14 +73,14 @@ ssh root@8.163.44.127 "bash /opt/agent-dev-center/scripts/backup/backup-daily.sh
 
 ```bash
 # 1. 查看可用备份
-ssh root@8.163.44.127 "ls -lht /opt/backups/postgres/*.sql.gz | head -10"
+ssh root@{your-server-ip} "ls -lht /opt/backups/postgres/*.sql.gz | head -10"
 
 # 2. 预览确认（不加 --confirm 只显示信息）
-ssh root@8.163.44.127 \
+ssh root@{your-server-ip} \
   "bash /opt/agent-dev-center/scripts/backup/restore-postgres.sh /opt/backups/postgres/agent_dev_center_XXXXXXXX_XXXXXX.sql.gz"
 
 # 3. 确认执行恢复
-ssh root@8.163.44.127 \
+ssh root@{your-server-ip} \
   "bash /opt/agent-dev-center/scripts/backup/restore-postgres.sh /opt/backups/postgres/agent_dev_center_XXXXXXXX_XXXXXX.sql.gz --confirm"
 ```
 
@@ -92,10 +92,10 @@ ssh root@8.163.44.127 \
 
 ```bash
 # 查看可用备份
-ssh root@8.163.44.127 "ls -lht /opt/backups/redis/*.rdb.gz | head -10"
+ssh root@{your-server-ip} "ls -lht /opt/backups/redis/*.rdb.gz | head -10"
 
 # 确认执行
-ssh root@8.163.44.127 \
+ssh root@{your-server-ip} \
   "bash /opt/agent-dev-center/scripts/backup/restore-redis.sh /opt/backups/redis/dump_XXXXXXXX_XXXXXX.rdb.gz --confirm"
 ```
 
@@ -107,10 +107,10 @@ ssh root@8.163.44.127 \
 
 ```bash
 # 查看可用备份
-ssh root@8.163.44.127 "ls -lht /opt/backups/configs/*.tar.gz | head -10"
+ssh root@{your-server-ip} "ls -lht /opt/backups/configs/*.tar.gz | head -10"
 
 # 恢复
-ssh root@8.163.44.127 \
+ssh root@{your-server-ip} \
   "tar xzf /opt/backups/configs/configs_XXXXXXXX_XXXXXX.tar.gz -C /"
 ```
 
@@ -154,7 +154,7 @@ bash /opt/agent-dev-center/scripts/backup/restore-redis.sh /opt/backups/redis/XX
 
 ```bash
 # 一键检查所有备份状态
-ssh root@8.163.44.127 "echo '=== PG ==='; ls -lht /opt/backups/postgres/*.sql.gz | head -3; echo '=== Redis ==='; ls -lht /opt/backups/redis/*.rdb.gz | head -3; echo '=== Config ==='; ls -lht /opt/backups/configs/*.tar.gz | head -3; echo '=== Docker ==='; ls -lht /opt/backups/docker/images_*.tar.gz 2>/dev/null | head -3; echo '=== Last Run ==='; tail -10 /opt/backups/backup-master.log"
+ssh root@{your-server-ip} "echo '=== PG ==='; ls -lht /opt/backups/postgres/*.sql.gz | head -3; echo '=== Redis ==='; ls -lht /opt/backups/redis/*.rdb.gz | head -3; echo '=== Config ==='; ls -lht /opt/backups/configs/*.tar.gz | head -3; echo '=== Docker ==='; ls -lht /opt/backups/docker/images_*.tar.gz 2>/dev/null | head -3; echo '=== Last Run ==='; tail -10 /opt/backups/backup-master.log"
 ```
 
 ---
@@ -179,18 +179,18 @@ ssh root@8.163.44.127 "echo '=== PG ==='; ls -lht /opt/backups/postgres/*.sql.gz
 
 ```bash
 # 1. 验证备份文件完整性
-ssh root@8.163.44.127 "gzip -t /opt/backups/postgres/agent_dev_center_*.sql.gz && echo '✅ PG backup valid'"
+ssh root@{your-server-ip} "gzip -t /opt/backups/postgres/agent_dev_center_*.sql.gz && echo '✅ PG backup valid'"
 
 # 2. 恢复到测试库（不覆盖生产）
-ssh root@8.163.44.127 "docker exec agent-dev-center-postgres-1 psql -U agent_dev -d postgres -c 'DROP DATABASE IF EXISTS test_restore;'"
-ssh root@8.163.44.127 "docker exec agent-dev-center-postgres-1 psql -U agent_dev -d postgres -c 'CREATE DATABASE test_restore;'"
-ssh root@8.163.44.127 "gunzip -c /opt/backups/postgres/agent_dev_center_*.sql.gz | docker exec -i agent-dev-center-postgres-1 psql -U agent_dev -d test_restore" 2>&1 | tail -5
+ssh root@{your-server-ip} "docker exec agent-dev-center-postgres-1 psql -U agent_dev -d postgres -c 'DROP DATABASE IF EXISTS test_restore;'"
+ssh root@{your-server-ip} "docker exec agent-dev-center-postgres-1 psql -U agent_dev -d postgres -c 'CREATE DATABASE test_restore;'"
+ssh root@{your-server-ip} "gunzip -c /opt/backups/postgres/agent_dev_center_*.sql.gz | docker exec -i agent-dev-center-postgres-1 psql -U agent_dev -d test_restore" 2>&1 | tail -5
 
 # 3. 对比表数量
-ssh root@8.163.44.127 "echo 'Production:'; docker exec agent-dev-center-postgres-1 psql -U agent_dev -d agent_dev_center -tAc 'SELECT count(*) FROM information_schema.tables WHERE table_schema=\"public\";'; echo 'Restored:'; docker exec agent-dev-center-postgres-1 psql -U agent_dev -d test_restore -tAc 'SELECT count(*) FROM information_schema.tables WHERE table_schema=\"public\";'"
+ssh root@{your-server-ip} "echo 'Production:'; docker exec agent-dev-center-postgres-1 psql -U agent_dev -d agent_dev_center -tAc 'SELECT count(*) FROM information_schema.tables WHERE table_schema=\"public\";'; echo 'Restored:'; docker exec agent-dev-center-postgres-1 psql -U agent_dev -d test_restore -tAc 'SELECT count(*) FROM information_schema.tables WHERE table_schema=\"public\";'"
 
 # 4. 清理测试库
-ssh root@8.163.44.127 "docker exec agent-dev-center-postgres-1 psql -U agent_dev -d postgres -c 'DROP DATABASE test_restore;'"
+ssh root@{your-server-ip} "docker exec agent-dev-center-postgres-1 psql -U agent_dev -d postgres -c 'DROP DATABASE test_restore;'"
 ```
 
 ---

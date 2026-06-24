@@ -155,7 +155,7 @@ describe('SSO Redirect URL 构建', () => {
   });
 
   it('带路径的 URL 应正确追加参数', () => {
-    const baseUrl = 'http://8.163.44.127/todo/';
+    const baseUrl = process.env.TEST_SERVER_URL || 'http://localhost:4000/todo/';
     const token = 'abc123';
 
     const url = new URL(baseUrl);

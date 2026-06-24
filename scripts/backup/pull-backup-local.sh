@@ -5,9 +5,9 @@
 # ============================================================
 set -Eeuo pipefail
 
-REMOTE_HOST="root@8.163.44.127"
+REMOTE_HOST="root@{your-server-ip}"
 REMOTE_BASE="/opt/backups"
-LOCAL_BASE="/Users/yanfenma/workspace/backup/agent-dev-center"
+LOCAL_BASE="{home}/workspace/backup/agent-dev-center"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # 创建本地目录

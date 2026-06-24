@@ -30,7 +30,7 @@ cp .env.example .env
 
 ```env
 # Database
-DATABASE_URL="postgresql://agent_dev:password@localhost:5432/agent_dev_center?schema=public"
+DATABASE_URL="postgresql://agent_dev:{your-password}@localhost:5432/agent_dev_center?schema=public"
 
 # JWT Secret（生产环境必须更换）
 JWT_SECRET="your-secret-key-change-in-production"
@@ -176,7 +176,7 @@ services:
     environment:
       POSTGRES_DB: agent_dev_center
       POSTGRES_USER: agent_dev
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: {your-password}
     ports:
       - "5432:5432"
     volumes:
@@ -187,7 +187,7 @@ services:
     ports:
       - "3001:3001"
     environment:
-      DATABASE_URL: postgresql://agent_dev:password@postgres:5432/agent_dev_center?schema=public
+      DATABASE_URL: postgresql://agent_dev:{your-password}@postgres:5432/agent_dev_center?schema=public
     depends_on:
       - postgres
 

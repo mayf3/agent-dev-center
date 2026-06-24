@@ -25,10 +25,10 @@ function createReq(
   return {
     path: options.path ?? '/api/auth/agent/login',
     headers: options.headers ?? {},
-    hostname: options.hostname ?? '8.163.44.127',
+    hostname: options.hostname ?? '{your-server-ip}',
     socket: {
       remoteAddress,
-      localAddress: options.localAddress ?? '8.163.44.127',
+      localAddress: options.localAddress ?? '{your-server-ip}',
     },
     requestId: 'test-request-id',
   } as unknown as Request;

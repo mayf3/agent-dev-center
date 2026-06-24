@@ -27,7 +27,7 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "apiBaseUrl": "http://8.163.44.127/api",
+      "apiBaseUrl": "http://{your-server-ip}/api",
       "appVersion": "1.0.0"
     },
     "plugins": [
