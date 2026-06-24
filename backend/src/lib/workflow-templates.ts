@@ -442,9 +442,9 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         autoAdvance: false,
       },
       {
-        name: 'qa_pre_release',
-        displayName: 'QA审查通过·等部署锁',
-        role: 'qa',
+        name: 'awaiting_test_env',
+        displayName: 'QA通过·等待测试锁',
+        role: 'ops',
         requiredReports: [],
         autoAdvance: false,
       },
