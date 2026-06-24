@@ -9,6 +9,7 @@ import { prismaTaskStatus, serializeTask } from '../utils/status.js';
 import { notifyEvent } from '../utils/notifications.js';
 import { archiveRecord } from '../lib/archive.js';
 import { resolveAssigneeForStep, getAssigneeName } from '../lib/assignee-resolver.js';
+import { getWorkflowSteps } from './requirements/workflow-helpers.js';
 
 export const tasksRouter = Router();
 
@@ -139,7 +140,7 @@ tasksRouter.patch(
 
     const existing = await prisma.task.findUnique({
       where: { id: params.id },
-      include: { requirement: true }
+      include: { requirement: { include: { workflow: { select: { steps: true } } } } }
     });
 
     if (!existing) {
@@ -163,15 +164,12 @@ tasksRouter.patch(
       });
 
       if (body.status === 'in-progress') {
-        // 查工作流获取步骤 role 并解析 assignee
+        // 查工作流获取步骤 role 并解析 assignee（snapshot-first）
         let resolvedAssigneeId: string | null = null;
         let resolvedAssigneeName: string | null = null;
         if (existing.requirement.workflowId) {
-          const wf = await tx.workflowTemplate.findUnique({
-            where: { id: existing.requirement.workflowId },
-            select: { steps: true },
-          });
-          const step = wf ? (wf.steps as any[]).find((s: any) => s.name === 'in_progress') : null;
+          const steps = getWorkflowSteps(existing.requirement);
+          const step = steps.find(s => s.name === 'in_progress');
           if (step?.role) {
             resolvedAssigneeId = await resolveAssigneeForStep(step.role, existing.requirement.assigneeId);
             if (resolvedAssigneeId) resolvedAssigneeName = await getAssigneeName(resolvedAssigneeId);
@@ -197,15 +195,12 @@ tasksRouter.patch(
 
         const targetStepName = unfinishedCount === 0 ? 'cto_review' : 'in_progress';
 
-        // 解析目标步骤的 assignee（防止漂移）
+        // 解析目标步骤的 assignee（防止漂移，snapshot-first）
         let resolvedAssigneeId: string | null = null;
         let resolvedAssigneeName: string | null = null;
         if (existing.requirement.workflowId && unfinishedCount === 0) {
-          const wf = await tx.workflowTemplate.findUnique({
-            where: { id: existing.requirement.workflowId },
-            select: { steps: true },
-          });
-          const step = wf ? (wf.steps as any[]).find((s: any) => s.name === targetStepName) : null;
+          const steps = getWorkflowSteps(existing.requirement);
+          const step = steps.find(s => s.name === targetStepName);
           if (step?.role) {
             resolvedAssigneeId = await resolveAssigneeForStep(step.role, existing.requirement.assigneeId);
             if (resolvedAssigneeId) resolvedAssigneeName = await getAssigneeName(resolvedAssigneeId);
