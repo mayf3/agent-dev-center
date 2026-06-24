@@ -12,7 +12,7 @@
  */
 import { prisma } from '../../lib/prisma.js';
 import { HttpError } from '../../utils/http-error.js';
-import { parseSteps, getWorkflowSteps, getWorkflowRoleUserMap } from './workflow-helpers.js';
+import { parseSteps, getWorkflowSteps, extractRoleUserMap } from './workflow-helpers.js';
 import { resolveAssigneeForStep } from '../../lib/assignee-resolver.js';
 
 export interface AssignWorkflowResult {
@@ -81,7 +81,7 @@ export async function assignWorkflowAtomic(
     }
 
     // 4. Validate template structure (must be consumable by snapshot helpers)
-    const steps = getWorkflowSteps(template.steps);
+    const steps = getWorkflowSteps(template.steps as any);
     if (steps.length === 0) {
       throw new HttpError(400, '工作流模板无有效步骤');
     }
@@ -103,20 +103,20 @@ export async function assignWorkflowAtomic(
 
     // 7. Resolve assignee from the snapshot, not the live template
     const rawJson = template.steps;
-    const roleUserMap = getWorkflowRoleUserMap(rawJson);
+    const roleUserMap: Record<string, string> | undefined = extractRoleUserMap(rawJson as any);
     const stepRole = steps.find(s => s.name === targetStepName)?.role;
 
     let assigneeId: string | null = null;
     if (stepRole === 'requester' && requirement.requesterId) {
       // Draft step: assign to requester
       assigneeId = requirement.requesterId;
-    } else if (stepRole && roleUserMap[stepRole]) {
+    } else if (stepRole && roleUserMap?.[stepRole]) {
       // Use roleUserMap from snapshot
       assigneeId = roleUserMap[stepRole];
     } else if (stepRole) {
       // Standard role resolution (from the snapshot, not live template)
       // Kernel Phase 2A fixup: use tx client so assignee resolution is inside the transaction
-      assigneeId = await resolveAssigneeForStep(stepRole, requirement.assigneeId, tx);
+      assigneeId = await resolveAssigneeForStep(stepRole, requirement.assigneeId, tx as any);
     }
 
     // Test hook: barrier point right before CAS
