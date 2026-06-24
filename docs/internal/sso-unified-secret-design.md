@@ -83,9 +83,9 @@ SSO 相关密钥散落在以下位置，每次变更需要手动同步：
 ```bash
 #!/bin/bash
 # 1. 从 ADC 获取登录令牌
-TOKEN=$(curl -sk -X POST 'https://8.163.44.127/api/auth/login' \
+TOKEN=$(curl -sk -X POST 'https://{your-server-ip}/api/auth/login' \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@agent.dev","password":"agent2026"}' \
+  -d '{"email":"admin@example.com","password":"agent2026"}' \
   | python3 -c "import sys,json;print(json.load(sys.stdin)['accessToken'])")
 
 # 2. 用令牌调用其他服务
@@ -98,7 +98,7 @@ SERVICES=(
 for service in "${SERVICES[@]}"; do
   STATUS=$(curl -sk -o /dev/null -w '%{http_code}' \
     -H "Authorization: Bearer $TOKEN" \
-    "https://8.163.44.127$service")
+    "https://{your-server-ip}$service")
   if [ "$STATUS" == "200" ] || [ "$STATUS" == "401" ]; then
     echo "✅ $service: $STATUS"
   else

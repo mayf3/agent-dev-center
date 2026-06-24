@@ -15,7 +15,7 @@
 
 ### 运行命令
 ```bash
-cd /Users/yanfenma/workspace/project/agent-dev-center
+cd {home}/workspace/project/agent-dev-center
 npx playwright test e2e/smoke.spec.ts --reporter=line
 ```
 
@@ -51,9 +51,9 @@ npx playwright test e2e/token-login.spec.ts --reporter=line
 
 ### 环境变量
 ```bash
-E2E_BASE_URL=http://8.163.44.127    # 前端地址
-E2E_API_URL=http://8.163.44.127/api # API 地址
-E2E_TEST_EMAIL=admin@agent.dev      # 测试账号
+E2E_BASE_URL=http://{your-server-ip}    # 前端地址
+E2E_API_URL=http://{your-server-ip}/api # API 地址
+E2E_TEST_EMAIL=admin@example.com      # 测试账号
 E2E_TEST_PASSWORD=PASSWORD_REMOVED_BY_SECURITY_CLEANUP       # 测试密码
 ```
 

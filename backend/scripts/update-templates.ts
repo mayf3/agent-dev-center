@@ -1,11 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 
 async function main() {
+  const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/agent_dev_center?schema=public';
   const prisma = new PrismaClient({
     datasources: {
-      db: {
-        url: 'postgresql://postgres:postgres@8.163.44.127:5432/agent_dev_center?schema=public&connect_timeout=10',
-      },
+      db: { url: dbUrl },
     },
   });
 

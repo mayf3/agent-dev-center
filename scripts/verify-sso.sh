@@ -6,7 +6,7 @@
 set -euo pipefail
 
 ADC_URL="http://localhost:4000"
-ADC_EMAIL="admin@agent.dev"
+ADC_EMAIL="admin@example.com"
 ADC_PASS="PASSWORD_REMOVED_BY_SECURITY_CLEANUP"
 SSO_ENV_FILE="/opt/.sso-env"
 

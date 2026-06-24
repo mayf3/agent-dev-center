@@ -98,8 +98,8 @@ async function main() {
   // 额外：从 users 表找 agent 类型用户但没有 marketplace 记录的
   const agentUsers = users.filter(u =>
     u.email?.includes('agent') ||
-    u.email?.includes('@agent.local') ||
-    u.email?.includes('@agent.dev')
+    u.email?.includes('@example.com') ||
+    u.email?.includes('@example.com')
   );
 
   for (const user of agentUsers) {

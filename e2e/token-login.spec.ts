@@ -17,9 +17,9 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
-const BASE_URL = process.env.E2E_BASE_URL || 'http://8.163.44.127';
+const BASE_URL = process.env.E2E_BASE_URL || 'http://{your-server-ip}';
 const API_URL = process.env.E2E_API_URL || `${BASE_URL}/api`;
-const TEST_EMAIL = process.env.E2E_TEST_EMAIL || 'admin@agent.dev';
+const TEST_EMAIL = process.env.E2E_TEST_EMAIL || 'admin@example.com';
 const TEST_PASSWORD = process.env.E2E_TEST_PASSWORD || 'PASSWORD_REMOVED_BY_SECURITY_CLEANUP';
 
 /**
@@ -120,7 +120,7 @@ test('已登录用户刷新页面后内容保持', async ({ page }) => {
     localStorage.setItem('agent-dev-center-user', userStr);
   }, {
     token,
-    userStr: JSON.stringify({ id: 'test', name: 'CTO', email: 'admin@agent.dev', role: 'admin' }),
+    userStr: JSON.stringify({ id: 'test', name: 'CTO', email: 'admin@example.com', role: 'admin' }),
   });
 
   // 2. 导航到首页
@@ -175,7 +175,7 @@ test('PublicLayout 在已登录时不渲染空白', async ({ page }) => {
     localStorage.setItem('agent-dev-center-user', userStr);
   }, {
     token,
-    userStr: JSON.stringify({ id: 'test', name: 'CTO', email: 'admin@agent.dev', role: 'admin' }),
+    userStr: JSON.stringify({ id: 'test', name: 'CTO', email: 'admin@example.com', role: 'admin' }),
   });
 
   // 导航到首页（在 isPublicMode=true 下会匹配 PublicLayout）

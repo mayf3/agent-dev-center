@@ -5,7 +5,7 @@
  *
  * 用法:
  *   ADC_BASE_URL=http://localhost:3000 npx tsx scripts/migrate-agents.ts
- *   ADC_BASE_URL=http://8.163.44.127 npx tsx scripts/migrate-agents.ts --token admin-token
+ *   ADC_BASE_URL=http://{your-server-ip} npx tsx scripts/migrate-agents.ts --token admin-token
  */
 
 import fs from "node:fs";

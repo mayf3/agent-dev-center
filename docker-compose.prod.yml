@@ -70,7 +70,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      FRONTEND_ORIGIN: ${FRONTEND_URL:-http://8.163.44.127}
+      FRONTEND_ORIGIN: ${FRONTEND_URL:-http://{your-server-ip}}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-2h}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
     ports:

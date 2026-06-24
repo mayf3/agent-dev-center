@@ -1,7 +1,7 @@
 # Agent开发中心 - 生产部署文档
 
 > 最后更新: 2026-05-09  
-> 服务器: 8.163.44.127 (Ubuntu 24.04 LTS)  
+> 服务器: {your-server-ip} (Ubuntu 24.04 LTS)  
 > 部署路径: /opt/agent-dev-center
 
 ## 架构概览
@@ -30,9 +30,9 @@ Internet → [UFW Firewall :80/:443] → Host Nginx (80) → Docker Frontend (80
 
 ## 访问地址
 
-- 前端: http://8.163.44.127
-- API健康检查: http://8.163.44.127/api/health
-- 监控面板 (Netdata): http://8.163.44.127:19999
+- 前端: http://{your-server-ip}
+- API健康检查: http://{your-server-ip}/api/health
+- 监控面板 (Netdata): http://{your-server-ip}:19999
 
 ## 部署流程
 
@@ -56,10 +56,10 @@ deploy.sh 会自动完成:
 tar --exclude='.git' --exclude='node_modules' --exclude='dist' -czf deploy.tar.gz .
 
 # 2. 上传
-scp deploy.tar.gz root@8.163.44.127:/tmp/
+scp deploy.tar.gz root@{your-server-ip}:/tmp/
 
 # 3. 在服务器上
-ssh root@8.163.44.127
+ssh root@{your-server-ip}
 cd /opt/agent-dev-center
 tar -xzf /tmp/deploy.tar.gz
 docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
@@ -128,7 +128,7 @@ docker exec -it agent-dev-center-postgres-1 psql -U agent_dev -d agent_dev_cente
 
 ## 监控
 
-- **Netdata**: http://8.163.44.127:19999
+- **Netdata**: http://{your-server-ip}:19999
   - CPU、内存、磁盘、网络实时监控
   - Docker容器指标
   - 进程级监控

@@ -3,7 +3,7 @@
 set -uo pipefail
 
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-ADC_URL="https://8.163.44.127"
+ADC_URL="https://{your-server-ip}"
 PASS=true
 FAILURES=""
 
@@ -14,7 +14,7 @@ echo ""
 echo -n "[1/4] ADC 登录 ... "
 LOGIN=$(curl -sk -X POST "$ADC_URL/api/auth/login" \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@agent.dev","password":"agent2026"}' \
+  -d '{"email":"admin@example.com","password":"agent2026"}' \
   --connect-timeout 10 --max-time 20 2>/dev/null)
 TOKEN=$(echo "$LOGIN" | python3 -c "import sys,json;print(json.load(sys.stdin).get('accessToken',''))" 2>/dev/null)
 if [ -z "$TOKEN" ]; then echo "❌"; exit 1; fi

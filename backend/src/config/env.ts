@@ -22,7 +22,11 @@ const envSchema = z.object({
   REGISTER_INVITE_CODE: z.string().optional(),
   FEISHU_WEBHOOK_URL: z.string().optional(),
   AGENT_CALLBACK_URL: z.string().optional(),
-  GATEWAY_ALLOWED_IPS: z.string().optional()
+  GATEWAY_ALLOWED_IPS: z.string().optional(),
+  // 服务注册的健康检查远程基地址（开源默认 localhost）
+  ADC_PUBLIC_URL: z.string().default('http://localhost:4000'),
+  // 部署服务器地址（仅部署脚本使用）
+  SERVER_HOST: z.string().default('{your-server-ip}'),
 });
 
 const parsed = envSchema.safeParse(process.env);

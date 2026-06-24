@@ -1,7 +1,7 @@
 #!/bin/bash
 # fix-sso.sh — 一键修复所有服务的 SSO/JWT 密钥配置
 # 用法: bash fix-sso.sh
-# 前提: 在 8.163.44.127 服务器上运行，或通过 ssh 运行
+# 前提: 在 {your-server-ip} 服务器上运行，或通过 ssh 运行
 
 set -euo pipefail
 
@@ -103,7 +103,7 @@ echo "============================================"
 # Get ADC token
 TOKEN=$(curl -s http://localhost:4000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@agent.dev","password":"PASSWORD_REMOVED_BY_SECURITY_CLEANUP"}' \
+  -d '{"email":"admin@example.com","password":"PASSWORD_REMOVED_BY_SECURITY_CLEANUP"}' \
   | python3 -c "import json,sys;print(json.load(sys.stdin).get('accessToken',''))" 2>/dev/null)
 
 if [ -z "$TOKEN" ]; then
