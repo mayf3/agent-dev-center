@@ -428,6 +428,13 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         autoAdvance: false,
       },
       {
+        name: 'qa_pre_release',
+        displayName: 'QA审查通过·等部署锁',
+        role: 'qa',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
         name: 'test_env_deploy',
         displayName: '部署测试环境',
         role: 'ops',
