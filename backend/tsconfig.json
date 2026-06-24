@@ -18,5 +18,10 @@
   "include": [
     "src/**/*.ts",
     "prisma/**/*.ts"
+  ],
+  "exclude": [
+    "src/__tests__",
+    "**/*.test.ts",
+    "**/*.spec.ts"
   ]
 }
