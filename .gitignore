@@ -15,3 +15,11 @@ backend/prisma/dev.db
 # Archive directory (soft-deleted items, not tracked in git)
 archive/
 baby-daily-print/
+.adc-token
+
+# Binary build artifacts (APK, AAB, etc.)
+*.apk
+*.aab
+
+# Internal docs (team postmortems, security audits, etc. — not for public)
+docs/internal/

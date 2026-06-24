@@ -8,43 +8,30 @@ if (process.env.NODE_ENV === 'production') {
   process.exit(0);
 }
 
+// 从环境变量读取 seed 密码，兜底用安全随机（开源后不暴露固定密码）
+const SEED_PASSWORD = process.env.SEED_PASSWORD || 'replace-with-your-secure-password';
+
 async function main() {
-  const password = await bcrypt.hash('agent2026', 10);
-  const requesterPassword = await bcrypt.hash('requester123', 10);
-  const developerPassword = await bcrypt.hash('developer123', 10);
+  const password = await bcrypt.hash(SEED_PASSWORD, 10);
 
-  await prisma.user.upsert({
-    where: { email: 'admin@agent.dev' },
-    update: {},
-    create: {
-      name: 'CTO',
-      email: 'admin@agent.dev',
-      password,
-      role: 'admin'
-    }
-  });
+  const demoUsers = [
+    { email: 'admin@example.com', name: 'Admin', role: 'admin' as const },
+    { email: 'requester@example.com', name: 'Requester', role: 'requester' as const },
+    { email: 'developer@example.com', name: 'Developer', role: 'developer' as const },
+  ];
 
-  await prisma.user.upsert({
-    where: { email: 'requester@agent.dev' },
-    update: {},
-    create: {
-      name: '业务需求方',
-      email: 'requester@agent.dev',
-      password: requesterPassword,
-      role: 'requester'
-    }
-  });
-
-  await prisma.user.upsert({
-    where: { email: 'frontend@agent.dev' },
-    update: {},
-    create: {
-      name: 'frontend-engineer',
-      email: 'frontend@agent.dev',
-      password: developerPassword,
-      role: 'developer'
-    }
-  });
+  for (const user of demoUsers) {
+    await prisma.user.upsert({
+      where: { email: user.email },
+      update: {},
+      create: {
+        name: user.name,
+        email: user.email,
+        password,
+        role: user.role,
+      },
+    });
+  }
 
   const requirement = await prisma.requirement.upsert({
     where: { id: '11111111-1111-4111-8111-111111111111' },
@@ -53,14 +40,14 @@ async function main() {
       id: '11111111-1111-4111-8111-111111111111',
       title: '搭建需求提交与审核闭环',
       description:
-        '实现需求提交、CTO 审核、开发 Agent 分配、看板流转和完成验收的 MVP 流程。',
+        '实现需求提交、审批、Agent 分配、看板流转和完成验收的 MVP 流程。',
       priority: 'P1',
       currentStep: 'approved',
-      requester: '业务需求方',
-      department: '平台产品',
-      assignee: 'frontend-engineer',
-      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    }
+      requester: 'Requester',
+      department: 'Platform',
+      assignee: 'Developer',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
   });
 
   await prisma.task.upsert({
@@ -71,39 +58,39 @@ async function main() {
       requirementId: requirement.id,
       title: '实现需求列表和看板视图',
       description: '用 React + Ant Design 实现需求筛选、详情管理和拖拽看板。',
-      agentType: 'frontend-engineer',
-      status: 'todo'
-    }
+      agentType: 'developer',
+      status: 'todo',
+    },
   });
 
   const marketplaceAgents = [
     {
-      name: 'cto-agent',
-      displayName: 'CTO 技术总监',
+      name: 'tech-lead',
+      displayName: 'Tech Lead',
       description: '负责技术决策和需求审批',
       avatar: '👔',
-      capabilities: [{ name: '需求审批', description: '审批开发需求' }]
+      capabilities: [{ name: '需求审批', description: '审批开发需求' }],
     },
     {
-      name: 'dev-engineer',
+      name: 'backend-engineer',
       displayName: '后端开发工程师',
       description: '负责后端开发任务',
       avatar: '⚙️',
       capabilities: [
-        { name: '后端开发', description: 'API设计和实现' },
-        { name: '数据库设计', description: '数据库建模和优化' }
-      ]
+        { name: '后端开发', description: 'API 设计和实现' },
+        { name: '数据库设计', description: '数据库建模和优化' },
+      ],
     },
     {
-      name: 'ops-agent',
+      name: 'ops-engineer',
       displayName: '运维工程师',
       description: '负责部署和监控',
       avatar: '🔧',
       capabilities: [
         { name: '服务部署', description: '部署和发布服务' },
-        { name: '健康监控', description: '服务健康检查' }
-      ]
-    }
+        { name: '健康监控', description: '服务健康检查' },
+      ],
+    },
   ];
 
   for (const agent of marketplaceAgents) {
@@ -114,7 +101,7 @@ async function main() {
         description: agent.description,
         avatar: agent.avatar,
         capabilities: agent.capabilities as Prisma.InputJsonValue,
-        status: 'active'
+        status: 'active',
       },
       create: {
         name: agent.name,
@@ -122,15 +109,14 @@ async function main() {
         description: agent.description,
         avatar: agent.avatar,
         capabilities: agent.capabilities as Prisma.InputJsonValue,
-        status: 'active'
-      }
+        status: 'active',
+      },
     });
   }
 
-  console.log('Seed completed.');
-  console.log('Admin: admin@agent.dev / agent2026');
-  console.log('Requester: requester@agent.dev / requester123');
-  console.log('Developer: frontend@agent.dev / developer123');
+  console.log('✅ Seed completed.');
+  console.log(`   Users created with password: ${SEED_PASSWORD === 'replace-with-your-secure-password' ? '(please set SEED_PASSWORD env var)' : '(from SEED_PASSWORD env)'}`);
+  console.log('   Emails: admin@example.com, requester@example.com, developer@example.com');
 }
 
 main()

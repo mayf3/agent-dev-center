@@ -18,14 +18,14 @@ async function main() {
         where: { name: user.name },
         update: {
           displayName: user.name,
-          description: `Agent: ${user.name} (${user.email})`,
+          description: `Agent: ${user.name}`,
           status: 'active',
           userId: user.id,
         },
         create: {
           name: user.name,
           displayName: user.name,
-          description: `Agent: ${user.name} (${user.email})`,
+          description: `Agent: ${user.name}`,
           status: 'active',
           userId: user.id,
         },

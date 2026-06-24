@@ -3,10 +3,9 @@ CREATE TYPE "InternalRole" AS ENUM ('cto', 'pm', 'developer', 'tester', 'securit
 
 ALTER TABLE "users" ADD COLUMN "internal_role" "InternalRole";
 
--- Set internal roles for known users
-UPDATE "users" SET "internal_role" = 'cto' WHERE "email" IN ('admin@agent.dev', 'cto@agent.local');
-UPDATE "users" SET "internal_role" = 'developer' WHERE "email" = 'agent-dev-engineer@agent.local';
-UPDATE "users" SET "internal_role" = 'developer' WHERE "email" = 'frontend@agent.dev';
+-- Note: seed data (user email/role assignments) moved to seed.ts
+-- UPDATE "users" SET "internal_role" = 'cto' WHERE "email" IN ('admin@example.com', 'tech-lead@example.com');
+-- UPDATE "users" SET "internal_role" = 'developer' WHERE "email" = 'developer@example.com';
 
 -- Add PM approval fields to requirements
 ALTER TABLE "requirements" ADD COLUMN IF NOT EXISTS "pm_approved_at" TIMESTAMP;
