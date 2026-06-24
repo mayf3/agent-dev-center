@@ -17,7 +17,7 @@ while read oldrev newrev refname; do
   fi
 
   echo "[hook] main 分支更新，同步源码..."
-  GIT_WORK_TREE=$WORK_TREE git checkout -f main
+  GIT_DIR=/opt/git/agent-dev-center.git GIT_WORK_TREE=$WORK_TREE git checkout -f main
 
   # ── 编译验证 ──
   echo "[hook] 验证 Prisma schema..."

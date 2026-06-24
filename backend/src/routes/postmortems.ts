@@ -12,7 +12,6 @@ export const postmortemsRouter = Router();
 postmortemsRouter.post(
   '/',
   authRequired,
-  requireRoles('admin', 'developer'),
   asyncHandler(async (req, res) => {
     const {
       requirementId,
@@ -138,7 +137,6 @@ postmortemsRouter.get(
 postmortemsRouter.patch(
   '/:id',
   authRequired,
-  requireRoles('admin', 'developer'),
   asyncHandler(async (req, res) => {
     const id = String(req.params.id);
     const body = req.body as Record<string, unknown>;

@@ -1,42 +1,23 @@
--- Add workflowSnapshot and stateVersion to requirements table
--- workflowSnapshot: immutable deep copy of workflow template steps at assign time
--- stateVersion: optimistic concurrency counter for CAS workflow transitions
+-- Add workflowSnapshot (workflow_snapshot) column to requirements table
+-- This stores an immutable deep copy of the workflow template steps
+-- at the time of workflow assignment, ensuring template changes don't
+-- affect already-assigned requirements.
 
-ALTER TABLE "requirements" ADD COLUMN "workflow_snapshot" JSONB;
-ALTER TABLE "requirements" ADD COLUMN "state_version" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "requirements" ADD COLUMN IF NOT EXISTS "workflow_snapshot" JSONB;
 
--- Backfill workflowSnapshot for all requirements that:
---  * have a non-null workflowId
---  * currently have no workflow_snapshot
---  * match a workflow_templates row
---  * the template's steps column holds a supported JSON structure
---
--- Supported structures:
---   Structure A: direct JSON array — jsonb_typeof(steps) = 'array'
---   Structure B: JSON object with a "steps" array — jsonb_typeof(steps) = 'object'
---                                                 AND jsonb_typeof(steps -> 'steps') = 'array'
---     Optional "roleUserMap": if present it must be a JSON object or JSON null.
---     String, number, boolean, or array roleUserMap values are rejected.
---
--- Requirements without a valid structure keep workflowSnapshot NULL
--- and fall through to the legacy workflow.steps resolution.
-
+-- Backfill existing requirements that have a workflowId but no snapshot
+-- Only backfill non-terminal-state requirements (currentStep NOT done/abandoned).
+-- Rationale:
+--   1. Terminal-state requirements are no longer in active flow — they do not need a snapshot.
+--   2. The current template may have been hot-updated (the very change that motivated
+--      the snapshot feature). Backfilling those stale template steps into terminal-state
+--      history would lock potentially problematic data in, using "today's pollution for yesterday".
+-- Note: the `status` column is deprecated (all values are 'pending'), so we use
+--       `currentStep` to determine terminal state.
 UPDATE "requirements" r
 SET "workflow_snapshot" = wt."steps"
 FROM "workflow_templates" wt
 WHERE r."workflowId" IS NOT NULL
   AND r."workflow_snapshot" IS NULL
   AND r."workflowId" = wt."id"
-  AND (
-    jsonb_typeof(wt."steps") = 'array'
-    OR
-    (
-      jsonb_typeof(wt."steps") = 'object'
-      AND jsonb_typeof(wt."steps" -> 'steps') = 'array'
-      AND (
-        (wt."steps" ? 'roleUserMap') = false
-        OR jsonb_typeof(wt."steps" -> 'roleUserMap') = 'object'
-        OR jsonb_typeof(wt."steps" -> 'roleUserMap') = 'null'
-      )
-    )
-  );
+  AND r."currentStep" NOT IN ('done', 'abandoned');
