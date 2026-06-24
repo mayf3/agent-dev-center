@@ -25,6 +25,7 @@ import {
   releaseTestEnvLock,
   shouldReleaseTestEnvLock,
 } from './workflow-advance-helpers.js';
+import { createFeedbackEvent } from './feedback-events.js';
 
 export function registerWorkflowRejectRoutes(router: import('express').Router): void {
 
@@ -176,6 +177,17 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         actorName: req.user!.name,
         actorRole: req.user!.internalRole ?? req.user!.role,
         comment: body.comment,
+      });
+
+      // 写入反馈事件（非阻塞）
+      createFeedbackEvent({
+        requirementId: params.id,
+        fromStep: requirement.currentStep ?? '',
+        toStep: targetStepName,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorRole: req.user!.internalRole ?? req.user!.role,
+        reason: body.comment,
       });
 
       res.json({
