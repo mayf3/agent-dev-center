@@ -4,12 +4,6 @@
  * 应用启动时自动 upsert，确保每个环境都有标准工作流模板。
  * 如需新增模板，在此文件添加即可。
  *
- * 2026-06-12 v4: merge_to_main 移到 cto_review 之后
- *   - merge 前所有质量门禁必须通过（测试、安全、QA、CTO）
- *   - 测试环境部署 feature 分支，不需要先 merge
- *   - main 始终保持 tested 状态
- *   - merge_to_main role 固定为 cto
- *
  * 2026-06-10 v3: 工作流链路重构
  *   核心原则：每一步只要求「前一步交付的东西」
  *   - QA 是全链路质检员：开发自检→QA审、测试→QA审、安全→QA审、部署→QA验证
@@ -38,16 +32,7 @@ interface TemplateDef {
 
 // ── 通用步骤块 ─────────────────────────────────────────
 
-/** 草稿步骤 — 所有开发类需求第一步，提出者准备好后提交 PM 审批 */
-const DRAFT: StepDef = {
-  name: 'draft',
-  displayName: '草稿',
-  role: 'requester',
-  requiredReports: [],
-  autoAdvance: false,
-};
-
-/** PM 审批步骤 — 所有开发类需求第二步 */
+/** PM 审批步骤 — 所有开发类需求第一步 */
 const PM_REVIEW: StepDef = {
   name: 'pm_review',
   displayName: 'PM审批',
@@ -56,213 +41,230 @@ const PM_REVIEW: StepDef = {
   autoAdvance: false,
 };
 
-/** 已提交待审批步骤 — PM 在草稿提交后先确认是否进入流水线 */
-const SUBMITTED: StepDef = {
-  name: 'submitted',
-  displayName: '已提交待审批',
-  role: 'pm',
+/** QA 审查 DEV_SELF_CHECK 报告 */
+const QA_REVIEW_DEV: StepDef = {
+  name: 'qa_review',
+  displayName: 'QA审查(开发自检)',
+  role: 'qa',
   requiredReports: [],
   autoAdvance: false,
 };
 
 /**
- * v4-refined: 架构审查 + QA 缩编
+ * 标准开发中段（v3 链路）：
  *
- * 完整链路（13步）：
- * draft → pm_review → arch_design → dev_self_check →
- * arch_review → qa_review → test_env_deploy →
- * testing → security_review → qa_pre_release →
- * cto_review → merge_to_main → deploying → done
+ * 链路逻辑（每步只要求前一步的产出）：
  *
- * 变化（2026-06-14）：
- * - 交换 pm_review 和 arch_design 顺序：PM 先审需求，架构师再设计方案
- * - 符合产品流程：PM 决定做什么 → 架构师设计怎么做 → 开发实现
+ * test_env_deploy  — 门禁：DEV_SELF_CHECK approved（QA 已审过）
+ *   → 部署测试环境
  *
- * 变化：
- * - 新增 arch_design（架构设计）
- * - 新增 arch_review（含代码质量 + 架构合规）
- * - 合并 qa_review_test + qa_review_security → qa_pre_release
- * - deploying 去掉 MERGE_REPORT
- * - 去掉 qa_review_deploy（改为自动验证）
+ * testing          — 门禁：无（测试人员写报告）
+ *   → 产出 TEST_REPORT
+ *
+ * qa_review_test   — 门禁：无（QA 审批 TEST_REPORT）
+ *   → 审批 TEST_REPORT
+ *
+ * security_review  — 门禁：TEST_REPORT approved（QA 已审过）
+ *   → 产出 SECURITY_REVIEW（非 SECURITY 类型自动跳过）
+ *
+ * qa_review_security — 门禁：无（QA 审批 SECURITY_REVIEW）
+ *   → 审批 SECURITY_REVIEW（非 SECURITY 类型自动跳过）
+ *
+ * cto_review       — 门禁：TEST_REPORT approved + SECURITY_REVIEW approved（如适用）
+ *   → CTO 看 QA 审查结论 + 自己的判断
+ *   → 产出 CTO_REVIEW
+ *
+ * deploying        — 门禁：CTO_REVIEW approved
+ *   → itops 实际部署
+ *
+ * qa_review_deploy — 门禁：无（QA 验证部署）
+ *   → QA curl health check 验证
+ *   → 审批 DEPLOY_CONFIRM
+ *
+ * done             — 门禁：DEPLOY_CONFIRM approved
  */
 
+/** Merge-to-main 步骤：代码合并到 main 后验证 */
 const MERGE_TO_MAIN: StepDef = {
   name: 'merge_to_main',
   displayName: '合并到 main',
-  role: 'cto',
+  role: 'developer',
   requiredReports: ['MERGE_REPORT'],
   autoAdvance: false,
 };
 
-const QA_REVIEW_DEV: StepDef = {
-  name: 'qa_review',
-  displayName: 'QA审查(开发自检)',
-  role: 'qa',
-  requiredReports: ['DEV_SELF_CHECK'],
-  autoAdvance: false,
-};
-
-/** 架构设计（非审查） */
-const ARCH_DESIGN: StepDef = {
-  name: 'arch_design',
-  displayName: '架构设计',
-  role: 'architect',
-  requiredReports: ['ARCH_DESIGN'],
-  autoAdvance: false,
-};
-
-/** 架构落地审查（代码质量 + 架构合规） */
-const ARCH_REVIEW: StepDef = {
-  name: 'arch_review',
-  displayName: '架构审查(代码+设计合规)',
-  role: 'architect',
-  requiredReports: ['ARCH_REVIEW'],
-  autoAdvance: false,
-};
-
-/** QA 预发布综合审查 */
-const QA_PRE_RELEASE: StepDef = {
-  name: 'qa_pre_release',
-  displayName: 'QA预发布审查',
-  role: 'qa',
-  requiredReports: ['TEST_REPORT', 'SECURITY_REVIEW'],
-  autoAdvance: false,
-};
-
-const STANDARD_DEV_MIDDLE_V4: StepDef[] = [
-  { name: 'test_env_deploy', displayName: '部署测试环境', role: 'ops', requiredReports: ['DEV_SELF_CHECK'], autoAdvance: false },
-  { name: 'testing',         displayName: '测试验证',       role: 'tester',  requiredReports: [],                    autoAdvance: false },
-  { name: 'security_review', displayName: '安全审查',       role: 'security',requiredReports: [],                    autoAdvance: false },
-  QA_PRE_RELEASE,
-  { name: 'cto_review',      displayName: 'CTO验收',        role: 'cto',    requiredReports: ['TEST_REPORT'],        autoAdvance: false },
-  MERGE_TO_MAIN,
-  { name: 'deploying',       displayName: '部署上线',       role: 'ops',    requiredReports: ['CTO_REVIEW'],         autoAdvance: false },
-  { name: 'done',            displayName: '已完成',         role: 'cto',    requiredReports: [],                     autoAdvance: false },
+const STANDARD_DEV_MIDDLE: StepDef[] = [
+  {
+    name: 'test_env_deploy',
+    displayName: '部署测试环境',
+    role: 'ops',
+    requiredReports: ['DEV_SELF_CHECK'],
+    autoAdvance: false,
+  },
+  {
+    name: 'testing',
+    displayName: '测试验证',
+    role: 'tester',
+    requiredReports: [],
+    autoAdvance: false,
+  },
+  {
+    name: 'qa_review_test',
+    displayName: 'QA审查(测试报告)',
+    role: 'qa',
+    requiredReports: [],
+    autoAdvance: false,
+  },
+  {
+    name: 'security_review',
+    displayName: '安全审查',
+    role: 'security',
+    requiredReports: ['TEST_REPORT'],
+    autoAdvance: false,
+  },
+  {
+    name: 'qa_review_security',
+    displayName: 'QA审查(安全报告)',
+    role: 'qa',
+    requiredReports: [],
+    autoAdvance: false,
+  },
+  {
+    name: 'cto_review',
+    displayName: 'CTO验收',
+    role: 'cto',
+    // CTO 看 QA 审过的测试报告 + 安全报告（安全非必须）
+    // 注意：实际门禁在代码里会根据需求类型过滤 SECURITY_REVIEW
+    requiredReports: ['TEST_REPORT'],
+    autoAdvance: false,
+  },
+  {
+    name: 'deploying',
+    displayName: '部署上线',
+    role: 'ops',
+    requiredReports: ['CTO_REVIEW'],
+    autoAdvance: false,
+  },
+  {
+    name: 'qa_review_deploy',
+    displayName: 'QA验证部署',
+    role: 'qa',
+    requiredReports: [],
+    autoAdvance: false,
+  },
+  {
+    name: 'done',
+    displayName: '已完成',
+    role: 'cto',
+    requiredReports: ['DEPLOY_CONFIRM'],
+    autoAdvance: false,
+  },
 ];
 
 const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'backend-dev',
     displayName: '后端开发流程',
-    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: 'PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
     steps: [
-      DRAFT,
-      SUBMITTED,
       PM_REVIEW,
-      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '后端开发并自检',
+        displayName: '后端开发自检',
         role: 'backend_developer',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
-      ARCH_REVIEW,
+      MERGE_TO_MAIN,
       QA_REVIEW_DEV,
-      ...STANDARD_DEV_MIDDLE_V4,
+      ...STANDARD_DEV_MIDDLE,
     ],
   },
   {
     name: 'frontend-dev',
     displayName: '前端开发流程',
-    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: 'PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
     steps: [
-      DRAFT,
-      SUBMITTED,
       PM_REVIEW,
-      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '前端开发并自检',
+        displayName: '前端开发自检',
         role: 'frontend_developer',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
-      ARCH_REVIEW,
+      MERGE_TO_MAIN,
       QA_REVIEW_DEV,
-      ...STANDARD_DEV_MIDDLE_V4,
+      ...STANDARD_DEV_MIDDLE,
     ],
   },
   {
     name: 'mobile-dev',
     displayName: '移动端开发流程',
-    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: 'PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
     steps: [
-      DRAFT,
-      SUBMITTED,
       PM_REVIEW,
-      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '移动端开发并自检',
+        displayName: '移动端开发自检',
         role: 'mobile_developer',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
-      ARCH_REVIEW,
+      MERGE_TO_MAIN,
       QA_REVIEW_DEV,
-      ...STANDARD_DEV_MIDDLE_V4,
+      ...STANDARD_DEV_MIDDLE,
     ],
   },
   {
     name: 'miniapp-dev',
     displayName: '小程序开发流程',
-    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: 'PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
     steps: [
-      DRAFT,
-      SUBMITTED,
       PM_REVIEW,
-      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '小程序开发并自检',
+        displayName: '小程序开发自检',
         role: 'miniapp_developer',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
-      ARCH_REVIEW,
       QA_REVIEW_DEV,
-      ...STANDARD_DEV_MIDDLE_V4,
+      ...STANDARD_DEV_MIDDLE,
     ],
   },
   {
     name: 'game-dev',
     displayName: '游戏开发流程',
-    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: 'PM审批→开发→QA审→部署测试→测试→QA审→安全→QA审→CTO→部署→QA验证→完成',
     steps: [
-      DRAFT,
-      SUBMITTED,
       PM_REVIEW,
-      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '游戏开发并自检',
+        displayName: '游戏开发自检',
         role: 'game_developer',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
-      ARCH_REVIEW,
+      MERGE_TO_MAIN,
       QA_REVIEW_DEV,
-      ...STANDARD_DEV_MIDDLE_V4,
+      ...STANDARD_DEV_MIDDLE,
     ],
   },
   {
     name: 'security-fix',
     displayName: '安全修复流程',
-    description: '草稿→已提交待审批→PM审批→架构设计→修复→QA审→安全→QA预发布→CTO→合并→部署→完成',
+    description: 'PM审批→修复→QA审→安全验证→QA审安全→CTO→部署→QA验证→完成',
     steps: [
-      DRAFT,
-      SUBMITTED,
       PM_REVIEW,
-      ARCH_DESIGN,
       {
         name: 'dev_self_check',
-        displayName: '修复并自检',
+        displayName: '修复自检',
         role: 'backend_developer',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
-      ARCH_REVIEW,
+      MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       {
         name: 'security_review',
@@ -271,7 +273,13 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
-      QA_PRE_RELEASE,
+      {
+        name: 'qa_review_security',
+        displayName: 'QA审查(安全报告)',
+        role: 'qa',
+        requiredReports: [],
+        autoAdvance: false,
+      },
       {
         name: 'cto_review',
         displayName: 'CTO验收',
@@ -279,7 +287,6 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
-      MERGE_TO_MAIN,
       {
         name: 'deploying',
         displayName: '部署上线',
@@ -288,10 +295,17 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         autoAdvance: false,
       },
       {
+        name: 'qa_review_deploy',
+        displayName: 'QA验证部署',
+        role: 'qa',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
         name: 'done',
         displayName: '已完成',
         role: 'cto',
-        requiredReports: [],
+        requiredReports: ['DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
     ],
@@ -299,13 +313,13 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'hotfix',
     displayName: '紧急修复',
-    description: '紧急修复流程（跳过PM和QA审查，紧急修复后直接部署）',
+    description: '紧急修复流程（跳过PM和QA审查，但部署仍需QA验证）',
     steps: [
       {
         name: 'dev_self_check',
         displayName: '紧急修复自检',
         role: 'backend_developer',
-        requiredReports: ['DEV_SELF_CHECK'],
+        requiredReports: [],
         autoAdvance: false,
       },
       {
@@ -316,10 +330,17 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         autoAdvance: false,
       },
       {
+        name: 'qa_review_deploy',
+        displayName: 'QA验证部署',
+        role: 'qa',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
         name: 'done',
         displayName: '完成',
         role: 'auto',
-        requiredReports: [],
+        requiredReports: ['DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
     ],
@@ -327,7 +348,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'ops-deploy',
     displayName: '运维部署流程',
-    description: '纯部署/配置类需求：CTO审批→部署→完成',
+    description: '纯部署/配置类需求：CTO审批→部署→QA验证→完成',
     steps: [
       {
         name: 'cto_review',
@@ -344,10 +365,136 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         autoAdvance: false,
       },
       {
+        name: 'qa_review_deploy',
+        displayName: 'QA验证部署',
+        role: 'qa',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
         name: 'done',
         displayName: '已完成',
         role: 'cto',
+        requiredReports: ['DEPLOY_CONFIRM'],
+        autoAdvance: false,
+      },
+    ],
+  },
+  {
+    name: 'dual-track-review',
+    displayName: '双轨审查验收流程',
+    description: 'PM审批→效率管家审查→龙虾合伙人审查→开发→QA审→部署测试→测试→效率管家验收→龙虾合伙人验收→CTO→部署→QA验证→完成',
+    steps: [
+      {
+        name: 'pm_review',
+        displayName: 'PM审批',
+        role: 'pm',
         requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'review_efficiency',
+        displayName: '效率管家审查',
+        role: 'efficiency_manager',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'review_lobster',
+        displayName: '龙虾合伙人审查',
+        role: 'lobster_partner',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'dev_self_check',
+        displayName: '开发自检',
+        role: 'backend_developer',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'merge_to_main',
+        displayName: '合并到 main',
+        role: 'backend_developer',
+        requiredReports: ['MERGE_REPORT'],
+        autoAdvance: false,
+      },
+      {
+        name: 'qa_review',
+        displayName: 'QA审查(开发自检)',
+        role: 'qa',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'qa_pre_release',
+        displayName: 'QA审查通过·等部署锁',
+        role: 'qa',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'test_env_deploy',
+        displayName: '部署测试环境',
+        role: 'ops',
+        requiredReports: ['DEV_SELF_CHECK'],
+        autoAdvance: false,
+      },
+      {
+        name: 'testing',
+        displayName: '测试验证',
+        role: 'tester',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'qa_review_test',
+        displayName: 'QA审查(测试报告)',
+        role: 'qa',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'acceptance_efficiency',
+        displayName: '效率管家验收',
+        role: 'efficiency_manager',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'acceptance_lobster',
+        displayName: '龙虾合伙人验收',
+        role: 'lobster_partner',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'cto_review',
+        displayName: 'CTO验收',
+        role: 'cto',
+        requiredReports: ['TEST_REPORT'],
+        autoAdvance: false,
+      },
+      {
+        name: 'deploying',
+        displayName: '部署上线',
+        role: 'ops',
+        requiredReports: ['CTO_REVIEW'],
+        autoAdvance: false,
+      },
+      {
+        name: 'qa_review_deploy',
+        displayName: 'QA验证部署',
+        role: 'qa',
+        requiredReports: [],
+        autoAdvance: false,
+      },
+      {
+        name: 'done',
+        displayName: '已完成',
+        role: 'cto',
+        requiredReports: ['DEPLOY_CONFIRM'],
         autoAdvance: false,
       },
     ],
