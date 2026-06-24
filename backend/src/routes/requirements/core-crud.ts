@@ -24,6 +24,7 @@ import { serializeRequirement } from '../../utils/status.js';
 import { validateAssigneeRoleMatch, resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
+import { getWorkflowSteps, getCurrentStep } from './workflow-helpers.js';
 import { canReadRequirement, canEditRequirement, roleAwareRequirementWhere } from './utils.js';
 
 const requirementInclude = {
@@ -97,11 +98,23 @@ router.post(
       }
     }
 
+    // Fix 1 (e97eb46b): 校验 requester 名字 — 如果 body.requester 传了值，必须在 users 表能找到对应的 name
+    const requesterName = body.requester ?? actor.name;
+    if (body.requester && body.requester !== actor.name) {
+      const requesterUser = await prisma.user.findFirst({
+        where: { name: body.requester },
+        select: { id: true, name: true }
+      });
+      if (!requesterUser) {
+        throw new HttpError(400, `requester「${body.requester}」在用户表中不存在，请使用 users 表中的实际用户名`);
+      }
+    }
+
     const requirement = await prisma.requirement.create({
       data: {
         title: body.title, description: body.description, priority: body.priority,
         type: body.type, tags: body.tags,
-        requester: body.requester ?? actor.name, requesterId: actor.id,
+        requester: requesterName, requesterId: actor.id,
         department: body.department,
         assignee: createAssigneeName, assigneeId: createAssigneeId,
         dueDate: body.dueDate, attachment: body.attachment,
@@ -323,6 +336,17 @@ router.put(
       }
     }
 
+    // Fix 1 (e97eb46b): PUT 时校验 requester 名字 — 如果传了 requester 且在 users 表找不到，400
+    if (body.requester && body.requester !== existing.requester) {
+      const requesterUser = await prisma.user.findFirst({
+        where: { name: body.requester },
+        select: { id: true, name: true }
+      });
+      if (!requesterUser) {
+        throw new HttpError(400, `requester「${body.requester}」在用户表中不存在，请使用 users 表中的实际用户名`);
+      }
+    }
+
     const updated = await prisma.requirement.update({
       where: { id: params.id },
       data: {
@@ -381,7 +405,10 @@ router.patch(
   '/:id',
   asyncHandler(async (req, res) => {
     const { params, body } = patchRequirementSchema.parse({ params: req.params, body: req.body });
-    const existing = await prisma.requirement.findUnique({ where: { id: params.id } });
+    const existing = await prisma.requirement.findUnique({
+      where: { id: params.id },
+      include: { workflow: { select: { steps: true } } },
+    });
     if (!existing) throw new HttpError(404, '需求不存在');
     if (!canEditRequirement(req.user!, existing)) throw new HttpError(403, '无权编辑该需求');
 
@@ -464,22 +491,16 @@ router.patch(
       }
     }
 
-    // 如果步骤发生了变化且 assignee 未手动指定，自动解析 assignee（防止漂移）
+    // If step changed and assignee not manually specified, auto-resolve from snapshot (snapshot-first)
     if (stepChanged && !body.assignee) {
-      // 查找目标步骤的 role（如果有工作流）
       if (existing.workflowId) {
-        const workflow = await prisma.workflowTemplate.findUnique({
-          where: { id: existing.workflowId },
-          select: { steps: true },
-        });
-        if (workflow) {
-          const targetStep = (workflow.steps as any[]).find((s: any) => s.name === newStep);
-          if (targetStep?.role) {
-            const resolvedId = await resolveAssigneeForStep(targetStep.role, existing.assigneeId);
-            if (resolvedId) {
-              assigneeId = resolvedId;
-              assigneeName = await getAssigneeName(resolvedId);
-            }
+        const existingSteps = getWorkflowSteps(existing);
+        const targetStepDef = getCurrentStep(existingSteps, newStep ?? '');
+        if (targetStepDef?.role) {
+          const resolvedId = await resolveAssigneeForStep(targetStepDef.role, existing.assigneeId);
+          if (resolvedId) {
+            assigneeId = resolvedId;
+            assigneeName = await getAssigneeName(resolvedId);
           }
         }
       }
