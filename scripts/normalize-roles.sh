@@ -6,7 +6,7 @@ set -euo pipefail
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$PWD/.env" ] && { set -a; source "$PWD/.env"; set +a; }
 
-ADC_HOST="${ADC_HOST:-8.163.44.127}"
+ADC_HOST="${ADC_HOST:-{your-server-ip}}"
 
 TOKEN=$(ADC_EMAIL="${ADC_EMAIL:-}" ADC_PASSWORD="${ADC_PASSWORD:-}" bash "$SKILL_DIR/scripts/login.sh" 2>/dev/null)
 if [ -z "$TOKEN" ]; then echo "ERROR: 无法获取 Token" >&2; exit 1; fi

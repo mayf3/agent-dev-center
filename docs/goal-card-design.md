@@ -306,7 +306,7 @@ import urllib.request, json
 
 token = os.environ.get("AGENT_DEV_TOKEN")
 req = urllib.request.Request(
-    "http://8.163.44.127/api/goals/mine",
+    "http://{your-server-ip}/api/goals/mine",
     headers={"Authorization": f"Bearer {token}"}
 )
 resp = urllib.request.urlopen(req)

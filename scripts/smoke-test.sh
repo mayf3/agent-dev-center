@@ -20,7 +20,7 @@
 set -euo pipefail
 
 # ─── 配置 ────────────────────────────────────────────────────────
-HOST="${1:-8.163.44.127}"
+HOST="${1:-{your-server-ip}}"
 API_BASE="http://localhost:4000/api"  # 内部端口，通过 SSH 访问
 PASS=0
 FAIL=0

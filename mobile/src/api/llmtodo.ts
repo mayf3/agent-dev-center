@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-export const LLM_TODO_BASE_URL = 'http://8.163.44.127/todo/api';
+export const LLM_TODO_BASE_URL = 'http://{your-server-ip}/todo/api';
 export const LLM_TODO_TOKEN_KEY = 'llm-todo-token';
 
 // 默认 token（用户未输入时的兜底）

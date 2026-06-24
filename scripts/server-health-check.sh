@@ -8,8 +8,8 @@ set -euo pipefail
 # ===========================================================
 
 # 配置
-ADC_URL="http://8.163.44.127"  # localhost 走 HTTP（Nginx 内部转发）
-ADC_HTTPS="https://8.163.44.127"
+ADC_URL="http://{your-server-ip}"  # localhost 走 HTTP（Nginx 内部转发）
+ADC_HTTPS="https://{your-server-ip}"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 

@@ -14,7 +14,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = process.env.E2E_BASE_URL || 'http://8.163.44.127';
+const BASE_URL = process.env.E2E_BASE_URL || 'http://{your-server-ip}';
 const API_URL = process.env.E2E_API_URL || `${BASE_URL}/api`;
 
 test('API 健康检查', async ({ request }) => {

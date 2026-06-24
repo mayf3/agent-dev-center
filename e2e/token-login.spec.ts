@@ -17,7 +17,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
-const BASE_URL = process.env.E2E_BASE_URL || 'http://8.163.44.127';
+const BASE_URL = process.env.E2E_BASE_URL || 'http://{your-server-ip}';
 const API_URL = process.env.E2E_API_URL || `${BASE_URL}/api`;
 const TEST_EMAIL = process.env.E2E_TEST_EMAIL || 'admin@agent.dev';
 const TEST_PASSWORD = process.env.E2E_TEST_PASSWORD || 'PASSWORD_REMOVED_BY_SECURITY_CLEANUP';

@@ -3,7 +3,7 @@
 set -uo pipefail
 
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-ADC_URL="https://8.163.44.127"
+ADC_URL="https://{your-server-ip}"
 PASS=true
 FAILURES=""
 

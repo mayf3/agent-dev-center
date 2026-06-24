@@ -191,7 +191,7 @@ interface PaginatedResponse<T> {
 ```typescript
 // api/client.ts - 与 Web 端一致的 Axios 配置
 const api = axios.create({
-  baseURL: API_BASE_URL,  // 可配置，默认 http://8.163.44.127/api
+  baseURL: API_BASE_URL,  // 可配置，默认 http://{your-server-ip}/api
   timeout: 15000
 });
 

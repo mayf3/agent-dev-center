@@ -10,8 +10,8 @@
 | 项目 | 值 |
 |------|-----|
 | 名称 | Agent Dev Center (ADC) — AI Agent 需求发布 + 开发管理 + 交付验收平台 |
-| 本地路径 | `/Users/yanfenma/workspace/project/agent-dev-center` |
-| 远程地址 | `https://8.163.44.127` (阿里云, Ubuntu 24.04, 1.6GB RAM) |
+| 本地路径 | `{home}/workspace/project/agent-dev-center` |
+| 远程地址 | `https://{your-server-ip}` (阿里云, Ubuntu 24.04, 1.6GB RAM) |
 | 远程部署 | `/opt/services/agent-dev-center/` (Nginx 反代, Docker Compose) |
 | Git 分支 | `main`（远程服务器 git remote 未配置，无法 `git pull`） |
 | 技术栈 | TypeScript, Node.js(Express), PostgreSQL(Prisma), React(Ant Design), Docker |
@@ -65,7 +65,7 @@ agent-dev-center/
 ## 三、基础设施
 
 ### 服务器（阿里云）
-- **IP**: 8.163.44.127
+- **IP**: {your-server-ip}
 - **配置**: 1.6GB RAM, 40GB 磁盘
 - **OS**: Ubuntu 24.04
 - **容器**: 10 个 Docker 容器，共享 1.6GB 内存
@@ -82,7 +82,7 @@ agent-dev-center/
 
 ### Nginx 反代
 - 配置文件: `/etc/nginx/sites-enabled/agent-dev-center`
-- 本地副本: `/Users/yanfenma/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/deliverables/nginx-full-config.conf`
+- 本地副本: `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/deliverables/nginx-full-config.conf`
 - HTTPS 强制跳转, 自签名证书
 - 路由表:
   - `/` → frontend (静态文件)
@@ -94,7 +94,7 @@ agent-dev-center/
   - `/hr-admin/` → (port 4002, 无根路由)
 
 ### 部署流程
-- **deploy.sh**: `/Users/yanfenma/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy.sh`
+- **deploy.sh**: `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy.sh`
   - 通过 SSH stdin 管道调用 deploy-agent API
   - deploy-agent.js 是服务器端 HTTP agent (port 9876)
   - 支持 build, migrate, rollback 等操作
@@ -191,8 +191,8 @@ agent-dev-center/
 ### 6.4 Docker 构建与部署流程
 - `backend/Dockerfile`
 - `docker-compose.yml`
-- Deploy script: `/Users/yanfenma/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy.sh`
-- deploy-agent.js: `/Users/yanfenma/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy-agent.js`
+- Deploy script: `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy.sh`
+- deploy-agent.js: `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy-agent.js`
 - 问题: build cache 导致 Prisma Engine 不一致, 无 CI, git remote 未配置
 
 ### 6.5 数据库安全性
@@ -212,7 +212,7 @@ agent-dev-center/
 
 ### 6.8 自动化测试
 - `e2e/` — Playwright 测试 (查看现有覆盖度)
-- Vitest 已安装 (`/Users/yanfenma/workspace/project/agent-dev-center/node_modules/vitest`)
+- Vitest 已安装 (`{home}/workspace/project/agent-dev-center/node_modules/vitest`)
 - 是否有 unit test? 覆盖率多少?
 
 ---
@@ -222,31 +222,31 @@ agent-dev-center/
 ### 核心源码
 | 文件 | 说明 |
 |------|------|
-| `/Users/yanfenma/workspace/project/agent-dev-center/backend/src/routes/requirements/` | 需求 CRUD + 工作流路由 (最复杂, 多文件) |
-| `/Users/yanfenma/workspace/project/agent-dev-center/backend/src/routes/reports.ts` | 报告提交/审查 |
-| `/Users/yanfenma/workspace/project/agent-dev-center/backend/src/routes/postmortems.ts` | 验尸报告 (刚修完权限) |
-| `/Users/yanfenma/workspace/project/agent-dev-center/backend/src/routes/auth.ts` | 登录认证/SSO |
-| `/Users/yanfenma/workspace/project/agent-dev-center/backend/src/middleware/auth.ts` | 认证中间件 |
-| `/Users/yanfenma/workspace/project/agent-dev-center/backend/src/lib/platform-roles.ts` | 角色映射逻辑 |
-| `/Users/yanfenma/workspace/project/agent-dev-center/backend/src/schemas/` | Zod 校验 |
-| `/Users/yanfenma/workspace/project/agent-dev-center/backend/prisma/schema.prisma` | 数据模型 |
+| `{home}/workspace/project/agent-dev-center/backend/src/routes/requirements/` | 需求 CRUD + 工作流路由 (最复杂, 多文件) |
+| `{home}/workspace/project/agent-dev-center/backend/src/routes/reports.ts` | 报告提交/审查 |
+| `{home}/workspace/project/agent-dev-center/backend/src/routes/postmortems.ts` | 验尸报告 (刚修完权限) |
+| `{home}/workspace/project/agent-dev-center/backend/src/routes/auth.ts` | 登录认证/SSO |
+| `{home}/workspace/project/agent-dev-center/backend/src/middleware/auth.ts` | 认证中间件 |
+| `{home}/workspace/project/agent-dev-center/backend/src/lib/platform-roles.ts` | 角色映射逻辑 |
+| `{home}/workspace/project/agent-dev-center/backend/src/schemas/` | Zod 校验 |
+| `{home}/workspace/project/agent-dev-center/backend/prisma/schema.prisma` | 数据模型 |
 
 ### 基础设施
 | 文件 | 说明 |
 |------|------|
-| `/Users/yanfenma/workspace/project/agent-dev-center/docker-compose.yml` | 容器编排 |
-| `/Users/yanfenma/workspace/project/agent-dev-center/backend/Dockerfile` | 后端 Dockerfile |
-| `/Users/yanfenma/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy.sh` | 部署脚本 v5 |
-| `/Users/yanfenma/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy-agent.js` | 部署助手 API |
-| `/Users/yanfenma/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/deliverables/nginx-full-config.conf` | Nginx 完整配置 |
-| `/Users/yanfenma/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/memory/health-check-state.json` | 最近健康检查快照 |
+| `{home}/workspace/project/agent-dev-center/docker-compose.yml` | 容器编排 |
+| `{home}/workspace/project/agent-dev-center/backend/Dockerfile` | 后端 Dockerfile |
+| `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy.sh` | 部署脚本 v5 |
+| `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy-agent.js` | 部署助手 API |
+| `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/deliverables/nginx-full-config.conf` | Nginx 完整配置 |
+| `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/memory/health-check-state.json` | 最近健康检查快照 |
 
 ### 配置与环境
 | 文件 | 说明 |
 |------|------|
-| `/Users/yanfenma/.openclaw/groups/workspace-oc_648db8f3df0ef0249b761ebb0b7a56ab/.env` | CTO 工作区凭据 (ADC EMAIL/PASS) |
-| `/Users/yanfenma/.openclaw/cron/jobs.json` | 所有 Agent 的 cron 任务 |
-| `/Users/yanfenma/.openclaw/groups/workspace-oc_648db8f3df0ef0249b761ebb0b7a56ab/docs/team-members.md` | 团队 UUID / Session Key 映射 |
+| `{home}/.openclaw/groups/workspace-oc_648db8f3df0ef0249b761ebb0b7a56ab/.env` | CTO 工作区凭据 (ADC EMAIL/PASS) |
+| `{home}/.openclaw/cron/jobs.json` | 所有 Agent 的 cron 任务 |
+| `{home}/.openclaw/groups/workspace-oc_648db8f3df0ef0249b761ebb0b7a56ab/docs/team-members.md` | 团队 UUID / Session Key 映射 |
 
 ---
 
