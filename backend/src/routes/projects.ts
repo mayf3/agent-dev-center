@@ -5,11 +5,15 @@
  */
 import { Router } from 'express';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { authRequired } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 
 const prisma = new PrismaClient();
 const router = Router();
+
+// 所有 /api/projects 路由添加 JWT 认证（安全漏洞修复）
+router.use(authRequired);
 
 /**
  * GET /api/projects — 项目列表
