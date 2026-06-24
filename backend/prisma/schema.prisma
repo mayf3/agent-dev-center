@@ -113,8 +113,7 @@ model Requirement {
   projectId           String?               @db.Uuid
   status              String                @default("pending")
 
-  // Kernel: workflow snapshot & state version
-  workflowSnapshot    Json?                 @map("workflow_snapshot")
+  // Kernel: workflow state version
   stateVersion        Int                   @default(0) @map("state_version")
 
   // Kernel: execution lease
