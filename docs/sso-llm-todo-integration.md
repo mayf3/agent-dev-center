@@ -13,7 +13,7 @@
 ```env
 # SSO 配置 — 必须与 Agent Dev Center 后端的 JWT_SECRET 一致
 SSO_JWT_SECRET=your-shared-jwt-secret-here
-SSO_AUTH_GATEWAY=http://8.163.44.127/api/auth/sso/verify
+SSO_AUTH_GATEWAY=http://{your-server-ip}/api/auth/sso/verify
 ```
 
 ### 2. 添加 SSO 中间件
@@ -131,7 +131,7 @@ app.use('/api/agent', agentRouter);
 从 Agent Dev Center SSO Portal 跳转到 LLM Todo 时，URL 会自动携带 token：
 
 ```
-http://8.163.44.127/todo/?token=eyJhbGciOiJIUzI1NiIs...
+http://{your-server-ip}/todo/?token=eyJhbGciOiJIUzI1NiIs...
 ```
 
 前端 JavaScript 提取 token：
@@ -166,7 +166,7 @@ async function apiFetch(url, options = {}) {
 
 ```bash
 # 1. 在 Agent Dev Center 登录获取 token
-TOKEN=$(curl -s -X POST http://8.163.44.127/api/auth/sso/login \
+TOKEN=$(curl -s -X POST http://{your-server-ip}/api/auth/sso/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@agent.dev","password":"PASSWORD_REMOVED_BY_SECURITY_CLEANUP"}' | jq -r '.accessToken')
 

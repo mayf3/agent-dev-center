@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SERVER_HOST="${SERVER_HOST:-8.163.44.127}"
+SERVER_HOST="${SERVER_HOST:-your-server-ip}"
 SERVER_USER="${SERVER_USER:-root}"
 SERVER_PORT="${SERVER_PORT:-22}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/agent-dev-center}"

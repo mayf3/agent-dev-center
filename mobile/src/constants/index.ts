@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import type { RequirementStatus, RequirementPriority, TaskStatus } from '../types';
 
-export const API_BASE_URL = (Constants.expoConfig?.extra as any)?.apiBaseUrl ?? 'http://8.163.44.127/api';
+export const API_BASE_URL = (Constants.expoConfig?.extra as any)?.apiBaseUrl ?? 'http://{your-server-ip}/api';
 
 export const STORAGE_KEYS = {
   AUTH_TOKEN: 'agent-dev-center-token',

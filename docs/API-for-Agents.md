@@ -4,7 +4,7 @@
 
 ## 基础信息
 
-- **API Base URL**：`http://8.163.44.127`（部署后）
+- **API Base URL**：`http://{your-server-ip}`（部署后）
 - **认证方式**：JWT Token
 - **Content-Type**：`application/json`
 
@@ -262,7 +262,7 @@ done (已完成)
 ```javascript
 const axios = require('axios');
 
-const API_BASE = 'http://8.163.44.127';
+const API_BASE = 'http://{your-server-ip}';
 let token = 'your-jwt-token';
 
 // 登录

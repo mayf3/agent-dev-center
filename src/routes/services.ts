@@ -33,12 +33,12 @@ const HEALTH_SERVICES: ServiceEntry[] = [
   { group: 'local', name: '🌐 前沿观察', port: 8088, url: 'http://127.0.0.1:8088', type: 'Python HTTP' },
   { group: 'local', name: '🔍 Biz Explorer (网站)', port: 34567, url: 'http://127.0.0.1:34567', type: '11ty' },
   { group: 'local', name: '🔍 Biz Explorer (API)', port: 34568, url: 'http://127.0.0.1:34568', type: 'Express' },
-  { group: 'remote', name: '🏠 Agent Dev Center (前端)', port: 80, url: 'http://8.163.44.127/', type: 'React (Docker)' },
-  { group: 'remote', name: '🏠 Agent Dev Center (API)', port: 4000, url: 'http://8.163.44.127/api/health', type: 'Node (Docker)' },
-  { group: 'remote', name: '📋 LLM Todo (远程)', port: 8720, url: 'http://8.163.44.127/todo/api/health', type: 'Python (systemd)' },
-  { group: 'remote', name: '🔀 Nginx 反向代理', port: 80, url: 'http://8.163.44.127/health', type: 'Nginx' },
-  { group: 'remote', name: '📊 Netdata 监控', port: 19999, url: 'http://8.163.44.127:19999', type: 'Netdata' },
-  { group: 'remote', name: '📱 统一登录门户', port: 80, url: 'http://8.163.44.127/portal/', type: 'React (Nginx)' },
+  { group: 'remote', name: '🏠 Agent Dev Center (前端)', port: 80, url: 'http://{your-server-ip}/', type: 'React (Docker)' },
+  { group: 'remote', name: '🏠 Agent Dev Center (API)', port: 4000, url: 'http://{your-server-ip}/api/health', type: 'Node (Docker)' },
+  { group: 'remote', name: '📋 LLM Todo (远程)', port: 8720, url: 'http://{your-server-ip}/todo/api/health', type: 'Python (systemd)' },
+  { group: 'remote', name: '🔀 Nginx 反向代理', port: 80, url: 'http://{your-server-ip}/health', type: 'Nginx' },
+  { group: 'remote', name: '📊 Netdata 监控', port: 19999, url: 'http://{your-server-ip}:19999', type: 'Netdata' },
+  { group: 'remote', name: '📱 统一登录门户', port: 80, url: 'http://{your-server-ip}/portal/', type: 'React (Nginx)' },
 ];
 
 interface HealthResult {

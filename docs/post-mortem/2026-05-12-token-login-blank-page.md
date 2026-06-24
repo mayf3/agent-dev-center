@@ -20,7 +20,7 @@
 ## 2. 根因分析（Root Cause）
 
 ### Bug 现象
-- 用户在 http://8.163.44.127 上输入 JWT Token 登录
+- 用户在 http://{your-server-ip} 上输入 JWT Token 登录
 - 登录 API 调用成功（`GET /auth/me` 返回 200 + 用户信息）
 - 页面跳转到 `/`，但显示白屏（空白页）
 

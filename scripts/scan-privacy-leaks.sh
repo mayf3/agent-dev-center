@@ -28,7 +28,7 @@ fi
 
 # 扫描本地路径
 echo "--- 扫描本地路径 ---"
-PATHS=$(grep -rn "/Users/yanfenma" "$DIR" --include="*.ts" --include="*.js" --include="*.json" 2>/dev/null | grep -v "node_modules" | head -5)
+PATHS=$(grep -rn "{home}" "$DIR" --include="*.ts" --include="*.js" --include="*.json" 2>/dev/null | grep -v "node_modules" | head -5)
 if [ -n "$PATHS" ]; then
   echo "⚠️ 发现本地路径:"
   echo "$PATHS"

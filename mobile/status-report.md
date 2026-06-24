@@ -12,7 +12,7 @@
 ### 2️⃣ 宝宝成长追踪平台（Baby Growth Tracker）
 **当前状态**：今日开始开发
 **技术决策**：React Native + Expo（与 APP 同一技术栈，复用基础设施）
-**项目路径**：`/Users/yanfenma/workspace/project/agent-dev-center/baby-tracker/`
+**项目路径**：`{home}/workspace/project/agent-dev-center/baby-tracker/`
 **计划**：
 - Day 1（今天）：项目搭建 + 宝宝档案 + 能力评估看板（P0）
 - Day 2：雷达图可视化 + 每日推荐活动（P0）

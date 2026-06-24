@@ -5,7 +5,7 @@
 | **项目名称** | Agent Dev Center（需求驱动的开发管理平台） |
 | **审查日期** | 2026-05-09 |
 | **审查人** | security-agent |
-| **部署地址** | http://8.163.44.127 |
+| **部署地址** | http://{your-server-ip} |
 | **技术栈** | Node.js + TypeScript + Express + PostgreSQL + React + Ant Design |
 | **审查范围** | 认证授权、API 安全、Docker 配置、依赖安全、数据安全 |
 | **审查结果** | ⚠️ **不通过** — 3 个严重问题阻塞生产部署 |
@@ -84,8 +84,8 @@ npm audit fix
 - **暴露信息：**
   ```
   JWT_SECRET=a3623631eda940022dcf5e039f762ddd6259b9e454730b1e65a28a3bc858b3a4
-  POSTGRES_PASSWORD=dev_password_2026
-  DATABASE_URL=postgresql://agent_dev:dev_password_2026@postgres:5432/agent_dev_center
+  POSTGRES_PASSWORD={your-db-password}
+  DATABASE_URL=postgresql://agent_dev:{your-db-password}@postgres:5432/agent_dev_center
   ```
 - **影响：** 密钥泄露到 git 历史，任何有仓库访问权的人可获取生产凭据
 - **修复建议：**
@@ -333,7 +333,7 @@ npm audit fix
 - **代码审查：** 逐文件人工审查全部 backend/src 和 frontend/src 源码
 - **配置审查：** Dockerfile、docker-compose（dev + prod）、nginx-site.conf、deploy.sh、.env.example、.env.production
 - **数据库审查：** Prisma schema + seed 脚本
-- **服务器安全：** 此前已对 8.163.44.127 服务器做过 OS 级安全评估（见 itops-agent 相关记录）
+- **服务器安全：** 此前已对 {your-server-ip} 服务器做过 OS 级安全评估（见 itops-agent 相关记录）
 
 ---
 

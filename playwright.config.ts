@@ -8,7 +8,7 @@ export default defineConfig({
   retries: 1,
   reporter: [['html', { open: 'never' }], ['list']],
   use: {
-    baseURL: process.env.E2E_BASE_URL || 'http://8.163.44.127',
+    baseURL: process.env.E2E_BASE_URL || 'http://{your-server-ip}',
     headless: true,
     screenshot: 'only-on-failure',
     trace: 'on-first-retry',
