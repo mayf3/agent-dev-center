@@ -2,6 +2,8 @@
  * Workflow Assign & Lifecycle Routes
  *
  * 分配工作流 + 放弃/重新激活
+ *
+ * Kernel Phase 2A: assign 使用原子 snapshot 服务。
  */
 import { requireRoles } from '../../middleware/auth.js';
 import { prisma } from '../../lib/prisma.js';
@@ -9,13 +11,20 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { assignWorkflowSchema } from '../../schemas/workflow.js';
-import { parseSteps, getCurrentStep, logTransition, mapUserRole } from './workflow-helpers.js';
+import { logTransition, getWorkflowSteps } from './workflow-helpers.js';
+import { assignWorkflowAtomic } from './workflow-assign-service.js';
 
 export function registerWorkflowAssignRoutes(router: import('express').Router): void {
 
   /**
-   * POST /:id/workflow/assign — 分配工作流
+   * POST /:id/workflow/assign — 原子分配工作流
    * 仅 admin/cto
+   *
+   * Kernel Phase 2A:
+   *  - 使用 assignWorkflowAtomic 在同一事务中写入
+   *    workflowId + workflowSnapshot + currentStep + assigneeId + stateVersion
+   *  - snapshot 是不可变深拷贝
+   *  - CAS 保证并发安全
    */
   router.post(
     '/:id/workflow/assign',
@@ -24,69 +33,38 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
       const { params } = requirementIdSchema.parse({ params: req.params });
       const { body } = assignWorkflowSchema.parse({ body: req.body });
 
-      const requirement = await prisma.requirement.findUnique({ where: { id: params.id } });
-      if (!requirement) throw new HttpError(404, '需求不存在');
+      // 原子分配
+      const result = await assignWorkflowAtomic(params.id, body.workflowName, body.startStep);
 
-      const template = await prisma.workflowTemplate.findFirst({
-        where: { name: body.workflowName, isActive: true },
-      });
-      if (!template) throw new HttpError(404, `工作流模板「${body.workflowName}」不存在或已停用`);
-
-      const steps = parseSteps(template.steps);
-      if (steps.length === 0) throw new HttpError(400, '工作流模板无有效步骤');
-
-      // 校验：禁止使用泛角色 'developer'（必须用 backend_developer 等具体角色）
+      // 校验通用角色 'developer'（在 snapshot 上检查）
+      const steps = getWorkflowSteps(result.workflowSnapshot);
       const genericDevSteps = steps.filter(s => s.role === 'developer');
       if (genericDevSteps.length > 0) {
         throw new HttpError(400, `工作流模板「${body.workflowName}」使用了已废弃的泛角色 'developer'（步骤：${genericDevSteps.map(s => s.name).join(', ')}），请改用具体角色模板如 backend-dev / frontend-dev`);
       }
 
-      // 支持可选的 startStep 参数，用于迁移现有数据
-      let targetStep;
-      if (body.startStep) {
-        targetStep = steps.find(s => s.name === body.startStep);
-        if (!targetStep) {
-          throw new HttpError(400, `工作流中不存在步骤「${body.startStep}」，可用步骤：${steps.map(s => s.name).join(', ')}`);
-        }
-      } else {
-        // 默认第一步（2026-06-13：去掉 draft 自动跳过逻辑）
-        targetStep = steps[0];
-      }
-      const updateData: any = {
-        workflowId: template.id,
-        currentStep: targetStep.name,
-      };
-
-      // draft 步骤：assignee 设为需求提出者（requester 需要提交草稿到 PM 审批）
-      if (targetStep.name === 'draft' && requirement.requesterId) {
-        updateData.assigneeId = requirement.requesterId;
-      }
-
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: updateData,
-      });
+      const currentStepDef = steps.find(s => s.name === result.currentStep);
 
       await logTransition({
-        requirementId: params.id,
+        requirementId: result.requirementId,
         fromStep: 'approved',
-        toStep: targetStep.name,
+        toStep: result.currentStep,
         action: 'assign-workflow',
         actorId: req.user!.id,
         actorName: req.user!.name,
         actorRole: req.user!.role,
-        metadata: { workflowName: template.name, templateId: template.id, startStep: body.startStep },
+        metadata: { workflowName: body.workflowName, templateId: result.workflowId, startStep: body.startStep },
       });
 
       res.json({
         success: true,
         data: {
-          requirementId: updated.id,
-          workflowId: template.id,
-          workflowName: template.name,
-          workflowDisplayName: template.displayName,
-          currentStep: targetStep.name,
-          currentStepDisplayName: targetStep.displayName,
+          requirementId: result.requirementId,
+          workflowId: result.workflowId,
+          workflowName: body.workflowName,
+          currentStep: result.currentStep,
+          currentStepDisplayName: currentStepDef?.displayName ?? result.currentStep,
+          stateVersion: result.stateVersion,
           steps: steps.map(s => ({
             name: s.name,
             displayName: s.displayName,
@@ -100,8 +78,6 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
 
   /**
    * POST /:id/workflow/abandon — 放弃需求（rejected → abandoned）
-   * 被驳回的需求可以标记为放弃，不再出现在活跃列表
-   * 权限：admin 或 requester（需求提出者）
    */
   router.post(
     '/:id/workflow/abandon',
@@ -159,8 +135,6 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
 
   /**
    * POST /:id/workflow/to-draft — 重新激活需求（abandoned → draft）
-   * 放弃的需求可以重新激活为草稿，修改后再提交
-   * 权限：admin 或 requester
    */
   router.post(
     '/:id/workflow/to-draft',

@@ -27,7 +27,6 @@ interface StepDef {
   role: string;
   requiredReports: string[];
   autoAdvance: boolean;
-  targetBranch?: string; // 部署目标分支: 'develop' (测试) | 'main' (生产)
 }
 
 interface TemplateDef {
@@ -52,6 +51,15 @@ const DRAFT: StepDef = {
 const PM_REVIEW: StepDef = {
   name: 'pm_review',
   displayName: 'PM审批',
+  role: 'pm',
+  requiredReports: [],
+  autoAdvance: false,
+};
+
+/** 已提交待审批步骤 — PM 在草稿提交后先确认是否进入流水线 */
+const SUBMITTED: StepDef = {
+  name: 'submitted',
+  displayName: '已提交待审批',
   role: 'pm',
   requiredReports: [],
   autoAdvance: false,
@@ -122,13 +130,13 @@ const QA_PRE_RELEASE: StepDef = {
 };
 
 const STANDARD_DEV_MIDDLE_V4: StepDef[] = [
-  { name: 'test_env_deploy', displayName: '部署测试环境', role: 'ops', requiredReports: ['DEV_SELF_CHECK'], autoAdvance: false, targetBranch: 'develop' },
+  { name: 'test_env_deploy', displayName: '部署测试环境', role: 'ops', requiredReports: ['DEV_SELF_CHECK'], autoAdvance: false },
   { name: 'testing',         displayName: '测试验证',       role: 'tester',  requiredReports: [],                    autoAdvance: false },
   { name: 'security_review', displayName: '安全审查',       role: 'security',requiredReports: [],                    autoAdvance: false },
   QA_PRE_RELEASE,
   { name: 'cto_review',      displayName: 'CTO验收',        role: 'cto',    requiredReports: ['TEST_REPORT'],        autoAdvance: false },
   MERGE_TO_MAIN,
-  { name: 'deploying',       displayName: '部署上线',       role: 'ops',    requiredReports: ['CTO_REVIEW'],         autoAdvance: false, targetBranch: 'main' },
+  { name: 'deploying',       displayName: '部署上线',       role: 'ops',    requiredReports: ['CTO_REVIEW'],         autoAdvance: false },
   { name: 'done',            displayName: '已完成',         role: 'cto',    requiredReports: [],                     autoAdvance: false },
 ];
 
@@ -136,9 +144,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'backend-dev',
     displayName: '后端开发流程',
-    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {
@@ -156,9 +165,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'frontend-dev',
     displayName: '前端开发流程',
-    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {
@@ -176,9 +186,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'mobile-dev',
     displayName: '移动端开发流程',
-    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {
@@ -196,9 +207,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'miniapp-dev',
     displayName: '小程序开发流程',
-    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {
@@ -216,9 +228,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'game-dev',
     displayName: '游戏开发流程',
-    description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {
@@ -236,9 +249,10 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'security-fix',
     displayName: '安全修复流程',
-    description: '草稿→PM审批→架构设计→修复→QA审→安全→QA预发布→CTO→合并→部署→完成',
+    description: '草稿→已提交待审批→PM审批→架构设计→修复→QA审→安全→QA预发布→CTO→合并→部署→完成',
     steps: [
       DRAFT,
+      SUBMITTED,
       PM_REVIEW,
       ARCH_DESIGN,
       {

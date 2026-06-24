@@ -32,6 +32,22 @@ const requirementInclude = {
   project: { select: { id: true, name: true, boundaries: true } },
 } satisfies Prisma.RequirementInclude;
 
+/**
+ * Pure function: reject PATCH payloads that try to mutate workflowId.
+ * workflowId + workflowSnapshot + currentStep + assigneeId + stateVersion
+ * are written atomically by the workflow/assign route only.
+ *
+ * Accepts body: unknown so it can be tested directly without HTTP injection.
+ */
+export function assertPatchDoesNotMutateWorkflowId(body: unknown): void {
+  if (body && typeof body === 'object' && 'workflowId' in body) {
+    const wfId = (body as Record<string, unknown>).workflowId;
+    if (wfId !== undefined) {
+      throw new HttpError(400, '不允许通过 PATCH 修改 workflowId。请使用 workflow/assign 接口分配工作流。');
+    }
+  }
+}
+
 export function registerCoreCrudRoutes(router: import('express').Router): void {
 
 // POST / - 创建需求
@@ -94,6 +110,41 @@ router.post(
       },
       include: requirementInclude
     });
+
+    // POSTMORTEM 类型自动分配默认工作流（draft → review → archived）
+    if (body.type === 'POSTMORTEM') {
+      let pmTpl = await prisma.workflowTemplate.findFirst({
+        where: { name: 'postmortem', isActive: true },
+      });
+      if (!pmTpl) {
+        const steps = [
+          { name: 'draft', displayName: '草稿', role: 'requester', requiredReports: [], autoAdvance: false },
+          { name: 'review', displayName: '审查', role: 'cto', requiredReports: ['POSTMORTEM'], autoAdvance: false },
+          { name: 'archived', displayName: '已归档', role: 'cto', requiredReports: [], autoAdvance: false },
+        ];
+        pmTpl = await prisma.workflowTemplate.create({
+          data: {
+            name: 'postmortem',
+            displayName: '验尸报告流程',
+            description: 'POSTMORTEM 默认流程：草稿 → 审查 → 归档',
+            steps,
+            isActive: true,
+          },
+        });
+      }
+      if (pmTpl) {
+        await prisma.requirement.update({
+          where: { id: requirement.id },
+          data: {
+            workflowId: pmTpl.id,
+            workflowSnapshot: pmTpl.steps as Prisma.InputJsonValue,
+            currentStep: 'draft',
+            assigneeId: requirement.requesterId,
+            assignee: requirement.requester,
+          },
+        });
+      }
+    }
 
     // 反向更新被依赖的需求的 blockedBy
     if ((body as any).dependsOnIds && (body as any).dependsOnIds.length > 0) {
@@ -442,10 +493,13 @@ router.patch(
       rejectReason: body.rejectReason,
       gitHash: body.gitHash,
       deployVersion: body.deployVersion,
+      repoPath: body.repoPath,
+      branch: body.branch,
     };
     if (body.title !== undefined) patchData.title = body.title;
     if (body.description !== undefined) patchData.description = body.description;
-    if (body.workflowId !== undefined) patchData.workflowId = body.workflowId;
+    // Kernel Phase 2A: generic PATCH must NOT modify workflowId.
+    assertPatchDoesNotMutateWorkflowId(body);
 
     const updated = await prisma.requirement.update({
       where: { id: params.id },

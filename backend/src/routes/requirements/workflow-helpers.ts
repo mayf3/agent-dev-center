@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma.js';
+import { HttpError } from '../../utils/http-error.js';
 
 // ── Types ────────────────────────────────────────────────
 
@@ -15,10 +16,7 @@ export interface WorkflowStep {
   requiredReports: string[];
   autoAdvance: boolean;
   wipLimit?: number; // WIP 上限：该步骤同时处理的需求数量上限（undefined = 无限制）
-  assigneeMode?: 'role-based' | 'creator' | 'fixed'; // assignee 解析模式
-  // role-based: 从 roleUserMap 查角色对应用户
-  // creator: 固定为需求创建者（requesterId）
-  // fixed: 保持当前 assignee 不变
+  assigneeMode?: 'role-based' | 'creator' | 'fixed'; // assignee 解析模式（snapshot-first）
 }
 
 // ── Helpers ──────────────────────────────────────────────
@@ -46,23 +44,8 @@ export function mapUserRole(internalRole: string | null | undefined, role: strin
   return allowed.includes(role) ? role : null;
 }
 
-/** Parse steps from JSONB — 兼容两种格式：
- * 1. 旧格式：纯数组 [...steps]
- * 2. 新格式：{ steps: [...steps], roleUserMap: {...} }
- */
+/** Parse steps from JSONB */
 export function parseSteps(stepsJson: unknown): WorkflowStep[] {
-  let rawSteps: unknown;
-
-  if (Array.isArray(stepsJson)) {
-    // 旧格式：纯数组
-    rawSteps = stepsJson;
-  } else if (stepsJson && typeof stepsJson === 'object' && 'steps' in stepsJson) {
-    // 新格式：{ steps: [...], roleUserMap: {...} }
-    rawSteps = (stepsJson as Record<string, unknown>).steps;
-  } else {
-    rawSteps = [];
-  }
-
   const steps = z.array(z.object({
     name: z.string(),
     displayName: z.string(),
@@ -71,17 +54,8 @@ export function parseSteps(stepsJson: unknown): WorkflowStep[] {
     autoAdvance: z.boolean().default(false),
     wipLimit: z.number().int().positive().optional(),
     assigneeMode: z.enum(['role-based', 'creator', 'fixed']).optional(),
-  })).parse(rawSteps);
+  })).parse(stepsJson);
   return steps;
-}
-
-/** 从模板 JSON 中提取 roleUserMap（兼容新旧格式） */
-export function extractRoleUserMap(stepsJson: unknown): Record<string, string> | undefined {
-  if (!stepsJson || typeof stepsJson !== 'object') return undefined;
-  if (!Array.isArray(stepsJson) && 'roleUserMap' in stepsJson) {
-    return (stepsJson as Record<string, unknown>).roleUserMap as Record<string, string> | undefined;
-  }
-  return undefined;
 }
 
 /** Get current step definition from workflow */
@@ -107,7 +81,7 @@ export function getPreviousStep(steps: WorkflowStep[], currentStepName: string):
 const SELF_CERTIFY_REPORT_TYPES = new Set([
   'DEV_SELF_CHECK',    // 开发自检：自己检查，不需要别人批准
   'ARCH_DESIGN',       // 架构设计：架构师自审（方案由 arch_review 步骤验证）
-  'ARCH_REVIEW',       // 架构审查：架构师审实现，自审自批
+  'ARCH_REVIEW',       // 架构审查：架构师自审自批（架构是专业领域，不需要他人审批）
   'DEPLOY_CONFIRM',    // 部署确认：部署者确认完成
   'CTO_REVIEW',        // CTO验收：CTO 自审自批
   'MERGE_REPORT',      // 合并报告：合并者自证完成
@@ -167,6 +141,61 @@ export async function getStepWipCount(stepName: string, excludeRequirementId?: s
     where.id = { not: excludeRequirementId };
   }
   return prisma.requirement.count({ where });
+}
+
+// ── Snapshot Helpers (Kernel Phase 2A) ─────────────────────
+
+/**
+ * Normalize raw workflow JSON into a steps array.
+ *
+ * Accepts:
+ * - Structure A: a JSON array of step objects
+ * - Structure B: a JSON object with a "steps" array
+ *
+ * Rejects (throws HttpError 400):
+ * - string, number, boolean, null
+ * - object without a "steps" property
+ * - object whose "steps" is not an array
+ */
+export function getWorkflowSteps(rawJson: unknown): WorkflowStep[] {
+  // Structure A: direct array
+  if (Array.isArray(rawJson)) {
+    return parseSteps(rawJson);
+  }
+  // Structure B: { steps: [...], roleUserMap?: ... }
+  if (rawJson !== null && typeof rawJson === 'object') {
+    const obj = rawJson as Record<string, unknown>;
+    if (!('steps' in obj)) {
+      throw new HttpError(400, '工作流定义缺少 steps 字段');
+    }
+    if (!Array.isArray(obj.steps)) {
+      throw new HttpError(400, '工作流定义中 steps 不是数组');
+    }
+    return parseSteps(obj.steps);
+  }
+  throw new HttpError(400, '工作流定义格式无效：需要数组或包含 steps 数组的对象');
+}
+
+/**
+ * Extract the roleUserMap from a raw workflow JSON object.
+ *
+ * - Array snapshot → returns empty map (no role overrides).
+ * - Object snapshot → reads roleUserMap.
+ * - Missing or JSON null → returns empty map.
+ * - Wrong type (string, number, array) → throws.
+ */
+export function getWorkflowRoleUserMap(rawJson: unknown): Record<string, string> {
+  if (!rawJson || typeof rawJson !== 'object' || Array.isArray(rawJson)) {
+    return {};
+  }
+  const obj = rawJson as Record<string, unknown>;
+  if (!('roleUserMap' in obj)) return {};
+  const rum = obj.roleUserMap;
+  if (rum === null || rum === undefined) return {};
+  if (typeof rum !== 'object' || Array.isArray(rum)) {
+    throw new HttpError(400, '工作流定义中 roleUserMap 类型无效');
+  }
+  return rum as Record<string, string>;
 }
 
 /** Write audit transition log */

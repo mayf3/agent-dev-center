@@ -9,7 +9,7 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { advanceStepSchema } from '../../schemas/workflow.js';
-import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
+import { resolveAssigneeFromSnapshot, resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
 import {
   parseSteps,
   getCurrentStep,
@@ -18,7 +18,6 @@ import {
   checkReportsApproved,
   getStepWipCount,
   logTransition,
-  extractRoleUserMap,
 } from './workflow-helpers.js';
 
 export function registerWorkflowAdvanceRoutes(router: import('express').Router): void {
@@ -172,44 +171,33 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         }
       }
 
-      // 从模板中提取 roleUserMap（兼容新旧格式）
-      const roleUserMap = extractRoleUserMap(requirement.workflow.steps);
-
-      // 自动解析下一步骤的 assigneeId
-      let newAssigneeId: string | null;
-      try {
-        const hasRoleUserMap = roleUserMap && Object.keys(roleUserMap).length > 0;
-        if (hasRoleUserMap || targetStep.assigneeMode) {
-          // v2: 使用 assigneeMode + roleUserMap
-          newAssigneeId = await resolveAssigneeForStep(
+      // 自动解析下一步骤的 assigneeId（snapshot-first）
+      const newAssigneeId = requirement.workflowSnapshot
+        ? await resolveAssigneeFromSnapshot(
             targetStep.role,
             requirement.assigneeId,
-            {
-              assigneeMode: targetStep.assigneeMode,
-              roleUserMap,
-              requirement: {
-                id: requirement.id,
-                requesterId: requirement.requesterId,
-                assigneeId: requirement.assigneeId,
-              },
-            },
-          );
-        } else {
-          // 旧逻辑：无 roleUserMap 时不传 options
-          newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
-        }
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new HttpError(400, `assignee 解析失败: ${msg}`);
-      }
+            { requesterId: requirement.requesterId, assigneeId: requirement.assigneeId },
+            requirement.workflowSnapshot,
+            targetStep.name,
+          )
+        : await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
 
       const updated = await prisma.requirement.update({
-        where: { id: params.id },
+        where: {
+          id: params.id,
+          stateVersion: requirement.stateVersion,  // CAS
+        },
         data: {
           currentStep: targetStep.name,
           assigneeId: newAssigneeId,
           rejectReason: null,  // 审批通过时清空驳回原因（防止残留导致误判）
+          stateVersion: { increment: 1 },
         },
+      }).catch((err: any) => {
+        if (err?.code === 'P2025') {
+          throw new HttpError(409, '并发冲突：该需求已被其他操作修改，请刷新后重试');
+        }
+        throw err;
       });
 
       const newAssigneeName = await getAssigneeName(newAssigneeId);

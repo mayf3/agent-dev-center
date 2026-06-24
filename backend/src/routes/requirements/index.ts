@@ -9,6 +9,7 @@ import { registerReviewRoutes } from './review.js';
 import { registerPipelineRoutes } from './pipeline.js';
 import { registerDecomposeRoutes } from './decompose.js';
 import { registerWorkflowAdvanceRoutes } from './workflow-advance.js';
+import { registerWorkflowSubmitRoutes } from './workflow-submit.js';
 import { registerWorkflowRejectRoutes } from './workflow-reject.js';
 import { registerWorkflowAssignRoutes } from './workflow-assign.js';
 import { registerWorkflowTemplateRoutes } from './workflow-templates.js';
@@ -23,6 +24,7 @@ requirementsRouter.use(authRequired);
 
 // 注册工作流路由（必须在 core CRUD 之前，避免 /:id 参数路由冲突）
 registerWorkflowTemplateRoutes(requirementsRouter);
+registerWorkflowSubmitRoutes(requirementsRouter);
 registerWorkflowAdvanceRoutes(requirementsRouter);
 registerWorkflowRejectRoutes(requirementsRouter);
 registerWorkflowAssignRoutes(requirementsRouter);

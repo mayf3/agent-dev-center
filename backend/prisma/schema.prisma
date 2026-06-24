@@ -42,6 +42,7 @@ model User {
   requestedRequirements Requirement[]         @relation("RequesterRequirements")
   manager               User?                 @relation("UserManager", fields: [managerId], references: [id])
   directReports         User[]                @relation("UserManager")
+  executionLeasesOwned  ExecutionLease[]      @relation("ExecutionLeaseOwner")
 
   @@index([lastLoginAt])
   @@map("users")
@@ -110,6 +111,14 @@ model Requirement {
   blockedBy           String[]              @default([]) @map("blocked_by")
   projectId           String?               @db.Uuid
   status              String                @default("pending")
+
+  // Kernel: workflow snapshot & state version
+  workflowSnapshot    Json?                 @map("workflow_snapshot")
+  stateVersion        Int                   @default(0) @map("state_version")
+
+  // Kernel: execution lease
+  executionLeases     ExecutionLease[]
+
   postmortems         Postmortem[]
   comments            RequirementComment[]  @relation("CommentRequirement")
   reports             RequirementReport[]
@@ -121,6 +130,7 @@ model Requirement {
   serviceLinks        ServiceRequirement[]
   tasks               Task[]
   workflowTransitions WorkflowTransition[]
+  requirementAuditLogs RequirementAuditLog[]
 
   @@index([currentStep])
   @@index([priority])
@@ -442,6 +452,23 @@ model Postmortem {
   @@map("postmortems")
 }
 
+model RequirementAuditLog {
+  id             String      @id @default(uuid()) @db.Uuid
+  requirementId  String      @db.Uuid
+  action         String
+  operatorId     String?     @db.Uuid
+  operatorName   String?
+  detail         Json?
+  stateVersion   Int?
+  createdAt      DateTime    @default(now())
+  requirement    Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+
+  @@index([requirementId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("requirement_audit_logs")
+}
+
 model Identity {
   id                String        @id @default(uuid()) @db.Uuid
   type              EntityType
@@ -629,6 +656,7 @@ enum RequirementStatus {
   clarifying  @map("clarifying")
   draft
   abandoned
+  archived
 }
 
 enum RequirementType {
@@ -757,4 +785,56 @@ enum PostmortemStatus {
 enum EntityType {
   human
   agent
+}
+
+// ─── Execution Lease (Kernel) ───────────────────────────────
+
+enum ExecutionLeaseStatus {
+  ACTIVE
+  RELEASED
+  EXPIRED
+  FAILED
+}
+
+model ExecutionLease {
+  id                   String                @id @default(uuid()) @db.Uuid
+  requirementId        String                @db.Uuid
+  workflowStep         String
+  expectedStateVersion Int
+  ownerUserId          String                @db.Uuid
+  ownerAgentId         String?
+  sessionId            String
+  claimKey             String                @unique
+  status               ExecutionLeaseStatus  @default(ACTIVE)
+  acquiredAt           DateTime              @default(now()) @db.Timestamptz(3)
+  heartbeatAt          DateTime              @default(now()) @db.Timestamptz(3)
+  expiresAt            DateTime              @db.Timestamptz(3)
+  releasedAt           DateTime?             @db.Timestamptz(3)
+  releaseReason        String?
+  worktreePath         String?
+  gitBranch            String?
+  createdAt            DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @db.Timestamptz(3)
+  requirement          Requirement           @relation(fields: [requirementId], references: [id], onDelete: Restrict)
+  owner                User                  @relation("ExecutionLeaseOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  events               ExecutionLeaseEvent[]
+
+  @@index([requirementId, status])
+  @@index([status, expiresAt])
+  @@map("execution_leases")
+}
+
+model ExecutionLeaseEvent {
+  id             String         @id @default(uuid()) @db.Uuid
+  leaseId        String         @db.Uuid
+  eventType      String
+  idempotencyKey String         @unique
+  actorId        String?        @db.Uuid
+  metadata       Json?
+  createdAt      DateTime       @default(now()) @db.Timestamptz(3)
+  lease          ExecutionLease @relation(fields: [leaseId], references: [id], onDelete: Restrict)
+
+  @@index([leaseId])
+  @@index([createdAt])
+  @@map("execution_lease_events")
 }

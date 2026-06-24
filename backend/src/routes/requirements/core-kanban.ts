@@ -102,7 +102,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const actor = req.user!;
 
-    const terminalSteps = ['done', 'abandoned', 'cancelled', 'rejected'];
+    const terminalSteps = ['done', 'abandoned', 'cancelled', 'rejected', 'archived'];
     const requesterSteps = ['draft', 'pm_review'];  // requester 阶段，assignee 无需处理
 
     const where: Prisma.RequirementWhereInput = {

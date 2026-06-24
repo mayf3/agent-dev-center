@@ -8,7 +8,7 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { rejectStepSchema } from '../../schemas/workflow.js';
-import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
+import { getAssigneeName } from '../../lib/assignee-resolver.js';
 import {
   parseSteps,
   getCurrentStep,
@@ -70,36 +70,62 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         targetStepName = target.name;
         targetStepDef = target;
       } else {
-        // 智能回退：有些步骤驳回一步不能到真正需要修改的人
-        const REJECT_TO_DEV = ['security_review', 'cto_review', 'merge_to_main', 'deploying', 'qa_review_deploy', 'done'];
-        if (REJECT_TO_DEV.includes(currentStep.name ?? '')) {
-          const devStep = steps.find(s => s.name === 'dev_self_check');
-          targetStepName = devStep?.name ?? 'dev_self_check';
-          targetStepDef = devStep ?? undefined;
+        // PM reject → always go to draft
+        if (currentStep.name === 'submitted' || currentStep.name === 'pm_review') {
+          const draftStep = steps.find(s => s.name === 'draft');
+          targetStepName = draftStep?.name ?? 'draft';
+          targetStepDef = draftStep;
         } else {
-          // 默认：回退一步
-          const prevStep = getPreviousStep(steps, requirement.currentStep);
-          targetStepName = prevStep ? prevStep.name : steps[0]?.name ?? 'dev_self_check';
-          targetStepDef = prevStep ?? steps[0];
+          // 智能回退：有些步骤驳回一步不能到真正需要修改的人
+          const REJECT_TO_DEV = ['security_review', 'cto_review', 'merge_to_main', 'deploying', 'qa_review_deploy', 'done'];
+          if (REJECT_TO_DEV.includes(currentStep.name ?? '')) {
+            const devStep = steps.find(s => s.name === 'dev_self_check');
+            targetStepName = devStep?.name ?? 'dev_self_check';
+            targetStepDef = devStep ?? undefined;
+          } else {
+            // 默认：回退一步
+            const prevStep = getPreviousStep(steps, requirement.currentStep);
+            targetStepName = prevStep ? prevStep.name : steps[0]?.name ?? 'dev_self_check';
+            targetStepDef = prevStep ?? steps[0];
+          }
         }
       }
 
       // 自动解析回退步骤的 assigneeId
-      let newAssigneeId = targetStepDef
-        ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
-        : requirement.assigneeId;
+      // reject 场景：保持原 assignee，不重置为角色默认用户
+      let newAssigneeId = requirement.assigneeId;
 
       // 回退到 draft 时 assignee 设为需求提出者（requester 需要修改后重新提交）
       if (targetStepName === 'draft' && requirement.requesterId) {
         newAssigneeId = requirement.requesterId;
       }
 
+      // 标记回退目标步骤的已 approved 报告为 changes_requested
+      // 允许开发者重新提交（否则旧 approved 报告会阻止新提交）
+      await prisma.requirementReport.updateMany({
+        where: {
+          requirementId: params.id,
+          workflowStep: targetStepName,
+          status: 'approved',
+        },
+        data: { status: 'changes_requested' },
+      });
+
       const updated = await prisma.requirement.update({
-        where: { id: params.id },
+        where: {
+          id: params.id,
+          stateVersion: requirement.stateVersion,  // CAS
+        },
         data: {
           currentStep: targetStepName,
           assigneeId: newAssigneeId,
+          stateVersion: { increment: 1 },
         },
+      }).catch((err: any) => {
+        if (err?.code === 'P2025') {
+          throw new HttpError(409, '并发冲突：该需求已被其他操作修改，请刷新后重试');
+        }
+        throw err;
       });
 
       const newAssigneeName = await getAssigneeName(newAssigneeId);
