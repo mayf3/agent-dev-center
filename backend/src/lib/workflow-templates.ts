@@ -41,12 +41,12 @@ const PM_REVIEW: StepDef = {
   autoAdvance: false,
 };
 
-/** 架构审查：审查开发自检结果，需 ARCH_REVIEW 和 DEV_SELF_CHECK 都就位才能推进 */
+/** 架构审查：审查开发自检结果 */
 const ARCH_REVIEW_STEP: StepDef = {
   name: 'arch_review',
   displayName: '架构审查(开发自检)',
   role: 'architect',
-  requiredReports: ['ARCH_REVIEW', 'DEV_SELF_CHECK'],
+  requiredReports: ['ARCH_REVIEW'],
   autoAdvance: false,
 };
 
@@ -179,6 +179,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
       PM_REVIEW,
       {
         name: 'dev_self_check',
+        requiredReports: ['DEV_SELF_CHECK'],
         displayName: '后端开发自检',
         role: 'backend_developer',
         requiredReports: [],
@@ -198,6 +199,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
       PM_REVIEW,
       {
         name: 'dev_self_check',
+        requiredReports: ['DEV_SELF_CHECK'],
         displayName: '前端开发自检',
         role: 'frontend_developer',
         requiredReports: [],
@@ -217,6 +219,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
       PM_REVIEW,
       {
         name: 'dev_self_check',
+        requiredReports: ['DEV_SELF_CHECK'],
         displayName: '移动端开发自检',
         role: 'mobile_developer',
         requiredReports: [],
@@ -236,6 +239,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
       PM_REVIEW,
       {
         name: 'dev_self_check',
+        requiredReports: ['DEV_SELF_CHECK'],
         displayName: '小程序开发自检',
         role: 'miniapp_developer',
         requiredReports: [],
@@ -253,6 +257,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
       PM_REVIEW,
       {
         name: 'dev_self_check',
+        requiredReports: ['DEV_SELF_CHECK'],
         displayName: '游戏开发自检',
         role: 'game_developer',
         requiredReports: [],
@@ -272,6 +277,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
       PM_REVIEW,
       {
         name: 'dev_self_check',
+        requiredReports: ['DEV_SELF_CHECK'],
         displayName: '修复自检',
         role: 'backend_developer',
         requiredReports: [],
@@ -331,6 +337,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     steps: [
       {
         name: 'dev_self_check',
+        requiredReports: ['DEV_SELF_CHECK'],
         displayName: '紧急修复自检',
         role: 'backend_developer',
         requiredReports: [],
@@ -422,6 +429,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
       },
       {
         name: 'dev_self_check',
+        requiredReports: ['DEV_SELF_CHECK'],
         displayName: '开发自检',
         role: 'backend_developer',
         requiredReports: [],
