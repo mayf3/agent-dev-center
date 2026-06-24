@@ -19,6 +19,7 @@ import {
   mapUserRole,
   logTransition,
   WorkflowStep,
+  extractRoleUserMap,
 } from './workflow-helpers.js';
 import {
   releaseTestEnvLock,
@@ -93,11 +94,21 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       }
 
       // 自动解析回退步骤的 assigneeId
-      // 如果解析失败（如缺少对应角色的用户），fallback 到当前 assignee
+      // 使用 assigneeMode + roleUserMap 精准分配（kernel 新逻辑）
+      // 失败时保留当前 assignee，不阻止 reject 本身
       let newAssigneeId: string | null;
       try {
+        const roleUserMap = extractRoleUserMap(requirement.workflow?.steps);
         newAssigneeId = targetStepDef
-          ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId)
+          ? await resolveAssigneeForStep(targetStepDef.role, requirement.assigneeId, {
+              assigneeMode: targetStepDef.assigneeMode ?? 'role-based',
+              roleUserMap,
+              requirement: {
+                id: requirement.id,
+                requesterId: requirement.requesterId,
+                assigneeId: requirement.assigneeId,
+              },
+            })
           : requirement.assigneeId;
       } catch {
         // fallback: 保留当前 assignee，不阻止 reject 本身
