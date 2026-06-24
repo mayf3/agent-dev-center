@@ -583,9 +583,15 @@ reportsRouter.patch(
               const steps = parseSteps(rawJson);
               const targetStepDef = steps.find(s => s.name === targetStep);
               if (targetStepDef?.role) {
-                rollbackAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
-                if (rollbackAssigneeId) {
-                  rollbackAssigneeName = await getAssigneeName(rollbackAssigneeId);
+                try {
+                  rollbackAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
+                  if (rollbackAssigneeId) {
+                    rollbackAssigneeName = await getAssigneeName(rollbackAssigneeId);
+                  }
+                } catch (e) {
+                  // resolveAssigneeForStep 可能因 roleUserMap 缺失抛出异常，
+                  // 此时不清除 assignee（保留 null），防止漂移
+                  rollbackAssigneeId = null;
                 }
               }
             }
