@@ -1,0 +1,52 @@
+<!-- pages/login/index.wxml -->
+<view class="login-page">
+  <view class="login-header">
+    <view class="login-logo">⚡</view>
+    <view class="login-title">Agent开发中心</view>
+    <view class="login-subtitle">需求管理平台</view>
+  </view>
+
+  <view class="login-form card">
+    <view class="form-group">
+      <view class="form-label">邮箱 <text class="required">*</text></view>
+      <input
+        class="form-input"
+        type="text"
+        placeholder="请输入邮箱"
+        value="{{email}}"
+        bindinput="onEmailInput"
+        confirm-type="next"
+      />
+    </view>
+
+    <view class="form-group">
+      <view class="form-label">密码 <text class="required">*</text></view>
+      <input
+        class="form-input"
+        type="password"
+        placeholder="请输入密码"
+        value="{{password}}"
+        bindinput="onPasswordInput"
+        confirm-type="done"
+        bindconfirm="handleLogin"
+      />
+    </view>
+
+    <view class="error-msg" wx:if="{{errorMsg}}">
+      {{errorMsg}}
+    </view>
+
+    <button
+      class="btn-primary login-btn"
+      bindtap="handleLogin"
+      loading="{{loading}}"
+      disabled="{{loading}}"
+    >
+      {{loading ? '登录中...' : '登 录'}}
+    </button>
+  </view>
+
+  <view class="login-footer">
+    <text class="footer-text">使用 Web 端账号登录</text>
+  </view>
+</view>

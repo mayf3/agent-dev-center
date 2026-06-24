@@ -1,0 +1,39 @@
+#!/bin/bash
+# post-receive — v2: 同步 + 编译验证
+# 自动验证 main 分支的编译，防止破损代码上线
+# 2026-06-14: 添加 prisma generate + tsc --noEmit 验证步骤
+# 安装: cp infra/hooks/post-receive /opt/git/agent-dev-center.git/hooks/post-receive
+
+set -euo pipefail
+
+WORK_TREE=/opt/services/agent-dev-center
+BACKEND_DIR="$WORK_TREE/backend"
+
+while read oldrev newrev refname; do
+  branch=$(echo "$refname" | sed 's|refs/heads/||')
+  if [ "$branch" != "main" ]; then
+    echo "[hook] 分支 $branch 已收到，但非 main 分支，跳过"
+    continue
+  fi
+
+  echo "[hook] main 分支更新，同步源码..."
+  GIT_DIR=/opt/git/agent-dev-center.git GIT_WORK_TREE=$WORK_TREE git checkout -f main
+
+  # ── 编译验证 ──
+  echo "[hook] 验证 Prisma schema..."
+  cd "$BACKEND_DIR"
+  if ! npx prisma generate --no-hints 2>/dev/null; then
+    echo "❌ [hook] prisma generate 失败 — schema 与数据库不匹配"
+    echo "   请运行: cd $BACKEND_DIR && npx prisma db pull"
+    exit 1
+  fi
+
+  echo "[hook] 验证 TypeScript 编译..."
+  if ! npx tsc --noEmit 2>&1; then
+    echo "❌ [hook] TypeScript 编译失败，代码已同步但不可部署"
+    exit 1
+  fi
+
+  echo "✅ [hook] 编译验证通过，可以部署"
+  echo "[hook] 部署请运行: cd $WORK_TREE && docker compose build backend && docker compose up -d backend"
+done

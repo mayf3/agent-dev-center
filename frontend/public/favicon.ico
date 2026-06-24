@@ -1,0 +1,9 @@
+EOF
+# 用SVG转ICO比较麻烦，直接用现成的icon
+cp {home}/workspace/project/agent-dev-center/frontend/public/icons/icon-192.png {home}/workspace/project/agent-dev-center/frontend/public/favicon.png
+
+# 创建一个简单的HTML重定向方式 - 或者用nginx配置
+# 最简单：在 index.html 里加个 link 指向已有的图标
+
+# 检查index.html
+cat {home}/workspace/project/agent-dev-center/frontend/index.html

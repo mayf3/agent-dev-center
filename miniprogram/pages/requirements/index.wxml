@@ -1,0 +1,93 @@
+<!-- pages/requirements/index.wxml -->
+<view class="page" catchtouchmove="closeFilter">
+  <!-- 用户信息区 -->
+  <view class="user-bar">
+    <view class="user-info">
+      <view class="user-avatar">{{userInfo.avatar || '👤'}}</view>
+      <view class="user-detail">
+        <view class="user-name">{{userInfo.name || '未登录'}}</view>
+        <view class="user-role">{{roleLabels[userRole] || '--'}}</view>
+      </view>
+    </view>
+    <view class="user-actions">
+      <view class="action-btn" bindtap="goToMyRequirements">
+        <text class="action-icon">📋</text>
+        <text class="action-text">我的</text>
+      </view>
+      <view class="action-btn" bindtap="goToReports" wx:if="{{userRole === 'admin'}}">
+        <text class="action-icon">📊</text>
+        <text class="action-text">报告</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 筛选栏 -->
+  <view class="filter-bar">
+    <view class="filter-pill {{statusFilter ? 'active' : ''}}" bindtap="toggleStatusFilter">
+      <text wx:if="{{!statusFilter}}">全部状态</text>
+      <text wx:else>{{statusLabel}}</text>
+      <text class="arrow-down">▾</text>
+    </view>
+    <view class="filter-pill {{priorityFilter ? 'active' : ''}}" bindtap="togglePriorityFilter">
+      <text wx:if="{{!priorityFilter}}">全部优先级</text>
+      <text wx:else>{{priorityLabel}}</text>
+      <text class="arrow-down">▾</text>
+    </view>
+  </view>
+
+  <!-- 筛选下拉 -->
+  <view class="filter-dropdown" wx:if="{{showStatusFilter || showPriorityFilter}}" bindtap="closeFilter">
+    <view class="dropdown-menu">
+      <view class="dropdown-item" wx:for="{{showStatusFilter ? statusOptions : priorityOptions}}" wx:key="value"
+        data-value="{{item.value}}" bindtap="onStatusSelect">
+        <text class="{{item.value === (showStatusFilter ? statusFilter : priorityFilter) ? 'selected' : ''}}">
+          {{item.label}}
+        </text>
+        <text class="checkmark" wx:if="{{item.value === (showStatusFilter ? statusFilter : priorityFilter)}}">✓</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 需求列表 -->
+  <view class="list-container">
+    <view wx:if="{{loading && page === 1}}" class="loading-wrap">
+      <text>加载中...</text>
+    </view>
+
+    <view wx:elif="{{requirements.length === 0}}" class="empty-state">
+      <view class="empty-icon">📭</view>
+      <view class="empty-text">暂无需求</view>
+    </view>
+
+    <view wx:else>
+      <view class="list-item" wx:for="{{requirements}}" wx:key="id" data-id="{{item.id}}" bindtap="goToDetail">
+        <view class="item-title">{{item.title}}</view>
+        <view class="item-meta">
+          <view class="meta-item">
+            <view class="tag {{item.priorityColor}}">{{item.priorityLabel}}</view>
+            <view class="tag {{item.statusColor}}">{{item.statusLabel}}</view>
+          </view>
+        </view>
+        <view class="item-meta">
+          <view class="meta-item">{{item.department}} · {{item.requester}}</view>
+          <view class="meta-item">{{item.timeAgo}}</view>
+        </view>
+        <view class="item-meta" wx:if="{{item.assignee}}">
+          <view class="meta-item">负责人: {{item.assignee}}</view>
+        </view>
+      </view>
+
+      <view class="loading-wrap" wx:if="{{loading && page > 1}}">
+        <text>加载更多...</text>
+      </view>
+      <view class="loading-wrap" wx:elif="{{!hasMore && requirements.length > 0}}">
+        <text style="color:#999;font-size:24rpx;">— 已显示全部需求 —</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 悬浮按钮 -->
+  <view class="fab" bindtap="goToSubmit">
+    <text class="fab-icon">+</text>
+  </view>
+</view>

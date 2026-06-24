@@ -1,0 +1,22 @@
+node_modules
+dist
+build
+.vite
+.env
+.env.*
+!.env.example
+coverage
+*.log
+.DS_Store
+backend/prisma/migrations/dev.db
+backend/prisma/dev.db
+*.bak
+
+# Binary build artifacts (APK, AAB, etc.)
+*.apk
+*.aab
+
+# Archive directory (soft-deleted items, not tracked in git)
+archive/
+baby-daily-print/
+.adc-token

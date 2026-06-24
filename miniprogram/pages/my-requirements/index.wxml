@@ -1,0 +1,38 @@
+<!-- pages/my-requirements/index.wxml -->
+<view class="page">
+  <view class="page-head">
+    <text class="page-title">我的需求</text>
+  </view>
+
+  <!-- 筛选标签 -->
+  <view class="filter-bar" style="padding:0 24rpx 16rpx;flex-wrap:wrap;gap:12rpx;">
+    <view class="filter-pill {{statusFilter === item.value ? 'active' : ''}}"
+      wx:for="{{statusOptions}}" wx:key="value"
+      data-value="{{item.value}}" data-label="{{item.label}}"
+      bindtap="onFilterSelect">
+      {{item.label}}
+    </view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+
+  <view wx:elif="{{requirements.length === 0}}" class="empty-state">
+    <view class="empty-icon">📭</view>
+    <view class="empty-text">暂无需求</view>
+  </view>
+
+  <view wx:else style="padding:0 24rpx;">
+    <view class="list-item" wx:for="{{requirements}}" wx:key="id" data-id="{{item.id}}" bindtap="goToDetail">
+      <view class="item-title">{{item.title}}</view>
+      <view class="item-meta">
+        <view class="tag {{item.priorityColor}}">{{item.priorityLabel}}</view>
+        <view class="tag {{item.statusColor}}">{{item.statusLabel}}</view>
+      </view>
+      <view class="item-meta">
+        <view class="meta-item">{{item.department}} · {{item.timeAgo}}</view>
+      </view>
+    </view>
+  </view>
+</view>

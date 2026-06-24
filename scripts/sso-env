@@ -1,0 +1,14 @@
+# /opt/.sso-env — 统一 SSO/JWT 密钥配置
+# 所有服务必须引用此文件，禁止硬编码 JWT_SECRET
+# 管理员: CTO / itops-agent
+# 上次更新: 2026-05-25
+
+# ADC 平台签发 token 使用的密钥（source of truth）
+JWT_SECRET=efaae9e3a8016b06ccf2466e618644d1e1918d134f0e3b6a357f6abe6b9a7ea6
+
+# 兼容字段: 部分服务使用 SSO_JWT_SECRET 变量名
+SSO_JWT_SECRET=efaae9e3a8016b06ccf2466e618644d1e1918d134f0e3b6a357f6abe6b9a7ea6
+
+# ⚠️ 禁止修改此文件中的密钥值
+# ⚠️ 禁止在 docker-compose.yml 中硬编码 JWT_SECRET
+# ⚠️ 如需轮换密钥，必须同时更新 ADC .env 和此文件
