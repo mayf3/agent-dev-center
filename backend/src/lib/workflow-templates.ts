@@ -41,6 +41,15 @@ const PM_REVIEW: StepDef = {
   autoAdvance: false,
 };
 
+/** 架构审查：审查开发自检结果，需 ARCH_REVIEW 和 DEV_SELF_CHECK 都就位才能推进 */
+const ARCH_REVIEW_STEP: StepDef = {
+  name: 'arch_review',
+  displayName: '架构审查(开发自检)',
+  role: 'architect',
+  requiredReports: ['ARCH_REVIEW', 'DEV_SELF_CHECK'],
+  autoAdvance: false,
+};
+
 /** QA 审查 DEV_SELF_CHECK 报告 */
 const QA_REVIEW_DEV: StepDef = {
   name: 'qa_review',
@@ -175,6 +184,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      ARCH_REVIEW_STEP,
       MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
@@ -193,6 +203,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      ARCH_REVIEW_STEP,
       MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
@@ -211,6 +222,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      ARCH_REVIEW_STEP,
       MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
@@ -246,6 +258,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      ARCH_REVIEW_STEP,
       MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       ...STANDARD_DEV_MIDDLE,
@@ -264,6 +277,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
         requiredReports: [],
         autoAdvance: false,
       },
+      ARCH_REVIEW_STEP,
       MERGE_TO_MAIN,
       QA_REVIEW_DEV,
       {
