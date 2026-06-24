@@ -311,9 +311,3 @@ servicesRouter.get(
   })
 );
 export const router = servicesRouter;
-export const mountPath = '/api/services';
-elations, grouped, total: relations.length });
-  })
-);
-export const router = servicesRouter;
-export const mountPath = '/api/services';
