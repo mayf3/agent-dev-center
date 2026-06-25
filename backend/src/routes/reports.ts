@@ -496,6 +496,8 @@ reportsRouter.patch(
       where: { id: params.reportId },
     });
     if (!report) throw new HttpError(404, '报告不存在');
+    // 确保 params.id 可用（平路路径 /api/reports/:reportId 时从 report 取）
+    if (!params.id) params.id = report.requirementId;
     // CTO_REVIEW 自审豁免：CTO 审的是整个需求（开发+测试+安全），不是审自己
     const isCtoSelfReview = report.reportType === ReportType.CTO_REVIEW && report.submittedById === req.user!.id;
     if (report.submittedById === req.user!.id && !isCtoSelfReview) {
