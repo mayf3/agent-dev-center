@@ -1,11 +1,13 @@
 import { Descriptions, Modal, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
-import type { RequirementReport, ReportType } from '../api/types';
+import type { RequirementReport, ReportType, QAReviewFinding } from '../api/types';
 import {
   reportStatusColors,
   reportStatusLabels,
   reportTypeLabels,
+  findingCategoryLabels,
+  findingSeverityColors,
 } from '../constants/options';
 
 function formatDateTime(value?: string | null) {
@@ -310,6 +312,53 @@ function renderPostmortem(content: Record<string, unknown>) {
   );
 }
 
+function renderFindings(findings: QAReviewFinding[]) {
+  if (!findings || findings.length === 0) return null;
+
+  const columns: ColumnsType<QAReviewFinding> = [
+    {
+      title: 'severity',
+      dataIndex: 'severity',
+      key: 'severity',
+      width: 80,
+      render: (val: 'critical' | 'minor') => (
+        <Tag color={findingSeverityColors[val]}>{val.toUpperCase()}</Tag>
+      ),
+    },
+    {
+      title: 'category',
+      dataIndex: 'category',
+      key: 'category',
+      width: 140,
+      render: (val: string) => (
+        <Tag>{findingCategoryLabels[val as keyof typeof findingCategoryLabels] ?? val}</Tag>
+      ),
+    },
+    { title: 'description', dataIndex: 'description', key: 'description' },
+  ];
+
+  const criticalCount = findings.filter(f => f.severity === 'critical').length;
+  const minorCount = findings.length - criticalCount;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <Typography.Text strong>QA Findings ({findings.length})</Typography.Text>
+      <div style={{ margin: '8px 0', display: 'flex', gap: 12 }}>
+        <Tag color="red">critical: {criticalCount}</Tag>
+        <Tag color="orange">minor: {minorCount}</Tag>
+      </div>
+      <Table<QAReviewFinding>
+        rowKey={(record, i) => `${record.severity}-${record.category}-${i}`}
+        columns={columns}
+        dataSource={findings}
+        pagination={false}
+        size="small"
+        style={{ marginTop: 8 }}
+      />
+    </div>
+  );
+}
+
 const renderers: Record<ReportType, (content: Record<string, unknown>) => React.ReactNode> = {
   POSTMORTEM: renderPostmortem,
   DEV_SELF_CHECK: renderDevSelfCheck,
@@ -351,6 +400,8 @@ export function ReportDetailModal({ report, open, onClose }: ReportDetailModalPr
 
       {renderer(report.content)}
 
+      {report.qaFindings && report.qaFindings.length > 0 && renderFindings(report.qaFindings)}
+
       {report.reviewComment && (
         <div style={{ marginTop: 16 }}>
           <Typography.Text strong>Review Comment</Typography.Text>
@@ -363,6 +414,11 @@ export function ReportDetailModal({ report, open, onClose }: ReportDetailModalPr
       {report.reviewedAt && (
         <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
           Reviewed at: {formatDateTime(report.reviewedAt)}
+        </Typography.Text>
+      )}
+      {report.qaReviewedBy && (
+        <Typography.Text type="secondary" style={{ display: 'block' }}>
+          QA Reviewer: {report.qaReviewedBy} at {formatDateTime(report.qaReviewedAt)}
         </Typography.Text>
       )}
     </Modal>

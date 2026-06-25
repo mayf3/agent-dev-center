@@ -210,3 +210,20 @@ export const reportTypeOrder: ReportType[] = [
   'CTO_REVIEW',
   'DEPLOY_CONFIRM',
 ];
+
+// ─── Findings (QA review findings-driven approach) ───────────────
+
+export const findingSeverityColors: Record<string, string> = {
+  critical: 'red',
+  minor: 'orange',
+};
+
+export const findingCategoryLabels: Record<string, string> = {
+  code_ref_missing: '代码引用缺失',
+  curl_mismatch: 'CURL 验证不符',
+  coverage_gap: '测试覆盖不足',
+  build_fail: '编译失败',
+  logic_error: '逻辑错误',
+  format_issue: '格式问题',
+  other: '其他',
+};
