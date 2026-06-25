@@ -154,6 +154,19 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         throw new HttpError(400, `assignee 解析失败: ${msg}`);
       }
 
+      // --- qa_review build gate: require gitHash + branch + repoPath ---
+      if (targetStep.name === 'qa_review') {
+        const req = await prisma.requirement.findUnique({
+          where: { id: params.id },
+          select: { gitHash: true, branch: true, repoPath: true },
+        });
+        const msgs: string[] = [];
+        if (!req?.gitHash) msgs.push('缺少 gitHash，请先提交代码并更新 gitHash');
+        if (!req?.branch) msgs.push('缺少 branch，请指定代码分支名');
+        if (!req?.repoPath) msgs.push('缺少 repoPath，请设置代码仓库路径');
+        if (msgs.length) throw new HttpError(400, `推进到 qa_review 验证失败：\n${msgs.join('\n')}`);
+      }
+
       // --- Persist step transition ---
       const updated = await prisma.requirement.update({
         where: { id: params.id },
