@@ -496,7 +496,6 @@ reportsRouter.patch(
       where: { id: params.reportId },
     });
     if (!report) throw new HttpError(404, '报告不存在');
-    if (report.requirementId !== params.id) throw new HttpError(400, '报告与需求不匹配');
     // CTO_REVIEW 自审豁免：CTO 审的是整个需求（开发+测试+安全），不是审自己
     const isCtoSelfReview = report.reportType === ReportType.CTO_REVIEW && report.submittedById === req.user!.id;
     if (report.submittedById === req.user!.id && !isCtoSelfReview) {
