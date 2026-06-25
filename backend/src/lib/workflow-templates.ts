@@ -35,6 +35,7 @@ interface TemplateDef {
   name: string;
   displayName: string;
   description: string;
+  roleUserMap?: Record<string, string>;  // 2026-06-25: role → userId 映射，用于精准分配 assignee
   steps: StepDef[];
 }
 
@@ -133,11 +134,30 @@ const STANDARD_DEV_MIDDLE_V4: StepDef[] = [
   { name: 'done',            displayName: '已完成',         role: 'cto',    requiredReports: [],                     autoAdvance: false },
 ];
 
+// ── roleUserMap（role → userId 映射）─────────────────────────
+// 各开发角色的 assignee ID（2026-06-25 生产数据库 UUID）
+const ROLE_USER_MAP: Record<string, string> = {
+  backend_developer: 'df7a1d86-a6e4-4596-902f-aa32e760ac22',
+  frontend_developer: '7e828c80-2187-4d74-957b-839f9ae283f3',
+  mobile_developer: '71385aae-656d-4e93-900b-3367c7529e98',
+  miniapp_developer: '9de01663-c8d9-4e4a-a3c5-5ee3c0da06ae',
+  game_developer: '1ca3edfc-6259-4733-a8c7-4ca10c071b60',
+  tester: 'a4686837-7f76-463f-95a0-67e9705273ae',
+  security: '45bd3243-60ce-4c95-84a9-1a6108e348c8',
+  cto: '155dde59-a089-4de6-9708-63817fa0ac9f',
+  ops: '321e880d-5c43-4f14-b8e1-d41f676b7d2d',
+  pm: '6f874acb-147d-498b-b27b-400a87701819',
+  requester: '6f874acb-147d-498b-b27b-400a87701819', // PM 也充当需求提出者
+  qa: '2bb8e535-375d-4803-a316-77e6ccf0ed0d',
+  architect: 'b2a1af8d-9dcf-4609-931a-804d59db71e3',
+};
+
 const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     name: 'backend-dev',
     displayName: '后端开发流程',
     description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    roleUserMap: ROLE_USER_MAP,
     steps: [
       DRAFT,
       PM_REVIEW,
@@ -158,6 +178,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     name: 'frontend-dev',
     displayName: '前端开发流程',
     description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    roleUserMap: ROLE_USER_MAP,
     steps: [
       DRAFT,
       PM_REVIEW,
@@ -178,6 +199,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     name: 'mobile-dev',
     displayName: '移动端开发流程',
     description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    roleUserMap: ROLE_USER_MAP,
     steps: [
       DRAFT,
       PM_REVIEW,
@@ -198,6 +220,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     name: 'miniapp-dev',
     displayName: '小程序开发流程',
     description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    roleUserMap: ROLE_USER_MAP,
     steps: [
       DRAFT,
       PM_REVIEW,
@@ -218,6 +241,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     name: 'game-dev',
     displayName: '游戏开发流程',
     description: '草稿→PM审批→架构设计→开发→架构审查→QA审→部署测试→测试→安全→QA预发布→CTO→合并→部署→完成',
+    roleUserMap: ROLE_USER_MAP,
     steps: [
       DRAFT,
       PM_REVIEW,
@@ -238,6 +262,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     name: 'security-fix',
     displayName: '安全修复流程',
     description: '草稿→PM审批→架构设计→修复→QA审→安全→QA预发布→CTO→合并→部署→完成',
+    roleUserMap: ROLE_USER_MAP,
     steps: [
       DRAFT,
       PM_REVIEW,
@@ -293,6 +318,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     name: 'hotfix',
     displayName: '紧急修复',
     description: '紧急修复流程（跳过PM和QA审查，紧急修复后直接部署）',
+    roleUserMap: ROLE_USER_MAP,
     steps: [
       {
         name: 'dev_self_check',
@@ -321,6 +347,7 @@ const DEFAULT_TEMPLATES: TemplateDef[] = [
     name: 'ops-deploy',
     displayName: '运维部署流程',
     description: '纯部署/配置类需求：CTO审批→部署→完成',
+    roleUserMap: ROLE_USER_MAP,
     steps: [
       {
         name: 'cto_review',
@@ -364,14 +391,14 @@ export async function ensureWorkflowTemplates(): Promise<void> {
       update: {
         displayName: tmpl.displayName,
         description: tmpl.description,
-        steps: tmpl.steps as any,
+        steps: tmpl.roleUserMap ? { steps: tmpl.steps, roleUserMap: tmpl.roleUserMap } as any : tmpl.steps as any,
         isActive: true,
       },
       create: {
         name: tmpl.name,
         displayName: tmpl.displayName,
         description: tmpl.description,
-        steps: tmpl.steps as any,
+        steps: tmpl.roleUserMap ? { steps: tmpl.steps, roleUserMap: tmpl.roleUserMap } as any : tmpl.steps as any,
         isActive: true,
       },
     });
