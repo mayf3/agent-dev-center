@@ -82,6 +82,34 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         }
       }
 
+      // ── DEV_SELF_CHECK 报告质量门禁（软模式） ──
+      if (currentStep.name === 'dev_self_check') {
+        const selfCheckReport = await prisma.requirementReport.findFirst({
+          where: { requirementId: params.id, reportType: 'DEV_SELF_CHECK', status: { in: ['pending', 'approved'] } },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (selfCheckReport && selfCheckReport.content) {
+          const c = selfCheckReport.content as Record<string, unknown>;
+          const items = c.items;
+          const summary = (c.summary?.toString() ?? '');
+          const issues: string[] = [];
+          if (!items || !Array.isArray(items) || items.length < 8) {
+            issues.push(`报告条目不足（${Array.isArray(items) ? items.length : 0}/8）`);
+          }
+          const allText = Array.isArray(items) ? items.join(' ') : '';
+          if (allText.length + summary.length < 800) issues.push('报告总字数不足 800');
+          const codeRefs = Array.isArray(items) ? items.filter((i: unknown) => typeof i === 'string' && i.includes('[代码引用]')).length : 0;
+          if (codeRefs < 2) issues.push(`代码引用不足（${codeRefs}/2）`);
+          if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[正向测试]'))) issues.push('缺少正向测试');
+          if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[反向测试]'))) issues.push('缺少反向测试');
+          if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[边界测试]'))) issues.push('缺少边界测试');
+          if (!allText.includes('gitHash=')) issues.push('缺少 gitHash 元数据');
+          if (!allText.includes('分支=')) issues.push('缺少分支元数据');
+          if (!allText.includes('workspace/project/')) issues.push('缺少仓库路径');
+          if (issues.length > 0) throw new HttpError(400, `DEV_SELF_CHECK 报告质量门禁：\n${issues.join('\n')}`);
+        }
+      }
+
       // --- merge_to_main validation ---
       if (currentStep.name === 'merge_to_main') {
         if (body.branch) {
