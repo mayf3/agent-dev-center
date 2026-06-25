@@ -57,6 +57,31 @@ export const reviewReportSchema = z.object({
   }),
 });
 
+// Findings-driven QA review schema (new approach, 2026-06-25)
+const findingCategoryValues = [
+  'code_ref_missing',
+  'curl_mismatch',
+  'coverage_gap',
+  'build_fail',
+  'logic_error',
+  'format_issue',
+  'other',
+] as const;
+
+export const findingSchema = z.object({
+  severity: z.enum(['critical', 'minor']),
+  category: z.enum(findingCategoryValues),
+  description: z.string().min(10).max(2000),
+});
+
+export const findingsReviewSchema = z.object({
+  params: z.object({ id: z.string().uuid().optional(), reportId: z.string().uuid() }),
+  body: z.object({
+    findings: z.array(findingSchema).max(50),
+    reviewComment: z.string().max(2000).optional(),
+  }),
+});
+
 export const reportIdSchema = z.object({
   params: z.object({ id: z.string().uuid().optional(), reportId: z.string().uuid() }),
 });
