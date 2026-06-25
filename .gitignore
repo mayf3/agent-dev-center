@@ -20,3 +20,5 @@ backend/prisma/dev.db
 archive/
 baby-daily-print/
 .adc-token
+.adc-token-cache*
+.adc-token-cache.d/
