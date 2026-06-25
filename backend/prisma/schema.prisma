@@ -552,6 +552,7 @@ model TestEnvLock {
   requirementTitle String?
   branch           String?
   acquiredAt       DateTime @default(now())
+  expiresAt        DateTime
 
   @@map("test_env_lock")
 }

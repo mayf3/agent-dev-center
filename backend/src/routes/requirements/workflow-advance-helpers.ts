@@ -69,23 +69,39 @@ export function skipSecurityIfApplicable(
   return { targetStep: step, skippedSteps };
 }
 
+/** TTL: 测试环境锁默认 2 小时后过期 */
+const TEST_ENV_LOCK_TTL_MS = 2 * 60 * 60 * 1000;
+
+/** 判断锁是否过期 */
+function isLockExpired(lock: { expiresAt: Date }): boolean {
+  return new Date() > lock.expiresAt;
+}
+
 /**
  * Acquire test environment lock when entering test_env_deploy.
- * Throws 409 if another requirement holds the lock.
+ * Throws 409 if another requirement holds the lock (unless expired).
  * Returns the requirement ID for rollback tracking.
  */
 export async function acquireTestEnvLock(requirementId: string, title: string, branch: string | null): Promise<string> {
   const existingLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
   if (existingLock && existingLock.requirementId !== requirementId) {
-    throw new HttpError(
-      409,
-      `测试环境已被占用：需求「${existingLock.requirementTitle || existingLock.requirementId}」（锁定于 ${existingLock.acquiredAt.toISOString().replace('T', ' ').slice(0, 16)}），请等待其部署完成后重试`,
-    );
+    // 检查是否过期
+    if (isLockExpired(existingLock)) {
+      console.log(`[test-env-lock] Lock expired, auto-releasing from: ${existingLock.requirementId.slice(0, 8)}`);
+      await prisma.testEnvLock.delete({ where: { id: 'singleton' } });
+    } else {
+      throw new HttpError(
+        409,
+        `测试环境已被占用：需求「${existingLock.requirementTitle || existingLock.requirementId}」（锁定于 ${existingLock.acquiredAt.toISOString().replace('T', ' ').slice(0, 16)}，` +
+        `过期于 ${existingLock.expiresAt.toISOString().replace('T', ' ').slice(0, 16)}），请等待其部署完成后重试`,
+      );
+    }
   }
+  const expiresAt = new Date(Date.now() + TEST_ENV_LOCK_TTL_MS);
   await prisma.testEnvLock.upsert({
     where: { id: 'singleton' },
-    create: { id: 'singleton', requirementId, requirementTitle: title, branch },
-    update: { requirementId, requirementTitle: title, branch, acquiredAt: new Date() },
+    create: { id: 'singleton', requirementId, requirementTitle: title, branch, expiresAt },
+    update: { requirementId, requirementTitle: title, branch, acquiredAt: new Date(), expiresAt },
   });
   return requirementId;
 }
@@ -124,10 +140,11 @@ export function autoAdvanceTestEnvQueue(): void {
       const hasStep = steps.some(s => s.name === 'test_env_deploy');
       if (!hasStep) return;
 
+      const expiresAt = new Date(Date.now() + TEST_ENV_LOCK_TTL_MS);
       await prisma.testEnvLock.upsert({
         where: { id: 'singleton' },
-        create: { id: 'singleton', requirementId: next.id, requirementTitle: next.title, branch: next.branch },
-        update: { requirementId: next.id, requirementTitle: next.title, branch: next.branch, acquiredAt: new Date() },
+        create: { id: 'singleton', requirementId: next.id, requirementTitle: next.title, branch: next.branch, expiresAt },
+        update: { requirementId: next.id, requirementTitle: next.title, branch: next.branch, acquiredAt: new Date(), expiresAt },
       });
       console.log(`[test-env-lock] Lock released, auto-assigned to: ${next.id.slice(0, 8)} (${next.title?.slice(0, 30)})`);
     } catch (err) {
