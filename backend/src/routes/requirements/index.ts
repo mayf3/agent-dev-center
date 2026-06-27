@@ -6,6 +6,7 @@ import { registerCorePutRoutes } from './core-put.js';
 import { registerCorePatchRoutes } from './core-patch.js';
 import { registerCoreKanbanRoutes } from './core-kanban.js';
 import { registerCoreMineRoutes } from './core-mine.js';
+import { registerCoreRequestedRoutes } from './core-requested.js';
 import { registerCoreLifecycleRoutes } from './core-lifecycle.js';
 import { registerAttachmentRoutes } from './attachments.js';
 import { registerStatusRoutes } from './status.js';
@@ -45,6 +46,7 @@ registerWorkflowMyStepRoutes(requirementsRouter);
 // Register core routes
 registerCoreKanbanRoutes(requirementsRouter);
 registerCoreMineRoutes(requirementsRouter);
+registerCoreRequestedRoutes(requirementsRouter);
 registerCoreCreateRoutes(requirementsRouter);
 registerCoreListRoutes(requirementsRouter);
 registerCorePutRoutes(requirementsRouter);

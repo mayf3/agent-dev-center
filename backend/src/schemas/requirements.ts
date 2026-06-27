@@ -68,6 +68,12 @@ export const listRequirementsSchema = z.object({
   })
 });
 
+/**
+ * Shared schema for view parameter on /mine and /requested.
+ * Must reject invalid values with a ZodError (→ 400).
+ */
+export const requirementViewSchema = z.enum(['summary', 'detail']).default('detail');
+
 export const requirementIdSchema = z.object({
   params: z.object({
     id: z.string().uuid()
