@@ -7,6 +7,7 @@ import { prisma } from '../lib/prisma.js';
 import { getPlatformRoles, hasPlatformRole } from '../lib/platform-roles.js';
 import { HttpError } from '../utils/http-error.js';
 import { asyncHandler } from '../utils/async-handler.js';
+import { isTokenRevoked } from '../services/token-revoke.js';
 
 interface TokenPayload extends JwtPayload {
   sub: string;
@@ -164,6 +165,14 @@ export const authRequired = asyncHandler(async (req: Request, _res: Response, ne
   // 检查令牌版本 (用于未来批量失效)
   if (payload.version && payload.version !== JWT_VERSION) {
     throw new HttpError(401, '令牌版本已过期，请重新登录');
+  }
+
+  // JTI Denylist 检查（如果 JWT 包含 jti）
+  if (payload.jti && payload.sub) {
+    const revoked = await isTokenRevoked(payload.jti, payload.sub);
+    if (revoked) {
+      throw new HttpError(401, '令牌已被吊销，请重新登录');
+    }
   }
 
   if (isAgentToken) {

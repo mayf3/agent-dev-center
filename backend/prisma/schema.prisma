@@ -855,3 +855,17 @@ model FeedbackEvent {
   @@index([createdAt])
   @@map("feedback_events")
 }
+
+model RevokedToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  jti       String    @unique
+  userId    String    @db.Uuid
+  reason    String?
+  revokedAt DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt DateTime? @db.Timestamptz(3)
+
+  @@index([jti])
+  @@index([userId])
+  @@index([revokedAt])
+  @@map("revoked_tokens")
+}
