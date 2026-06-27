@@ -85,6 +85,65 @@ export function extractRoleUserMap(stepsJson: unknown): Record<string, string> |
 }
 
 /**
+ * Strictly normalize and validate a roleUserMap value.
+ *
+ * Returns undefined for any invalid value — never throws.
+ *
+ * Valid roleUserMap must satisfy ALL:
+ *  1. non-null
+ *  2. typeof === 'object'
+ *  3. not an array
+ *  4. at least one entry
+ *  5. all keys are non-empty strings, trimmed == original
+ *  6. all values are non-empty strings, trimmed == original
+ *  7. no dangerous prototype keys: __proto__, prototype, constructor
+ *
+ * Uses Object.keys() (own enumerable only) and builds result via
+ * safe empty-prototype object to avoid prototype pollution.
+ *
+ * Any single invalid entry invalidates the entire map.
+ *
+ * Examples treated as invalid:
+ *  "bad", 123, true, [], [["dev","uuid"]],
+ *  { developer: null }, { developer: 123 }, {}, { "": "x" }, { " ": "x" },
+ *  { dev: "" }, { dev: " " }, { __proto__: "x" }, { constructor: "x" }
+ */
+export function normalizeRoleUserMap(value: unknown): Record<string, string> | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value !== 'object') return undefined;
+  if (Array.isArray(value)) return undefined;
+
+  // Object.keys — only own enumerable properties (safe)
+  const ownKeys = Object.keys(value as Record<string, unknown>);
+  if (ownKeys.length === 0) return undefined;
+
+  const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+  // Build result with null-prototype object (prototype-safe)
+  const result = Object.create(null) as Record<string, string>;
+
+  for (const key of ownKeys) {
+    // Empty key
+    if (key.length === 0) return undefined;
+    // Key with whitespace
+    if (key !== key.trim()) return undefined;
+    // Dangerous prototype key
+    if (DANGEROUS_KEYS.has(key)) return undefined;
+
+    const val = (value as Record<string, unknown>)[key];
+    if (typeof val !== 'string') return undefined;
+    // Empty value
+    if (val.length === 0) return undefined;
+    // Value with whitespace
+    if (val !== val.trim()) return undefined;
+
+    result[key] = val;
+  }
+
+  return result;
+}
+
+/**
  * Resolve the workflow steps JSON source for a requirement.
  * Priority: workflowSnapshot (immutable) > workflow.steps (legacy fallback)
  *
@@ -124,6 +183,71 @@ export function getWorkflowSteps(
   const rawJson = getWorkflowRawJson(requirement);
   if (!rawJson) return [];
   return parseSteps(rawJson);
+}
+
+/**
+ * Normalized workflow routing context — unified source of steps and roleUserMap.
+ *
+ * Steps priority:
+ *   1. workflowSnapshot (immutable, taken at assign time)
+ *   2. live template workflow.steps (legacy fallback)
+ *
+ * roleUserMap priority:
+ *   1. workflowSnapshot — if present and has a valid non-empty roleUserMap
+ *   2. live template workflow.steps — fallback when snapshot is legacy array,
+ *      lacks roleUserMap, or has null/empty roleUserMap
+ *   3. missing — no roleUserMap available from any source
+ *
+ * Steps and roleUserMap may come from different sources.
+ * Snapshot steps are NEVER replaced by live template steps.
+ */
+export type WorkflowRoutingContext = {
+  steps: WorkflowStep[];
+  roleUserMap?: Record<string, string>;
+  stepsSource: 'snapshot' | 'template';
+  roleUserMapSource: 'snapshot' | 'template' | 'missing';
+};
+
+export function getWorkflowRoutingContext(requirement: {
+  workflowSnapshot?: unknown;
+  workflow?: { steps: unknown } | null;
+}): WorkflowRoutingContext {
+  const rawJson = getWorkflowRawJson(requirement);
+  const hasSnapshot = requirement.workflowSnapshot !== null
+    && requirement.workflowSnapshot !== undefined;
+
+  // Steps — snapshot first, then template
+  const steps = rawJson ? parseSteps(rawJson) : [];
+  const stepsSource: 'snapshot' | 'template' = hasSnapshot ? 'snapshot' : 'template';
+
+  // roleUserMap — try snapshot (strictly validated), then template fallback
+  let roleUserMap: Record<string, string> | undefined;
+  let roleUserMapSource: 'snapshot' | 'template' | 'missing' = 'missing';
+
+  if (hasSnapshot) {
+    const snapshotRaw = extractRoleUserMap(requirement.workflowSnapshot);
+    const snapshotMap = normalizeRoleUserMap(snapshotRaw);
+    if (snapshotMap) {
+      roleUserMap = snapshotMap;
+      roleUserMapSource = 'snapshot';
+    } else if (requirement.workflow?.steps) {
+      const templateRaw = extractRoleUserMap(requirement.workflow.steps);
+      const templateMap = normalizeRoleUserMap(templateRaw);
+      if (templateMap) {
+        roleUserMap = templateMap;
+        roleUserMapSource = 'template';
+      }
+    }
+  } else if (requirement.workflow?.steps) {
+    const templateRaw = extractRoleUserMap(requirement.workflow.steps);
+    const templateMap = normalizeRoleUserMap(templateRaw);
+    if (templateMap) {
+      roleUserMap = templateMap;
+      roleUserMapSource = 'template';
+    }
+  }
+
+  return { steps, roleUserMap, stepsSource, roleUserMapSource };
 }
 
 /** Get current step definition from workflow */
