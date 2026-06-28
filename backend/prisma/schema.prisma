@@ -553,6 +553,7 @@ model TestEnvLock {
   requirementTitle String?
   branch           String?
   acquiredAt       DateTime @default(now())
+  lockToken        String?  @db.Uuid
 
   @@map("test_env_lock")
 }
