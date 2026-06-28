@@ -184,41 +184,52 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       }
 
       // --- Persist step transition (CAS + transaction) ---
-      const updated = await prisma.$transaction(async (tx) => {
-        // 1. Read requirement inside tx to obtain current stateVersion (stale-proof)
-        const currentReq = await txReadRequirement(tx as any, params.id);
+      // Wrap in try/catch to prevent test-env-lock orphan on CAS failure
+      let updated;
+      try {
+        updated = await prisma.$transaction(async (tx) => {
+          // 1. Read requirement inside tx to obtain current stateVersion (stale-proof)
+          const currentReq = await txReadRequirement(tx as any, params.id);
 
-        // 2. CAS-update requirement — fails with 409 if stateVersion changed
-        const patchData = {
-          currentStep: targetStep.name,
-          assigneeId: newAssigneeId,
-          rejectReason: null,
-        } as any;
+          // 2. CAS-update requirement — fails with 409 if stateVersion changed
+          const patchData = {
+            currentStep: targetStep.name,
+            assigneeId: newAssigneeId,
+            rejectReason: null,
+          } as any;
 
-        const updatedReq = await casUpdateRequirement(
-          tx as any,
-          params.id,
-          currentReq.stateVersion ?? 0,
-          patchData,
-        );
+          const updatedReq = await casUpdateRequirement(
+            tx as any,
+            params.id,
+            currentReq.stateVersion ?? 0,
+            patchData,
+          );
 
-        const newAssigneeName = await getAssigneeName(newAssigneeId);
+          const newAssigneeName = await getAssigneeName(newAssigneeId);
 
-        // 3. Transition in the same transaction
-        await txCreateTransition(tx as any, {
-          requirement: { connect: { id: params.id } },
-          fromStep: requirement.currentStep,
-          toStep: targetStep.name,
-          action: 'advance',
-          actorId: req.user!.id,
-          actorName: req.user!.name,
-          actorRole: req.user!.internalRole ?? req.user!.role,
-          comment: body.comment,
-          metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
-        } as Prisma.WorkflowTransitionCreateInput);
+          // 3. Transition in the same transaction
+          await txCreateTransition(tx as any, {
+            requirement: { connect: { id: params.id } },
+            fromStep: requirement.currentStep,
+            toStep: targetStep.name,
+            action: 'advance',
+            actorId: req.user!.id,
+            actorName: req.user!.name,
+            actorRole: req.user!.internalRole ?? req.user!.role,
+            comment: body.comment,
+            metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+          } as Prisma.WorkflowTransitionCreateInput);
 
-        return { updatedReq, newAssigneeName };
-      });
+          return { updatedReq, newAssigneeName };
+        });
+      } catch (err) {
+        // If test-env-lock was acquired and CAS/transaction failed, release lock
+        // to prevent orphan lock blocking subsequent test_env_deploy tasks.
+        if (lockAcquired) {
+          try { await releaseTestEnvLock(params.id); } catch { /* release failure must not mask original error */ }
+        }
+        throw err;
+      }
 
       const { updatedReq, newAssigneeName } = updated;
 
