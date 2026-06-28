@@ -182,6 +182,7 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
             if (currentLock) {
               await releaseTestEnvLock({
                 lockId: 'singleton',
+                acquisitionToken: currentLock.acquiredAt,
                 acquiredForRequirement: currentLock.requirementId,
               });
             }

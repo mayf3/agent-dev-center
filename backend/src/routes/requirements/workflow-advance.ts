@@ -163,6 +163,7 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
           if (currentLock) {
             lockReleased = await releaseTestEnvLock({
               lockId: 'singleton',
+              acquisitionToken: currentLock.acquiredAt,
               acquiredForRequirement: currentLock.requirementId,
             });
           }

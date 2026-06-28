@@ -71,18 +71,27 @@ export function skipSecurityIfApplicable(
 
 /**
  * Test environment lock ownership identity.
- * The acquire call returns this; callers must keep it for later release.
- * release uses compare-and-delete to prevent deleting another request's lock.
+ *
+ * Each successful acquisition records a unique acquiredAt timestamp in the DB.
+ * The caller keeps this timestamp as proof of "this generation" of the lock.
+ * releaseTestEnvLock uses atomic deleteMany with the exact acquiredAt to
+ * implement compare-and-delete at the database level — no application-level
+ * read-then-compare.
  */
 export type TestEnvLockOwnership = {
   lockId: string;
+  acquisitionToken: Date;
   acquiredForRequirement: string;
 };
 
 /**
  * Acquire test environment lock when entering test_env_deploy.
- * Throws 409 if another requirement holds the lock.
- * Returns a unique ownership identity for release comparison.
+ * Throws 409 if another requirement already holds the lock.
+ *
+ * Returns TestEnvLockOwnership containing the DB-persisted acquiredAt
+ * timestamp.  This timestamp acts as a generation marker: only our exact
+ * generation can be deleted by release.  If another request later reacquires
+ * the lock, acquiredAt differs and the old token can no longer match.
  */
 export async function acquireTestEnvLock(requirementId: string, title: string, branch: string | null): Promise<TestEnvLockOwnership> {
   const existingLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
@@ -92,33 +101,42 @@ export async function acquireTestEnvLock(requirementId: string, title: string, b
       `测试环境已被占用：需求「${existingLock.requirementTitle || existingLock.requirementId}」（锁定于 ${existingLock.acquiredAt.toISOString().replace('T', ' ').slice(0, 16)}），请等待其部署完成后重试`,
     );
   }
+  const acquisitionToken = new Date();
   await prisma.testEnvLock.upsert({
     where: { id: 'singleton' },
-    create: { id: 'singleton', requirementId, requirementTitle: title, branch },
-    update: { requirementId, requirementTitle: title, branch, acquiredAt: new Date() },
+    create: { id: 'singleton', requirementId, requirementTitle: title, branch, acquiredAt: acquisitionToken },
+    update: { requirementId, requirementTitle: title, branch, acquiredAt: acquisitionToken },
   });
-  return { lockId: 'singleton', acquiredForRequirement: requirementId };
+  return { lockId: 'singleton', acquisitionToken, acquiredForRequirement: requirementId };
 }
 
 /**
- * Release test environment lock using compare-and-delete.
- * Only deletes if WE still hold the lock (identified by acquiredForRequirement).
- * If lock already absent → idempotent success.
- * If lock taken by another requirement → no-op (returns false).
- * Errors during release are logged and thrown to prevent silent swallow.
+ * Release test environment lock using atomic compare-and-delete.
+ *
+ * deleteMany({ where: { id, acquiredAt } }) succeeds only if the row
+ * still carries OUR exact acquisitionToken.  If another generation has
+ * replaced the lock, acquiredAt differs and the delete matches 0 rows.
+ *
+ * Returns true when the lock was deleted (count = 1).
+ * Returns false when the lock was already gone or has a newer generation
+ * (count = 0) — idempotent for the caller.
+ *
+ * Errors during release are logged via console.error.  The caller is
+ * responsible for re-throwing or preserving the original business error.
  */
 export async function releaseTestEnvLock(ownership: TestEnvLockOwnership): Promise<boolean> {
-  const existingLock = await prisma.testEnvLock.findUnique({ where: { id: ownership.lockId } });
-  if (!existingLock) return false;  // already gone — idempotent
-  // Compare-and-delete: only release if still held by the same ownership
-  if (existingLock.requirementId !== ownership.acquiredForRequirement) {
+  const { count } = await prisma.testEnvLock.deleteMany({
+    where: {
+      id: ownership.lockId,
+      acquiredAt: ownership.acquisitionToken,
+    },
+  });
+  if (count === 0) {
     console.warn(
-      `[test-env-lock] SKIP release: lock held by ${existingLock.requirementId}, caller expected ${ownership.acquiredForRequirement}`,
+      `[test-env-lock] SKIP release (count=0): lock generation changed for ${ownership.lockId} (expected requirement ${ownership.acquiredForRequirement?.slice(0, 8)})`,
     );
-    return false;
   }
-  await prisma.testEnvLock.delete({ where: { id: ownership.lockId } });
-  return true;
+  return count === 1;
 }
 
 /**
