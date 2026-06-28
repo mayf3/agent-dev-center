@@ -33,6 +33,7 @@ done
 
 if [ -z "$BACKUP_FILE" ]; then echo "[FATAL] --backup is required"; exit 1; fi
 if [ -z "$BACKEND_IMAGE" ]; then echo "[FATAL] --backend-image is required"; exit 1; fi
+if ! echo "$BACKEND_IMAGE" | grep -q '@sha256:'; then echo "[FATAL] --backend-image must include a digest (@sha256:...)"; exit 1; fi
 if [ "${BACKUP_FILE:0:1}" != "/" ]; then echo "[FATAL] --backup must be an absolute path"; exit 1; fi
 
 # ── Global rehearsal identity ───────────────────────────────────────────────
@@ -135,7 +136,7 @@ step1_restore() {
     postgres:16-alpine
   unset pg_pw
 
-  for i in $(seq 1 30); do docker exec "$PG_CONTAINER" pg_isready -U postgres 2>/dev/null && break; sleep 1; done
+  for _ in $(seq 1 30); do docker exec "$PG_CONTAINER" pg_isready -U postgres 2>/dev/null && break; sleep 1; done
 
   docker exec "$PG_CONTAINER" psql -U postgres -c "CREATE DATABASE agent_dev_center;"
 
@@ -152,10 +153,10 @@ step1_restore() {
 # ── SQL files ───────────────────────────────────────────────────────────────
 cat > "$WORK_DIR/sql/restore-check.sql" << 'SQL'
 SELECT 'users' AS tbl, COUNT(*) FROM public.users
-UNION ALL SELECT 'requirements', COUNT(*) FROM public.requirement
+UNION ALL SELECT 'requirements', COUNT(*) FROM public.requirements
 UNION ALL SELECT 'requirement_reports', COUNT(*) FROM public.requirement_reports
 UNION ALL SELECT 'requirement_revisions', COUNT(*) FROM public.requirement_revisions
-UNION ALL SELECT 'workflow_transitions', COUNT(*) FROM public.workflow_transition
+UNION ALL SELECT 'workflow_transitions', COUNT(*) FROM public.workflow_transitions
 UNION ALL SELECT '_prisma_migrations', COUNT(*) FROM public._prisma_migrations;
 SQL
 
@@ -166,7 +167,7 @@ SELECT relname AS table_name, pg_catalog.pg_get_userbyid(relowner) AS owner, rel
 SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual FROM pg_catalog.pg_policies WHERE schemaname = 'public' ORDER BY tablename, policyname;
 SELECT s.relname AS seq_name, pg_catalog.pg_get_userbyid(s.relowner) AS owner, t.relname AS owned_by_table, a.attname AS owned_by_column, s.relacl::text AS acl FROM pg_catalog.pg_class s JOIN pg_catalog.pg_depend d ON d.objid = s.oid AND d.deptype = 'a' JOIN pg_catalog.pg_class t ON t.oid = d.refobjid JOIN pg_catalog.pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid WHERE s.relkind = 'S' AND s.relnamespace = 'public'::regnamespace ORDER BY s.relname;
 SELECT p.proname AS func_name, pg_catalog.pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS security_definer, p.proacl::text AS acl FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prokind IN ('f','p') ORDER BY p.proname;
-SELECT tgname AS trigger_name, tgrelid::regclass AS table_name FROM pg_catalog.pg_trigger WHERE NOT t.tgisinternal ORDER BY tgrelid::regclass::text, tgname;
+SELECT tgname AS trigger_name, tgrelid::regclass AS table_name FROM pg_catalog.pg_trigger t WHERE NOT t.tgisinternal ORDER BY tgrelid::regclass::text, tgname;
 SELECT t.typname AS type_name, pg_catalog.pg_get_userbyid(t.typowner) AS owner FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'public' AND t.typtype = 'e' ORDER BY t.typname;
 SELECT e.extname, e.extversion, n.nspname AS schema_name FROM pg_catalog.pg_extension e JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace ORDER BY e.extname;
 SELECT pg_catalog.pg_get_userbyid(d.defaclrole) AS role_name, d.defaclnamespace::regnamespace::text AS schema_name, d.defaclobjtype AS object_type, d.defaclacl::text AS acl FROM pg_catalog.pg_default_acl d ORDER BY d.defaclrole, d.defaclobjtype;
@@ -267,7 +268,7 @@ ENV
     "$BACKEND_IMAGE" \
     -- cd /app/backend && node dist/src/server.js
 
-  for i in $(seq 1 30); do
+  for _ in $(seq 1 30); do
     curl -s -o /dev/null http://127.0.0.1:${BACKEND_PORT}/api/health && break
     sleep 2
   done
@@ -346,43 +347,70 @@ step6_api_validation() {
   local reqId
   reqId=$(echo "$create_resp" | python3 -c "import sys,json;print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
   local reqSv
-  reqSv=$(echo "$create_resp" | python3 -c "import sys,json;print(json.load(sys.stdin).get('data',{}).get('stateVersion',0))" 2>/dev/null || echo "0")
+  reqSv=$(echo "$create_resp" | python3 -c "import sys,json;d=json.load(sys.stdin);sv=d.get('data',{}).get('stateVersion');assert sv is not None,'stateVersion missing in create response';print(sv)" 2>/dev/null || echo "MISSING")
+  if [ "$reqSv" = "MISSING" ]; then
+    echo "[FAIL] Create response missing stateVersion"; echo "$create_resp"; exit 1
+  fi
   echo "$create_resp" > "$WORK_DIR/responses/create.json"
   [ -z "$reqId" ] && { echo "[FAIL] Create failed"; exit 1; }
   echo "[PASS] Created: $reqId sv=$reqSv"
 
   # API: PATCH
-  curl -s -X PATCH "${base}/api/requirements/${reqId}" \
+  local patch_status
+  patch_status=$(curl -s -o "$WORK_DIR/responses/patch.json" -w '%{http_code}' \
+    -X PATCH "${base}/api/requirements/${reqId}" \
     -H "Authorization: Bearer $token" \
     -H 'Content-Type: application/json' \
-    -d '{"branch":"rehearsal-test","repoPath":"/rehearsal","gitHash":"abc123def456"}' \
-    > "$WORK_DIR/responses/patch.json"
+    -d '{"branch":"rehearsal-test","repoPath":"/rehearsal","gitHash":"abc123def456"}')
+  if [ "$patch_status" != "200" ]; then echo "[FAIL] PATCH returned $patch_status"; exit 1; fi
+  echo "[PASS] PATCH HTTP $patch_status"
+
+  # Refresh stateVersion after PATCH
+  local fresh
+  fresh=$(curl -s -H "Authorization: Bearer $token" "${base}/api/requirements/${reqId}")
+  reqSv=$(echo "$fresh" | python3 -c "import sys,json;sv=json.load(sys.stdin).get('stateVersion');assert sv is not None,'stateVersion missing after PATCH';print(sv)" 2>/dev/null || echo "MISSING")
+  if [ "$reqSv" = "MISSING" ]; then echo "[FAIL] stateVersion missing after PATCH"; exit 1; fi
 
   # API: report
-  curl -s -X POST "${base}/api/requirements/${reqId}/reports" \
+  local rpt_status
+  rpt_status=$(curl -s -o "$WORK_DIR/responses/report-create.json" -w '%{http_code}' \
+    -X POST "${base}/api/requirements/${reqId}/reports" \
     -H "Authorization: Bearer $token" \
     -H 'Content-Type: application/json' \
-    -d '{"reportType":"DEV_SELF_CHECK","content":{"summary":"test"}}' \
-    > "$WORK_DIR/responses/report-create.json"
+    -d '{"reportType":"DEV_SELF_CHECK","content":{"summary":"test"}}')
+  echo "[PASS] Report HTTP $rpt_status"
 
   # API: advance
-  curl -s -X POST "${base}/api/requirements/${reqId}/workflow/advance" \
+  local adv_status
+  adv_status=$(curl -s -o "$WORK_DIR/responses/advance.json" -w '%{http_code}' \
+    -X POST "${base}/api/requirements/${reqId}/workflow/advance" \
     -H "Authorization: Bearer $token" \
     -H 'Content-Type: application/json' \
-    -d '{}' \
-    > "$WORK_DIR/responses/advance.json"
+    -d '{}')
+  if [ "$adv_status" != "200" ]; then echo "[FAIL] Advance returned $adv_status — cannot archive. See advance.json"; exit 1; fi
+  echo "[PASS] Advance HTTP $adv_status"
 
-  # API: lifecycle (archive with stateVersion)
-  curl -s -X POST "${base}/api/requirements/${reqId}/lifecycle" \
+  # Refresh stateVersion after advance
+  local fresh2
+  fresh2=$(curl -s -H "Authorization: Bearer $token" "${base}/api/requirements/${reqId}")
+  reqSv=$(echo "$fresh2" | python3 -c "import sys,json;sv=json.load(sys.stdin).get('stateVersion');assert sv is not None,'stateVersion missing after advance';print(sv)" 2>/dev/null || echo "MISSING")
+  if [ "$reqSv" = "MISSING" ]; then echo "[FAIL] stateVersion missing after advance"; exit 1; fi
+
+  # API: lifecycle (archive with current stateVersion)
+  local arc_status
+  arc_status=$(curl -s -o "$WORK_DIR/responses/archive.json" -w '%{http_code}' \
+    -X POST "${base}/api/requirements/${reqId}/lifecycle" \
     -H "Authorization: Bearer $token" \
     -H 'Content-Type: application/json' \
-    -d "{\"action\":\"archive\",\"stateVersion\":${reqSv}}" \
-    > "$WORK_DIR/responses/archive.json"
+    -d "{\"action\":\"archive\",\"stateVersion\":${reqSv}}")
+  echo "[PASS] Archive HTTP $arc_status"
 
   # API: reactivate
-  curl -s -X POST "${base}/api/requirements/${reqId}/reactivate" \
-    -H "Authorization: Bearer $token" \
-    > "$WORK_DIR/responses/reactivate.json"
+  local rea_status
+  rea_status=$(curl -s -o "$WORK_DIR/responses/reactivate.json" -w '%{http_code}' \
+    -X POST "${base}/api/requirements/${reqId}/reactivate" \
+    -H "Authorization: Bearer $token")
+  echo "[PASS] Reactivate HTTP $rea_status"
 
   echo "[STEP6] API validation saved to $WORK_DIR/responses/"
 }
@@ -390,13 +418,15 @@ step6_api_validation() {
 # ── Step 7: secure backend ──────────────────────────────────────────────────
 step7_secure_backend() {
   if [ -z "${SECURE_IMAGE:-}" ]; then
-    echo "[BLOCKED] --secure-image not provided. Re-run with --secure-image to validate."
+    echo "[FAIL] --secure-image is required. Re-run with --secure-image <digest>"
     echo "[BLOCKED_BY_SECURE_BACKEND_CONTRACT]"
-    return
+    exit 1
+  fi
+  if ! echo "$SECURE_IMAGE" | grep -q '@sha256:'; then
+    echo "[FAIL] --secure-image must include a digest (@sha256:...)"; exit 1
   fi
   docker image inspect "$SECURE_IMAGE" >/dev/null 2>&1 || {
-    echo "[FAIL] Secure image not found: $SECURE_IMAGE"
-    exit 1
+    echo "[FAIL] Secure image not found: $SECURE_IMAGE"; exit 1
   }
 
   local pg_ip; pg_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PG_CONTAINER")
@@ -430,6 +460,38 @@ ENV
     -- cd /app/backend && node dist/src/server.js
 
   echo "[STEP7] Secure candidate started on port ${SECURE_PORT}"
+
+  # Wait for health
+  local healthy=false
+  for _ in $(seq 1 15); do
+    if curl -s -o /dev/null "http://127.0.0.1:${SECURE_PORT}/api/health" 2>/dev/null; then
+      healthy=true; break
+    fi
+    sleep 2
+  done
+  if [ "$healthy" != "true" ]; then echo "[FAIL] Secure backend health check failed"; exit 1; fi
+  echo "[PASS] Secure backend health OK"
+
+  # Login
+  local pw; pw=$(cat "$ADMIN_PW_FILE")
+  local slogin
+  slogin=$(curl -s -X POST "http://127.0.0.1:${SECURE_PORT}/api/auth/login" \
+    -H 'Content-Type: application/json' \
+    -d "{\"email\":\"admin@local.invalid\",\"password\":\"${pw}\"}")
+  local stoken
+  stoken=$(echo "$slogin" | python3 -c "import sys,json;print(json.load(sys.stdin).get('accessToken',''))" 2>/dev/null || echo "")
+  unset pw
+  if [ -z "$stoken" ]; then echo "[FAIL] Secure backend login failed"; exit 1; fi
+  echo "[PASS] Secure backend login OK"
+
+  # DB read (one requirement)
+  local sdata
+  sdata=$(curl -s -H "Authorization: Bearer $stoken" \
+    "http://127.0.0.1:${SECURE_PORT}/api/requirements/")
+  local scount
+  scount=$(echo "$sdata" | python3 -c "import sys,json;print(json.load(sys.stdin).get('meta',{}).get('total',0))" 2>/dev/null || echo "0")
+  echo "[PASS] Secure backend DB read: $scount requirements visible"
+  if [ "$scount" -eq 0 ]; then echo "[FAIL] Secure backend sees 0 requirements — check DB connection"; exit 1; fi
 }
 
 # ── Step 8: permission error collection ─────────────────────────────────────
@@ -454,7 +516,7 @@ main() {
   step4_grant_and_backend
   step5_rehearsal_admin
   step6_api_validation
-  [ -n "${SECURE_IMAGE:-}" ] && step7_secure_backend || echo "[SKIP] Secure backend (no --secure-image)"
+  step7_secure_backend
   step8_permission_errors
   echo "=== Complete. Reports in $WORK_DIR/reports/ ==="
 }
