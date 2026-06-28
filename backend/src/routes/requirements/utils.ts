@@ -101,17 +101,22 @@ export function canEditRequirement(user: Express.AuthUser, requirement: {
  * - qa/tester/security/ops → 看所有（工作流审批者）
  */
 export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.RequirementWhereInput {
-  // 管理层：看所有（admin/cto_agent/pm/cto）
-  if (user.role === 'admin' || user.role === 'cto_agent' || user.internalRole === 'pm' || user.internalRole === 'cto') {
+  // 1. 平台管理员/CTO：看所有
+  if (user.role === 'admin' || user.role === 'cto_agent') {
     return {};
   }
 
-  // 工作流审批角色：看所有需求（他们是工作流的审批者/执行者，不是需求执行者）
+  // 2. 特权内部角色：看所有
+  if (user.internalRole === 'pm' || user.internalRole === 'cto') {
+    return {};
+  }
+
+  // 3. 工作流审批角色：看所有
   if (user.internalRole === 'qa' || user.internalRole === 'tester' || user.internalRole === 'security' || user.internalRole === 'ops') {
     return {};
   }
 
-  // 开发者（含所有细分角色）：只看分配给自己的
+  // 4. 开发者角色：只看分配给自己的
   const DEVELOPER_INTERNAL_ROLES = new Set([
     'backend_developer', 'frontend_developer',
     'mobile_developer', 'miniapp_developer', 'game_developer'
@@ -122,16 +127,23 @@ export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.Requir
     };
   }
 
-  // 纯 requester（无 internalRole 或 internalRole=普通用户）：只看自己提的
+  // 5. 明确 requester 平台角色：只看自己提的
   if (user.role === 'requester') {
     return {
       OR: [{ requesterId: user.id }, { requester: user.name }, { requester: user.email }]
     };
   }
 
-  // 默认：只看自己提的（安全兜底）
+  // 6. agent 平台角色兼容：只看自己提的
+  if (user.role === 'agent') {
+    return {
+      OR: [{ requesterId: user.id }, { requester: user.name }, { requester: user.email }]
+    };
+  }
+
+  // 7. 无法识别的角色组合 → fail-closed 空集合
   return {
-    OR: [{ requesterId: user.id }, { requester: user.name }, { requester: user.email }]
+    id: { in: [] },
   };
 }
 
