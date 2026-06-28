@@ -18,6 +18,7 @@ import {
   findingsReviewSchema,
   reportIdSchema,
 } from '../schemas/report.js';
+import { casUpdateRequirement, txCreateTransition, txReadRequirement } from './requirements/workflow-cas-helper.js';
 
 export const reportsRouter = Router({ mergeParams: true });
 
@@ -418,24 +419,24 @@ reportsRouter.patch(
             ? targetStep
             : currentIdx > 0 ? steps[currentIdx - 1].name : targetStep;
 
-          if (actualTarget !== reqInfo.currentStep) {
-            await prisma.requirement.update({
-              where: { id: report.requirementId },
-              data: { currentStep: actualTarget },
-            });
-
-            await prisma.workflowTransition.create({
-              data: {
-                requirement: { connect: { id: report.requirementId } },
-                fromStep: reqInfo.currentStep,
-                toStep: actualTarget,
-                action: 'reject',
-                actorId: req.user!.id,
-                actorName: req.user!.name,
-                actorRole: 'qa',
-                comment: body.reviewComment || `QA 驳回 ${report.reportType} 报告，自动退回`,
-              },
-            });
+	          if (actualTarget !== reqInfo.currentStep) {
+	            // CAS transaction: requirement update + transition atomic
+	            await prisma.$transaction(async (tx) => {
+	              const currentReq = await txReadRequirement(tx as any, report.requirementId);
+	              await casUpdateRequirement(tx as any, report.requirementId, currentReq.stateVersion ?? 0, {
+	                currentStep: actualTarget,
+	              });
+	              await txCreateTransition(tx as any, {
+	                requirement: { connect: { id: report.requirementId } },
+	                fromStep: reqInfo.currentStep ?? actualTarget,
+	                toStep: actualTarget,
+	                action: 'reject',
+	                actorId: req.user!.id,
+	                actorName: req.user!.name,
+	                actorRole: 'qa',
+	                comment: body.reviewComment || `QA 驳回 ${report.reportType} 报告，自动退回`,
+	              } as Prisma.WorkflowTransitionCreateInput);
+	            });
           }
         }
       }
@@ -569,24 +570,24 @@ reportsRouter.patch(
             ? targetStep
             : currentIdx > 0 ? steps[currentIdx - 1]?.name ?? targetStep : targetStep;
 
-          if (actualTarget !== reqInfo.currentStep) {
-            await prisma.requirement.update({
-              where: { id: params.id },
-              data: { currentStep: actualTarget },
-            });
-
-            await prisma.workflowTransition.create({
-              data: {
-                requirement: { connect: { id: params.id } },
-                fromStep: reqInfo.currentStep,
-                toStep: actualTarget,
-                action: 'reject',
-                actorId: req.user!.id,
-                actorName: req.user!.name,
-                actorRole: 'qa',
-                comment: autoReason,
-              },
-            });
+	          if (actualTarget !== reqInfo.currentStep) {
+	            // CAS transaction: requirement update + transition atomic
+		            await prisma.$transaction(async (tx) => {
+		              const currentReq = await txReadRequirement(tx as any, params.id!);
+		              await casUpdateRequirement(tx as any, params.id!, currentReq.stateVersion ?? 0, {
+		                currentStep: actualTarget,
+		              });
+	              await txCreateTransition(tx as any, {
+	                requirement: { connect: { id: params.id } },
+	                fromStep: reqInfo.currentStep ?? actualTarget,
+	                toStep: actualTarget,
+	                action: 'reject',
+	                actorId: req.user!.id,
+	                actorName: req.user!.name,
+	                actorRole: 'qa',
+	                comment: autoReason,
+	              } as Prisma.WorkflowTransitionCreateInput);
+	            });
           }
         }
       }

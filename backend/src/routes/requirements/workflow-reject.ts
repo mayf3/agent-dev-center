@@ -11,6 +11,7 @@
  * 避免孤儿锁导致所有后续任务卡在 qa_review。
  */
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
@@ -22,7 +23,6 @@ import {
   getCurrentStep,
   getPreviousStep,
   mapUserRole,
-  logTransition,
   WorkflowStep,
 } from './workflow-helpers.js';
 import {
@@ -30,6 +30,7 @@ import {
   shouldReleaseTestEnvLock,
 } from './workflow-advance-helpers.js';
 import { createFeedbackEvent } from './feedback-events.js';
+import { casUpdateRequirement, txCreateTransition, txReadRequirement } from './workflow-cas-helper.js';
 
 export function registerWorkflowRejectRoutes(router: import('express').Router): void {
 
@@ -169,41 +170,52 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
 
       // ── Phase 1 完成：所有校验通过 ────────────────────────────
 
-      // ── Phase 2: 写副作用（全部校验通过后才执行） ──────────
+      // ── Phase 2: 写副作用（CAS事务保证一致） ──────────────
 
-      // 从测试环境保护范围 reject → 释放锁
-      try {
-        if (shouldReleaseTestEnvLock(requirement.currentStep, targetStepName)) {
-          await releaseTestEnvLock(params.id);
+      const updated = await prisma.$transaction(async (tx) => {
+        // 从测试环境保护范围 reject → 释放锁
+        try {
+          if (shouldReleaseTestEnvLock(requirement.currentStep ?? '', targetStepName)) {
+            await releaseTestEnvLock(params.id);
+          }
+        } catch (err) {
+          console.error(`[test-env-lock] reject lock release failed for ${params.id.slice(0, 8)}:`, err);
         }
-      } catch (err) {
-        console.error(`[test-env-lock] reject lock release failed for ${params.id.slice(0, 8)}:`, err);
-      }
 
-      // 单次 requirement update（可能回填 requesterId）
-      const updateData: Record<string, unknown> = {
-        currentStep: targetStepName,
-        assigneeId: newAssigneeId,
-        assignee: newAssigneeName,
-      };
-      if (requesterIdNeedsBackfill) {
-        updateData.requesterId = effectiveRequesterId;
-      }
+        // 读取事务内最新 Requirement（获得 stateVersion）
+        const currentReq = await txReadRequirement(tx as any, params.id);
 
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: updateData,
-      });
+        // 构建 update 数据
+        const updateData: Record<string, unknown> = {
+          currentStep: targetStepName,
+          assigneeId: newAssigneeId,
+          assignee: newAssigneeName,
+        };
+        if (requesterIdNeedsBackfill && effectiveRequesterId) {
+          updateData.requesterId = effectiveRequesterId;
+        }
 
-      await logTransition({
-        requirementId: params.id,
-        fromStep: requirement.currentStep,
-        toStep: targetStepName,
-        action: 'reject',
-        actorId: req.user!.id,
-        actorName: req.user!.name,
-        actorRole: req.user!.internalRole ?? req.user!.role,
-        comment: body.comment,
+        // CAS 更新 + stateVersion 递增
+        const updatedReq = await casUpdateRequirement(
+          tx as any,
+          params.id,
+          currentReq.stateVersion ?? 0,
+          updateData,
+        );
+
+        // transition 原子写入
+        await txCreateTransition(tx as any, {
+          requirement: { connect: { id: params.id } },
+          fromStep: requirement.currentStep,
+          toStep: targetStepName,
+          action: 'reject',
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          actorRole: req.user!.internalRole ?? req.user!.role,
+          comment: body.comment,
+        } as Prisma.WorkflowTransitionCreateInput);
+
+        return updatedReq;
       });
 
       createFeedbackEvent({

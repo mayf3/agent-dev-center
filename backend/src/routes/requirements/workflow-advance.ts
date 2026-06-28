@@ -4,6 +4,7 @@
  * POST /:id/workflow/advance — advance to next workflow step.
  * Most complex route: role check + report check + security skip + WIP limit + test-env lock.
  */
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
@@ -18,7 +19,6 @@ import {
   mapUserRole,
   checkReportsApproved,
   getStepWipCount,
-  logTransition,
   extractRoleUserMap,
 } from './workflow-helpers.js';
 import {
@@ -28,6 +28,7 @@ import {
   shouldReleaseTestEnvLock,
   autoAdvanceTestEnvQueue,
 } from './workflow-advance-helpers.js';
+import { casUpdateRequirement, txCreateTransition, txReadRequirement } from './workflow-cas-helper.js';
 
 export function registerWorkflowAdvanceRoutes(router: import('express').Router): void {
 
@@ -182,25 +183,55 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         throw new HttpError(400, `assignee 解析失败: ${msg}`);
       }
 
-      // --- Persist step transition ---
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: { currentStep: targetStep.name, assigneeId: newAssigneeId, rejectReason: null },
-      });
-      const newAssigneeName = await getAssigneeName(newAssigneeId);
+      // --- Persist step transition (CAS + transaction) ---
+      const updated = await prisma.$transaction(async (tx) => {
+        // 1. Read requirement inside tx to obtain current stateVersion (stale-proof)
+        const currentReq = await txReadRequirement(tx as any, params.id);
 
-      await logTransition({
-        requirementId: params.id, fromStep: requirement.currentStep, toStep: targetStep.name,
-        action: 'advance', actorId: req.user!.id, actorName: req.user!.name,
-        actorRole: req.user!.internalRole ?? req.user!.role, comment: body.comment,
-        metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+        // 2. CAS-update requirement — fails with 409 if stateVersion changed
+        const patchData = {
+          currentStep: targetStep.name,
+          assigneeId: newAssigneeId,
+          rejectReason: null,
+        } as any;
+
+        const updatedReq = await casUpdateRequirement(
+          tx as any,
+          params.id,
+          currentReq.stateVersion ?? 0,
+          patchData,
+        );
+
+        const newAssigneeName = await getAssigneeName(newAssigneeId);
+
+        // 3. Transition in the same transaction
+        await txCreateTransition(tx as any, {
+          requirement: { connect: { id: params.id } },
+          fromStep: requirement.currentStep,
+          toStep: targetStep.name,
+          action: 'advance',
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          actorRole: req.user!.internalRole ?? req.user!.role,
+          comment: body.comment,
+          metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+        } as Prisma.WorkflowTransitionCreateInput);
+
+        return { updatedReq, newAssigneeName };
       });
 
+      const { updatedReq, newAssigneeName } = updated;
+
+      // --- Response (after successful CAS) ---
       res.json({
         success: true,
         data: {
-          requirementId: updated.id, fromStep: requirement.currentStep, toStep: targetStep.name,
-          toStepDisplayName: targetStep.displayName, newAssigneeId, newAssigneeName,
+          requirementId: updatedReq.id,
+          fromStep: requirement.currentStep,
+          toStep: targetStep.name,
+          toStepDisplayName: targetStep.displayName,
+          newAssigneeId,
+          newAssigneeName,
           isDone: targetStep.name === steps[steps.length - 1]?.name,
         },
       });

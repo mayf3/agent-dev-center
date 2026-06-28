@@ -48,6 +48,21 @@ vi.mock('../lib/prisma.js', () => ({
     notification: { create: vi.fn().mockResolvedValue({}) },
     workflowTemplate: { findFirst: vi.fn() },
     testEnvLock: { findUnique: mockLockFindUnique, delete: mockLockDelete },
+    $transaction: vi.fn(async (cb: any) => {
+      const tx = {
+        requirement: {
+          findUnique: mockFindUnique,
+          updateMany: vi.fn(async (args: any) => {
+            // Delegate to mockUpdate to preserve test assertions
+            const { stateVersion, ...cleanData } = args.data;
+            return mockUpdate({ where: args.where, data: cleanData }).then(() => ({ count: 1 }));
+          }),
+        },
+        workflowTransition: { create: mockTransitionCreate },
+        user: { findFirst: mockFindFirst, findUnique: mockUserFindUnique },
+      };
+      return cb(tx);
+    }),
   },
 }));
 
