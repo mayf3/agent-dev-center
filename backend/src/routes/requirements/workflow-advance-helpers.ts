@@ -70,11 +70,21 @@ export function skipSecurityIfApplicable(
 }
 
 /**
+ * Test environment lock ownership identity.
+ * The acquire call returns this; callers must keep it for later release.
+ * release uses compare-and-delete to prevent deleting another request's lock.
+ */
+export type TestEnvLockOwnership = {
+  lockId: string;
+  acquiredForRequirement: string;
+};
+
+/**
  * Acquire test environment lock when entering test_env_deploy.
  * Throws 409 if another requirement holds the lock.
- * Returns the requirement ID for rollback tracking.
+ * Returns a unique ownership identity for release comparison.
  */
-export async function acquireTestEnvLock(requirementId: string, title: string, branch: string | null): Promise<string> {
+export async function acquireTestEnvLock(requirementId: string, title: string, branch: string | null): Promise<TestEnvLockOwnership> {
   const existingLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
   if (existingLock && existingLock.requirementId !== requirementId) {
     throw new HttpError(
@@ -87,20 +97,28 @@ export async function acquireTestEnvLock(requirementId: string, title: string, b
     create: { id: 'singleton', requirementId, requirementTitle: title, branch },
     update: { requirementId, requirementTitle: title, branch, acquiredAt: new Date() },
   });
-  return requirementId;
+  return { lockId: 'singleton', acquiredForRequirement: requirementId };
 }
 
 /**
- * Release test environment lock when leaving the protected zone.
- * Returns true if lock was released.
+ * Release test environment lock using compare-and-delete.
+ * Only deletes if WE still hold the lock (identified by acquiredForRequirement).
+ * If lock already absent → idempotent success.
+ * If lock taken by another requirement → no-op (returns false).
+ * Errors during release are logged and thrown to prevent silent swallow.
  */
-export async function releaseTestEnvLock(requirementId: string): Promise<boolean> {
-  const existingLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
-  if (existingLock && existingLock.requirementId === requirementId) {
-    await prisma.testEnvLock.delete({ where: { id: 'singleton' } });
-    return true;
+export async function releaseTestEnvLock(ownership: TestEnvLockOwnership): Promise<boolean> {
+  const existingLock = await prisma.testEnvLock.findUnique({ where: { id: ownership.lockId } });
+  if (!existingLock) return false;  // already gone — idempotent
+  // Compare-and-delete: only release if still held by the same ownership
+  if (existingLock.requirementId !== ownership.acquiredForRequirement) {
+    console.warn(
+      `[test-env-lock] SKIP release: lock held by ${existingLock.requirementId}, caller expected ${ownership.acquiredForRequirement}`,
+    );
+    return false;
   }
-  return false;
+  await prisma.testEnvLock.delete({ where: { id: ownership.lockId } });
+  return true;
 }
 
 /**

@@ -419,34 +419,18 @@ reportsRouter.patch(
             ? targetStep
             : currentIdx > 0 ? steps[currentIdx - 1].name : targetStep;
 
-		          if (actualTarget !== reqInfo.currentStep) {
-		            // Resolve target step assignee to ensure roles match after rejection
-		            const targetDef = rawJson ? parseSteps(rawJson).find(s => s.name === actualTarget) : undefined;
+	          if (actualTarget !== reqInfo.currentStep) {
+		            // Resolve target step assignee for consistent rollback
+		            // If resolution fails, the whole CAS transaction rolls back (no stale assignee leak)
 		            let targetAssigneeId: string | null = null;
-		            if (targetDef) {
-		              try { targetAssigneeId = await resolveAssigneeForStep(targetDef.role, null); } catch { /* keep null */ }
+		            let targetAssigneeName: string | null = null;
+		            const targetStepDef = steps.find((s: any) => s.name === actualTarget);
+		            if (targetStepDef?.role) {
+		              targetAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
+		              if (targetAssigneeId) {
+		                targetAssigneeName = await getAssigneeName(targetAssigneeId);
+		              }
 		            }
-		            // CAS transaction: requirement update + transition atomic
-		            await prisma.$transaction(async (tx) => {
-		              const currentReq = await txReadRequirement(tx as any, report.requirementId);
-		              const patchData: Record<string, unknown> = { currentStep: actualTarget };
-		              if (targetAssigneeId) patchData.assigneeId = targetAssigneeId;
-		              await casUpdateRequirement(tx as any, report.requirementId, currentReq.stateVersion ?? 0, patchData);
-		              await txCreateTransition(tx as any, {
-		                requirement: { connect: { id: report.requirementId } },
-		                fromStep: reqInfo.currentStep ?? actualTarget,
-		                toStep: actualTarget,
-		                action: 'reject',
-		                actorId: req.user!.id,
-		                actorName: req.user!.name,
-		                actorRole: 'qa',
-		                comment: body.reviewComment || `QA 驳回 ${report.reportType} 报告，自动退回`,
-		              } as Prisma.WorkflowTransitionCreateInput);
-		            });
-	          }
-	        }
-	      }
-	    }
 
 	    res.json({ success: true, data: updated, message: `QA 审查完成，报告已${body.status === 'approved' ? '通过' : '驳回'}` });
   }),
@@ -576,39 +560,17 @@ reportsRouter.patch(
             ? targetStep
             : currentIdx > 0 ? steps[currentIdx - 1]?.name ?? targetStep : targetStep;
 
-		          if (actualTarget !== reqInfo.currentStep) {
-		            // Resolve target step assignee to ensure roles match after rejection
-		            const wfForTarget = await prisma.requirement.findUnique({
-		              where: { id: params.id },
-		              select: { workflowSnapshot: true, workflow: { select: { steps: true } } },
-		            });
-		            const rawForTarget = wfForTarget ? getWorkflowRawJson(wfForTarget) : undefined;
-		            const targetDef = rawForTarget ? parseSteps(rawForTarget).find(s => s.name === actualTarget) : undefined;
-		            let targetAssigneeId: string | null = null;
-		            if (targetDef) {
-		              try { targetAssigneeId = await resolveAssigneeForStep(targetDef.role, null); } catch { /* keep null */ }
-		            }
-		            // CAS transaction: requirement update + transition atomic
-		            await prisma.$transaction(async (tx) => {
-		              const currentReq = await txReadRequirement(tx as any, params.id!);
-		              const patchData: Record<string, unknown> = { currentStep: actualTarget };
-		              if (targetAssigneeId) patchData.assigneeId = targetAssigneeId;
-		              await casUpdateRequirement(tx as any, params.id!, currentReq.stateVersion ?? 0, patchData);
-		              await txCreateTransition(tx as any, {
-		                requirement: { connect: { id: params.id } },
-		                fromStep: reqInfo.currentStep ?? actualTarget,
-		                toStep: actualTarget,
-		                action: 'reject',
-		                actorId: req.user!.id,
-		                actorName: req.user!.name,
-		                actorRole: 'qa',
-		                comment: autoReason,
-		              } as Prisma.WorkflowTransitionCreateInput);
-		            });
-	          }
-	        }
-	      }
-	    }
+	          if (actualTarget !== reqInfo.currentStep) {
+	            // Resolve target step assignee
+	            let targetAssigneeId: string | null = null;
+	            let targetAssigneeName: string | null = null;
+	            const targetStepDef = steps.find((s: any) => s.name === actualTarget);
+	            if (targetStepDef?.role) {
+	              targetAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
+	              if (targetAssigneeId) {
+	                targetAssigneeName = await getAssigneeName(targetAssigneeId);
+	              }
+	            }
 
 	    res.json({
 	      success: true,

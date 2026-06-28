@@ -588,7 +588,8 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     const res = await rejectRequest(app, UUID, { comment: 'fix', targetStep: 'dev_self_check' });
 
     expect(res.status).toBe(200);
-    expect(mockLockFindUnique).toHaveBeenCalledTimes(1);
+    // lock findUnique called: once to build ownership, once inside release for compare-and-delete
+    expect(mockLockFindUnique).toHaveBeenCalledTimes(2);
     expect(mockLockFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'singleton' } }));
     expect(mockLockDelete).toHaveBeenCalledTimes(1);
     expect(mockLockDelete).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'singleton' } }));

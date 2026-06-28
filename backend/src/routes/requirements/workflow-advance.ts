@@ -27,6 +27,7 @@ import {
   releaseTestEnvLock,
   shouldReleaseTestEnvLock,
   autoAdvanceTestEnvQueue,
+  TestEnvLockOwnership,
 } from './workflow-advance-helpers.js';
 import { casUpdateRequirement, txCreateTransition, txReadRequirement } from './workflow-cas-helper.js';
 
@@ -147,17 +148,25 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       }
 
       // --- Test environment lock ---
-      // 锁的语义：从部署测试环境到最终上线完成，测试环境只服务这一个任务
-      // 保护范围 = test_env_deploy → deploying，离开保护范围时释放
-      let lockAcquired = false;
+      let lockOwnership: TestEnvLockOwnership | null = null;
       let lockReleased = false;
 
       if (targetStep.name === 'test_env_deploy') {
-        await acquireTestEnvLock(params.id, requirement.title, requirement.branch);
-        lockAcquired = true;
+        lockOwnership = await acquireTestEnvLock(params.id, requirement.title, requirement.branch);
       }
       if (shouldReleaseTestEnvLock(currentStep.name, targetStep.name)) {
-        lockReleased = await releaseTestEnvLock(params.id);
+        if (lockOwnership) {
+          lockReleased = await releaseTestEnvLock(lockOwnership);
+        } else {
+          // No ownership recorded — read current lock to build it
+          const currentLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
+          if (currentLock) {
+            lockReleased = await releaseTestEnvLock({
+              lockId: 'singleton',
+              acquiredForRequirement: currentLock.requirementId,
+            });
+          }
+        }
       }
 
       // --- Resolve assignee for target step (snapshot-first) ---
@@ -174,17 +183,20 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         } else {
           newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
         }
-      } catch (err: unknown) {
-        // 锁已获取但后续失败 → 回滚锁，防止孤儿锁
-        if (lockAcquired) {
-          try { await releaseTestEnvLock(params.id); } catch { /* ignore rollback error */ }
-        }
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new HttpError(400, `assignee 解析失败: ${msg}`);
-      }
+	      } catch (err: unknown) {
+	        // 锁已获取但后续失败 → 回滚锁，防止孤儿锁
+	        if (lockOwnership) {
+	          try {
+	            await releaseTestEnvLock(lockOwnership);
+	          } catch (releaseErr) {
+	            console.error(`[test-env-lock] compensation release failed for ${params.id.slice(0, 8)}:`, releaseErr);
+	          }
+	        }
+	        const msg = err instanceof Error ? err.message : String(err);
+	        throw new HttpError(400, `assignee 解析失败: ${msg}`);
+	      }
 
       // --- Persist step transition (CAS + transaction) ---
-      // Wrap in try/catch to prevent test-env-lock orphan on CAS failure
       let updated;
       try {
         updated = await prisma.$transaction(async (tx) => {
@@ -223,12 +235,15 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
           return { updatedReq, newAssigneeName };
         });
       } catch (err) {
-        // If test-env-lock was acquired and CAS/transaction failed, release lock
-        // to prevent orphan lock blocking subsequent test_env_deploy tasks.
-        if (lockAcquired) {
-          try { await releaseTestEnvLock(params.id); } catch { /* release failure must not mask original error */ }
+        // CAS or transition failed → release lock if we held it
+        if (lockOwnership) {
+          try {
+            await releaseTestEnvLock(lockOwnership);
+          } catch (releaseErr) {
+            console.error(`[test-env-lock] CAS-failure compensation release failed for ${params.id.slice(0, 8)}:`, releaseErr);
+          }
         }
-        throw err;
+        throw err; // preserve original error (HttpError 409, 400, etc.)
       }
 
       const { updatedReq, newAssigneeName } = updated;

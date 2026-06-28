@@ -28,6 +28,7 @@ import {
 import {
   releaseTestEnvLock,
   shouldReleaseTestEnvLock,
+  TestEnvLockOwnership,
 } from './workflow-advance-helpers.js';
 import { createFeedbackEvent } from './feedback-events.js';
 import { casUpdateRequirement, txCreateTransition, txReadRequirement } from './workflow-cas-helper.js';
@@ -176,7 +177,14 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         // 从测试环境保护范围 reject → 释放锁
         try {
           if (shouldReleaseTestEnvLock(requirement.currentStep ?? '', targetStepName)) {
-            await releaseTestEnvLock(params.id);
+            // Build ownership from current lock state (reject didn't acquire it)
+            const currentLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
+            if (currentLock) {
+              await releaseTestEnvLock({
+                lockId: 'singleton',
+                acquiredForRequirement: currentLock.requirementId,
+              });
+            }
           }
         } catch (err) {
           console.error(`[test-env-lock] reject lock release failed for ${params.id.slice(0, 8)}:`, err);
