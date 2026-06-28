@@ -59,8 +59,10 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
           throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法操作非自己名下的任务`);
         }
+        // ef2e034a Phase1: CTO 可以代操作（assignee bypass）但不能跳过步骤角色校验
+        // CTO 只能在自己对应步骤 advance，防止一人走完全流程
         const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-        if (!matchedRole && req.user!.role !== 'cto_agent') {
+        if (!matchedRole && req.user!.role !== 'admin') {
           throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
         }
       }
