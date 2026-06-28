@@ -611,9 +611,10 @@ reportsRouter.patch(
 reportsRouter.patch(
   '/:reportId',
   asyncHandler(async (req, res, next) => {
-    // 权限检查：adc:admin 直接通过，否则检查工作流步骤角色
-    const isAdminOrCto = isPlatformAdmin(req.user!);
-    if (isAdminOrCto) return next();
+    // ef2e034a: 移除 isPlatformAdmin 直接 bypass — admin 走 escalationReason 路径
+    // admin 仍可审批，但必须经过步骤角色和自审检查（不能审自己提交的）
+    const isAdmin = isPlatformAdmin(req.user!);
+    const escalationReason = (req.body as any)?.escalationReason as string | undefined;
 
     // 工作流角色审批：检查报告是否属于当前用户负责的工作流步骤
     const { params } = reportIdSchema.parse({ params: req.params });
@@ -638,12 +639,23 @@ reportsRouter.patch(
       throw new HttpError(403, '只有 CTO 可以审批该报告（报告类型不在当前工作流步骤的待审批列表中）');
     }
 
+    // ef2e034a: admin 不能 bypass 步骤角色，但 escalationReason 允许跨步骤审批
     if (!hasWorkflowStepRole(req.user!, currentStep.role)) {
-      throw new HttpError(403, `当前步骤需要「${currentStep.role}」角色，你的角色是「${describeUserRoles(req.user!)}」`);
+      // admin/CTO 提供 escalationReason 可以审批非自己步骤的报告
+      if (isAdmin && escalationReason) {
+        // ok — 记录在 reviewComment 中
+        if (req.body && !req.body.reviewComment) {
+          req.body.reviewComment = `[escalation] ${escalationReason}`;
+        } else if (req.body) {
+          req.body.reviewComment = `[escalation] ${escalationReason}\n${req.body.reviewComment ?? ''}`;
+        }
+      } else {
+        throw new HttpError(403, `当前步骤需要「${currentStep.role}」角色，你的角色是「${describeUserRoles(req.user!)}」${isAdmin ? '（admin 代审需提供 escalationReason）' : ''}`);
+      }
     }
 
-    // 不能审自己提交的
-    if (report.submittedById === req.user!.id) {
+    // 不能审自己提交的（admin 提供 escalationReason 除外 — CTO 可能需要审批自己流程的报告）
+    if (report.submittedById === req.user!.id && !(isAdmin && escalationReason)) {
       throw new HttpError(403, '审核者和提交者不能为同一人');
     }
 

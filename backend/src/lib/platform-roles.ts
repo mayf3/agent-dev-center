@@ -14,7 +14,7 @@ export interface LegacyRolePair {
 }
 
 const LEGACY_INTERNAL_TO_ADC: Partial<Record<string, string>> = {
-  cto: 'adc:admin',
+  cto: 'adc:cto',          // ef2e034a: cto 不再映射为 adc:admin，改为 adc:cto
   pm: 'adc:pm',
   backend_developer: 'adc:developer',
   frontend_developer: 'adc:developer',
@@ -29,13 +29,14 @@ const LEGACY_INTERNAL_TO_ADC: Partial<Record<string, string>> = {
 
 const LEGACY_USER_ROLE_TO_ADC: Partial<Record<string, string>> = {
   admin: 'adc:admin',
-  cto_agent: 'adc:admin',
+  cto_agent: 'adc:cto',    // ef2e034a: cto_agent 不再映射为 adc:admin
   requester: 'adc:viewer',
   developer: 'adc:developer',
 };
 
 const ADC_TO_LEGACY: Partial<Record<string, LegacyRolePair>> = {
   'adc:admin': { role: 'admin', internalRole: 'cto' },
+  'adc:cto': { role: 'cto_agent', internalRole: 'cto' },  // ef2e034a: 新增 adc:cto 映射
   'adc:pm': { role: 'developer', internalRole: 'pm' },
   'adc:developer': { role: 'developer', internalRole: null },
   'adc:tester': { role: 'developer', internalRole: 'tester' },

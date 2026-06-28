@@ -50,20 +50,23 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
       // --- Permission check ---
+      const escalationReason = (body as any)?.escalationReason as string | undefined;
       if (currentStep.name === 'draft') {
         const isRequester = requirement.requesterId === req.user!.id;
-        if (!isRequester && req.user!.role !== 'cto_agent') {
-          throw new HttpError(403, '只有需求提出者可以提交草稿到 PM 审批');
+        if (!isRequester && req.user!.role !== 'admin' && !(req.user!.role === 'cto_agent' && escalationReason)) {
+          throw new HttpError(403, `只有需求提出者可以提交草稿到 PM 审批${req.user!.role === 'cto_agent' ? '（代操作需提供 escalationReason）' : ''}`);
         }
       } else {
-        if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
-          throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法操作非自己名下的任务`);
+        // ef2e034a: assignee 校验 — admin 可代操作，CTO 需 escalationReason
+        const isEscalating = req.user!.role === 'cto_agent' && escalationReason;
+        if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'admin' && !isEscalating) {
+          throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法操作非自己名下的任务${req.user!.role === 'cto_agent' ? '（代操作需提供 escalationReason）' : ''}`);
         }
-        // ef2e034a Phase1: CTO 可以代操作（assignee bypass）但不能跳过步骤角色校验
-        // CTO 只能在自己对应步骤 advance，防止一人走完全流程
+        // ef2e034a: 步骤角色校验 — CTO 不能 bypass，必须在对应步骤才能 advance
+        // admin 始终允许（系统级管理员），CTO 提供 escalationReason 可跨步骤
         const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-        if (!matchedRole && req.user!.role !== 'admin') {
-          throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
+        if (!matchedRole && req.user!.role !== 'admin' && !isEscalating) {
+          throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」${req.user!.role === 'cto_agent' ? '（代操作需提供 escalationReason）' : ''}`);
         }
       }
 

@@ -57,14 +57,16 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
-      // assigneeId 校验：非 assignee 不能操作（CTO 可以代操作）
-      if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
-        throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法回退非自己名下的任务`);
+      // ef2e034a: assignee 校验 — admin 可代操作，CTO 需提供 escalationReason 代操作
+      const isEscalating = req.user!.role === 'cto_agent' && body.escalationReason;
+      if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'admin' && !isEscalating) {
+        throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法回退非自己名下的任务${req.user!.role === 'cto_agent' ? '（代操作需提供 escalationReason）' : ''}`);
       }
 
-      // 角色校验
+      // ef2e034a: 角色校验 — CTO reject 回退始终允许（设计目标），但记录 escalationReason
+      // 非 CTO/admin 必须匹配步骤角色
       const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-      if (!matchedRole && req.user!.role !== 'cto_agent') {
+      if (!matchedRole && req.user!.role !== 'admin' && req.user!.role !== 'cto_agent') {
         throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色才能回退`);
       }
 

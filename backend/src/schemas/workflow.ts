@@ -11,6 +11,7 @@ export const advanceStepSchema = z.object({
   body: z.object({
     comment: z.string().trim().max(2000).optional(),
     branch: z.string().trim().max(100).optional(),
+    escalationReason: z.string().trim().max(500).optional(),  // ef2e034a: CTO 代操作时必须提供
   }),
 });
 
@@ -24,6 +25,7 @@ export const rejectStepSchema = z.object({
   body: z.object({
     comment: z.string().trim().min(1, '回退原因不能为空').max(2000),
     targetStep: z.string().trim().optional(),
+    escalationReason: z.string().trim().max(500).optional(),  // ef2e034a: CTO 代操作时必须提供
   }),
 });
 

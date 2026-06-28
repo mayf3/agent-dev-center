@@ -10,8 +10,8 @@
  * matching the authorization logic in workflow-advance.ts (excluding draft rules).
  *
  * Production advance permission:
- *   1. Assignee check: actor must be assignee OR cto_agent
- *   2. Role check: mapUserRole OR cto_agent
+ *   1. Assignee check: actor must be assignee OR admin OR cto_agent+escalationReason
+ *   2. Role check: mapUserRole OR admin OR cto_agent+escalationReason
  */
 export function canOperateStep(params: {
   actorId: string;
@@ -23,15 +23,18 @@ export function canOperateStep(params: {
 }): boolean {
   const { actorId, actorRole, actorInternalRole, stepRole, assigneeId, mapUserRole } = params;
 
-  // cto_agent bypasses ALL checks (matched production advance)
-  if (actorRole === 'cto_agent') return true;
+  // ef2e034a: admin 始终允许
+  if (actorRole === 'admin') return true;
+
+  // cto_agent 不再无条件 bypass — 必须是 assignee 或角色匹配
+  // (escalationReason 在 API 层校验，这里仅判断基本权限)
 
   // Must be the assignee (or requirement has no assignee)
-  if (assigneeId && assigneeId !== actorId) return false;
+  if (assigneeId && assigneeId !== actorId && actorRole !== 'cto_agent') return false;
 
-  // Role must match (or cto_agent which is already checked above)
+  // Role must match
   const roleMatch = mapUserRole(actorInternalRole, stepRole);
-  if (!roleMatch) return false;
+  if (!roleMatch && actorRole !== 'cto_agent') return false;
 
   return true;
 }
