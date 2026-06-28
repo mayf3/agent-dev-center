@@ -100,7 +100,7 @@ success "镜像构建完成"
 # ── Step 4: Prisma migrate ──
 if [ "$SKIP_MIGRATE" != "--skip-migrate" ]; then
   log "Step 4: 执行数据库迁移"
-  docker compose run --rm "$SERVICE" npx prisma migrate deploy 2>&1 | tee -a "$LOG_FILE" || {
+  docker compose run --rm "$SERVICE" npx prisma migrate deploy --schema=backend/prisma/schema.prisma 2>&1 | tee -a "$LOG_FILE" || {
     error "Prisma migrate 失败"
     rollback
   }
