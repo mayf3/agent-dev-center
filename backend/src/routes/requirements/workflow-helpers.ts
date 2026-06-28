@@ -100,12 +100,13 @@ export async function checkReportsApproved(requirementId: string, requiredReport
 
   // Self-certify types: pending (submitted) or approved is fine
   if (selfCertify.length > 0) {
+    // 自认证报告（DEV_SELF_CHECK/DEPLOY_CONFIRM）不按 workflowStep 过滤
+    // 因为它们可能在 dev_self_check 步骤提交，但在后续步骤（qa_review 等）也需要被识别
     const found = await prisma.requirementReport.findMany({
       where: {
         requirementId,
         reportType: { in: selfCertify as any },
         status: { in: ['pending', 'approved'] },
-        ...(workflowStep ? { workflowStep } : {}),
       },
       select: { reportType: true },
     });
