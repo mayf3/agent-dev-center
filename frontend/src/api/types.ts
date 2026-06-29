@@ -139,9 +139,29 @@ export interface RequirementReport {
   status: ReportStatus;
   reviewComment?: string | null;
   reviewedAt?: string | null;
+  qaReviewedBy?: string | null;
+  qaReviewedAt?: string | null;
+  qaFindings?: QAReviewFinding[] | null;
+  qaBypass?: boolean;
+  qaBypassReason?: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+export interface QAReviewFinding {
+  severity: 'critical' | 'minor';
+  category: FindingCategory;
+  description: string;
+}
+
+export type FindingCategory =
+  | 'code_ref_missing'
+  | 'curl_mismatch'
+  | 'coverage_gap'
+  | 'build_fail'
+  | 'logic_error'
+  | 'format_issue'
+  | 'other';
 
 export interface PaginatedResponse<T> {
   data: T[];

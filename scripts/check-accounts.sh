@@ -30,7 +30,7 @@ while IFS='|' read -r EMAIL; do
 
   RESPONSE=$(curl -s -X POST "$ADC_HOST/api/auth/login" \
     -H "Content-Type: application/json" \
-    -d "{\"email\":\"$EMAIL\",\"password\":\"{your-test-password}\"}" 2>/dev/null)
+    -d "{\"email\":\"$EMAIL\",\"password\":\"agent2026\"}" 2>/dev/null)
 
   TOKEN=$(echo "$RESPONSE" | python3 -c "
 import sys,json

@@ -6,6 +6,7 @@ import { registerCorePutRoutes } from './core-put.js';
 import { registerCorePatchRoutes } from './core-patch.js';
 import { registerCoreKanbanRoutes } from './core-kanban.js';
 import { registerCoreMineRoutes } from './core-mine.js';
+import { registerCoreRequestedRoutes } from './core-requested.js';
 import { registerCoreLifecycleRoutes } from './core-lifecycle.js';
 import { registerAttachmentRoutes } from './attachments.js';
 import { registerStatusRoutes } from './status.js';
@@ -23,6 +24,7 @@ import { registerWorkflowStepConfigRoutes } from './workflow-step-config.js';
 import { registerWorkflowMyStepRoutes } from './workflow-mystep.js';
 import { registerDependencyGraphRoutes } from './dependency-graph.js';
 import { registerTransitionRoutes } from './transitions.js';
+import { registerFeedbackEventRoutes } from './feedback-events.js';
 import { reportsRouter } from '../reports.js';
 
 export const requirementsRouter = Router();
@@ -44,6 +46,7 @@ registerWorkflowMyStepRoutes(requirementsRouter);
 // Register core routes
 registerCoreKanbanRoutes(requirementsRouter);
 registerCoreMineRoutes(requirementsRouter);
+registerCoreRequestedRoutes(requirementsRouter);
 registerCoreCreateRoutes(requirementsRouter);
 registerCoreListRoutes(requirementsRouter);
 registerCorePutRoutes(requirementsRouter);
@@ -57,6 +60,7 @@ registerReviewRoutes(requirementsRouter);
 registerPipelineRoutes(requirementsRouter);
 registerDecomposeRoutes(requirementsRouter);
 registerDependencyGraphRoutes(requirementsRouter);
+registerFeedbackEventRoutes(requirementsRouter);
 registerTransitionRoutes(requirementsRouter);
 
 // Mount reports router

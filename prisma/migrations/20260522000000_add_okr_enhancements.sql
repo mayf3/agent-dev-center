@@ -8,9 +8,9 @@ END $$;
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "okr_role" "OkrRole" DEFAULT 'okr_member';
 
 -- Set OKR roles for known users
-UPDATE "users" SET "okr_role" = 'okr_admin' WHERE "email" = 'ceo-agent@example.com';
-UPDATE "users" SET "okr_role" = 'okr_reviewer' WHERE "email" = 'efficiency-agent@example.com';
-UPDATE "users" SET "okr_role" = 'okr_owner' WHERE "email" IN ('admin@example.com', 'cto@example.com');
+UPDATE "users" SET "okr_role" = 'okr_admin' WHERE "email" = 'ceo-agent@agent.local';
+UPDATE "users" SET "okr_role" = 'okr_reviewer' WHERE "email" = 'efficiency-agent@agent.local';
+UPDATE "users" SET "okr_role" = 'okr_owner' WHERE "email" IN ('admin@agent.dev', 'cto@agent.local');
 
 -- PipelineName expansion
 ALTER TYPE "PipelineName" ADD VALUE IF NOT EXISTS 'business';

@@ -168,7 +168,7 @@ async function apiFetch(url, options = {}) {
 # 1. 在 Agent Dev Center 登录获取 token
 TOKEN=$(curl -s -X POST http://{your-server-ip}/api/auth/sso/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"{your-test-password}"}' | jq -r '.accessToken')
+  -d '{"email":"admin@agent.dev","password":"admin123456"}' | jq -r '.accessToken')
 
 # 2. 用 token 访问 LLM Todo
 curl -s http://localhost:3458/api/health \

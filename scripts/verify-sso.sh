@@ -6,8 +6,8 @@
 set -euo pipefail
 
 ADC_URL="http://localhost:4000"
-ADC_EMAIL="admin@example.com"
-ADC_PASS="{your-test-password}"
+ADC_EMAIL="admin@agent.dev"
+ADC_PASS="ag-k4mjuq-d2jgq5"
 SSO_ENV_FILE="/opt/.sso-env"
 
 # Colors

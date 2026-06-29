@@ -15,6 +15,7 @@ import {
   submitReportSchema,
   listReportsSchema,
   reviewReportSchema,
+  findingsReviewSchema,
   reportIdSchema,
 } from '../schemas/report.js';
 
@@ -444,6 +445,168 @@ reportsRouter.patch(
   }),
 );
 
+/**
+ * PATCH /api/requirements/:id/reports/:reportId/qa-review-findings
+ * Findings-driven QA review（2026-06-25 新增）
+ *
+ * QA 只需提交 findings（问题描述），系统自动决策：
+ * - findings 为空 → auto approved
+ * - ≥1 条 critical → auto rejected
+ * - 只有 minor → auto approved
+ *
+ * 兼容旧流程：仍可通过 /qa-review 直接提交 approved/rejected
+ */
+reportsRouter.patch(
+  '/:reportId/qa-review-findings',
+  requireInternalRole('qa'),
+  asyncHandler(async (req, res) => {
+    const { params, body } = findingsReviewSchema.parse({
+      params: req.params,
+      body: req.body,
+    });
+
+    const report = await prisma.requirementReport.findUnique({
+      where: { id: params.reportId },
+    });
+    if (!report) throw new HttpError(404, '报告不存在');
+    if (report.status !== 'pending') throw new HttpError(400, '该报告已审核');
+
+    // DEV_SELF_CHECK / TEST_REPORT / SECURITY_REVIEW 需要 QA 审批
+    if (report.reportType !== ReportType.DEV_SELF_CHECK && report.reportType !== ReportType.TEST_REPORT && report.reportType !== ReportType.SECURITY_REVIEW) {
+      throw new HttpError(400, '只有开发自检、测试报告和安全审查需要 QA 审批');
+    }
+
+    if (report.submittedById === req.user!.id) {
+      throw new HttpError(403, '审核者和提交者不能为同一人，报告不能自己审自己');
+    }
+
+    // ─── 自动决策逻辑 ───
+    const findings = body.findings;
+    const hasCritical = findings.some(f => f.severity === 'critical');
+
+    let autoStatus: 'approved' | 'rejected';
+    let autoReason: string;
+
+    if (findings.length === 0) {
+      autoStatus = 'approved';
+      autoReason = '无 findings，系统自动通过';
+    } else if (hasCritical) {
+      autoStatus = 'rejected';
+      const criticalCount = findings.filter(f => f.severity === 'critical').length;
+      const criticalSummary = findings
+        .filter(f => f.severity === 'critical')
+        .slice(0, 3)
+        .map(f => f.description.slice(0, 50))
+        .join('; ');
+      autoReason = `共 ${criticalCount} 条 critical findings 未通过（${criticalSummary}${criticalCount > 3 ? '...' : ''}），系统自动驳回`;
+    } else {
+      autoStatus = 'approved';
+      const minorCount = findings.length;
+      autoReason = `${minorCount} 条 minor findings，系统自动通过`;
+    }
+
+    const reviewedAt = new Date();
+
+    const updated = await prisma.requirementReport.update({
+      where: { id: params.reportId },
+      data: {
+        qaReviewedAt: reviewedAt,
+        qaReviewedBy: req.user!.name,
+        reviewComment: body.reviewComment || autoReason,
+        qaFindings: findings,
+        status: autoStatus,
+        reviewedAt,
+      },
+    });
+
+    const reportEvent = autoStatus === 'approved' ? 'report.approved' : 'report.rejected';
+    void notifyEvent(reportEvent as any, {
+      id: report.requirementId,
+      title: report.reportType,
+      actor: req.user!.name,
+    });
+
+    // 如果驳回，触发报告打回逻辑
+    if (autoStatus === 'rejected') {
+      const reqInfo = await prisma.requirement.findUnique({
+        where: { id: report.requirementId },
+        select: { title: true, currentStep: true, workflowId: true, assigneeId: true, assignee: true },
+      });
+
+      if (reqInfo?.workflowId && reqInfo.currentStep) {
+        void notifyEvent('report.rejected' as any, {
+          id: report.requirementId,
+          title: reqInfo.title,
+          reportType: report.reportType,
+          actor: req.user!.name,
+        });
+
+        // 自动退回工作流
+        let targetStep: string;
+        switch (report.reportType) {
+          case 'DEV_SELF_CHECK':
+            targetStep = 'dev_self_check';
+            break;
+          case 'TEST_REPORT':
+            targetStep = 'testing';
+            break;
+          case 'SECURITY_REVIEW':
+            targetStep = 'dev_self_check';
+            break;
+          default:
+            targetStep = reqInfo.currentStep;
+        }
+
+        const wf = await prisma.workflowTemplate.findUnique({
+          where: { id: reqInfo.workflowId },
+          select: { steps: true },
+        });
+        if (wf) {
+          const steps = (wf.steps as any[]) || [];
+          const currentIdx = steps.findIndex((s: any) => s.name === reqInfo.currentStep);
+          const targetIdx = steps.findIndex((s: any) => s.name === targetStep);
+          const actualTarget = targetIdx >= 0 && targetIdx < currentIdx
+            ? targetStep
+            : currentIdx > 0 ? steps[currentIdx - 1]?.name ?? targetStep : targetStep;
+
+          if (actualTarget !== reqInfo.currentStep) {
+            await prisma.requirement.update({
+              where: { id: params.id },
+              data: { currentStep: actualTarget },
+            });
+
+            await prisma.workflowTransition.create({
+              data: {
+                requirement: { connect: { id: params.id } },
+                fromStep: reqInfo.currentStep,
+                toStep: actualTarget,
+                action: 'reject',
+                actorId: req.user!.id,
+                actorName: req.user!.name,
+                actorRole: 'qa',
+                comment: autoReason,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: updated,
+      message: `Findings-based QA 审查完成，报告已${autoStatus === 'approved' ? '通过' : '驳回'}`,
+      autoDecision: {
+        status: autoStatus,
+        reason: autoReason,
+        findingsCount: findings.length,
+        criticalCount: findings.filter(f => f.severity === 'critical').length,
+        minorCount: findings.filter(f => f.severity === 'minor').length,
+      },
+    });
+  }),
+);
+
 // CTO 最终审批（或直接审批非 QA 流程的报告）
 reportsRouter.patch(
   '/:reportId',
@@ -496,7 +659,8 @@ reportsRouter.patch(
       where: { id: params.reportId },
     });
     if (!report) throw new HttpError(404, '报告不存在');
-    if (report.requirementId !== params.id) throw new HttpError(400, '报告与需求不匹配');
+    // 确保 params.id 可用（平路路径 /api/reports/:reportId 时从 report 取）
+    if (!params.id) params.id = report.requirementId;
     // CTO_REVIEW 自审豁免：CTO 审的是整个需求（开发+测试+安全），不是审自己
     const isCtoSelfReview = report.reportType === ReportType.CTO_REVIEW && report.submittedById === req.user!.id;
     if (report.submittedById === req.user!.id && !isCtoSelfReview) {
@@ -583,9 +747,15 @@ reportsRouter.patch(
               const steps = parseSteps(rawJson);
               const targetStepDef = steps.find(s => s.name === targetStep);
               if (targetStepDef?.role) {
-                rollbackAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
-                if (rollbackAssigneeId) {
-                  rollbackAssigneeName = await getAssigneeName(rollbackAssigneeId);
+                try {
+                  rollbackAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
+                  if (rollbackAssigneeId) {
+                    rollbackAssigneeName = await getAssigneeName(rollbackAssigneeId);
+                  }
+                } catch (e) {
+                  // resolveAssigneeForStep 可能因 roleUserMap 缺失抛出异常，
+                  // 此时不清除 assignee（保留 null），防止漂移
+                  rollbackAssigneeId = null;
                 }
               }
             }

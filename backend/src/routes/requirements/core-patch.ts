@@ -137,6 +137,8 @@ router.patch(
     };
     if (body.title !== undefined) patchData.title = body.title;
     if (body.description !== undefined) patchData.description = body.description;
+    if (body.branch !== undefined) patchData.branch = body.branch;
+    if (body.repoPath !== undefined) patchData.repoPath = body.repoPath;
 
     const updated = await prisma.requirement.update({
       where: { id: params.id },

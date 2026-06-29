@@ -53,8 +53,8 @@ npx playwright test e2e/token-login.spec.ts --reporter=line
 ```bash
 E2E_BASE_URL=http://{your-server-ip}    # 前端地址
 E2E_API_URL=http://{your-server-ip}/api # API 地址
-E2E_TEST_EMAIL=admin@example.com      # 测试账号
-E2E_TEST_PASSWORD={your-test-password}       # 测试密码
+E2E_TEST_EMAIL=admin@agent.dev      # 测试账号
+E2E_TEST_PASSWORD=admin123456       # 测试密码
 ```
 
 ## 4. 前端部署前必查清单

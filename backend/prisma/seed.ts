@@ -9,38 +9,38 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 async function main() {
-  const password = await bcrypt.hash('{your-test-password}', 10);
-  const requesterPassword = await bcrypt.hash('{your-test-password}', 10);
-  const developerPassword = await bcrypt.hash('{your-test-password}', 10);
+  const password = await bcrypt.hash('agent2026', 10);
+  const requesterPassword = await bcrypt.hash('requester123', 10);
+  const developerPassword = await bcrypt.hash('developer123', 10);
 
   await prisma.user.upsert({
-    where: { email: 'admin@example.com' },
+    where: { email: 'admin@agent.dev' },
     update: {},
     create: {
       name: 'CTO',
-      email: 'admin@example.com',
+      email: 'admin@agent.dev',
       password,
       role: 'admin'
     }
   });
 
   await prisma.user.upsert({
-    where: { email: 'requester@example.com' },
+    where: { email: 'requester@agent.dev' },
     update: {},
     create: {
       name: '业务需求方',
-      email: 'requester@example.com',
+      email: 'requester@agent.dev',
       password: requesterPassword,
       role: 'requester'
     }
   });
 
   await prisma.user.upsert({
-    where: { email: 'frontend@example.com' },
+    where: { email: 'frontend@agent.dev' },
     update: {},
     create: {
       name: 'frontend-engineer',
-      email: 'frontend@example.com',
+      email: 'frontend@agent.dev',
       password: developerPassword,
       role: 'developer'
     }
@@ -220,9 +220,9 @@ async function main() {
   }
 
   console.log('Seed completed.');
-  console.log('Admin: admin@example.com / {your-test-password}');
-  console.log('Requester: requester@example.com / {your-test-password}');
-  console.log('Developer: frontend@example.com / {your-test-password}');
+  console.log('Admin: admin@agent.dev / agent2026');
+  console.log('Requester: requester@agent.dev / requester123');
+  console.log('Developer: frontend@agent.dev / developer123');
 }
 
 main()

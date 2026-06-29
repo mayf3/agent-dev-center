@@ -2,7 +2,7 @@ import { prisma } from './src/lib/prisma.js';
 import bcrypt from 'bcrypt';
 
 async function main() {
-  const user = await prisma.user.findFirst({ where: { email: 'ceo-agent@example.com' } });
+  const user = await prisma.user.findFirst({ where: { email: 'ceo-agent@agent.local' } });
   if (!user) {
     console.log('User not found');
     await prisma.$disconnect();

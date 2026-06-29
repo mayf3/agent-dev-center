@@ -201,6 +201,7 @@ model RequirementReport {
   qaBypassBy      String?      @map("qa_bypass_by")
   qaReviewedAt    DateTime?    @map("qa_reviewed_at")
   qaReviewedBy    String?      @map("qa_reviewed_by")
+  qaFindings      Json?        @map("qa_findings")
   workflowStep    String?      @map("workflow_step")
   requirement     Requirement  @relation(fields: [requirementId], references: [id], onDelete: Cascade)
   submittedByUser User?        @relation("ReportSubmitter", fields: [submittedById], references: [id])
@@ -837,4 +838,20 @@ model ExecutionLeaseEvent {
   @@index([leaseId])
   @@index([createdAt])
   @@map("execution_lease_events")
+}
+
+model FeedbackEvent {
+  id             String    @id @default(uuid()) @db.Uuid
+  requirementId  String    @db.Uuid
+  fromStep       String
+  toStep         String
+  actorId        String?   @db.Uuid
+  actorName      String?
+  actorRole      String?
+  reason         String?
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([requirementId])
+  @@index([createdAt])
+  @@map("feedback_events")
 }

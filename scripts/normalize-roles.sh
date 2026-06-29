@@ -20,7 +20,7 @@ d = json.load(sys.stdin)
 users = d if isinstance(d, list) else d.get('data', d.get('users', []))
 
 # 管理层用户保持不变
-ADMIN_EMAILS = {'admin@example.com', 'cto@example.com', 'admin@example.com'}
+ADMIN_EMAILS = {'admin@agent.dev', 'cto@agent.local', 'admin@example.com'}
 ADMIN_ROLES = {'admin', 'cto_agent', 'cto'}
 
 changes = []

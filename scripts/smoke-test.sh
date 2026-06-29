@@ -550,7 +550,7 @@ main() {
   fi
 
   # 登录
-  local email="${ADC_EMAIL:-devtools-agent@example.com}"
+  local email="${ADC_EMAIL:-devtools-agent@agent.local}"
   local password="${ADC_PASSWORD:-}"
 
   if [ -z "$password" ]; then

@@ -8,7 +8,7 @@
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:4000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"{your-test-password}"}' | jq -r '.accessToken')
+  -d '{"email":"admin@agent.dev","password":"admin123456"}' | jq -r '.accessToken')
 
 # 注册新服务
 curl -s -X POST http://localhost:4000/api/services \

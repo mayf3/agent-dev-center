@@ -1,10 +1,10 @@
 /**
  * fix-uuid-and-cleanup.ts
  *
- * 修复 users 表中损坏的 UUID 字段，并清理 admin@example.com 账号。
+ * 修复 users 表中损坏的 UUID 字段，并清理 admin@agent.dev 账号。
  *
  * 问题1: 某些记录的 UUID 字段存了非 UUID 数据（如 email 字符串），导致 Prisma P2023
- * 问题2: admin@example.com 账号密码损坏，CTO 确认删除
+ * 问题2: admin@agent.dev 账号密码损坏，CTO 确认删除
  *
  * 运行方式: npx tsx src/scripts/fix-uuid-and-cleanup.ts
  */
@@ -16,7 +16,7 @@ const prisma = new PrismaClient();
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function main() {
-  console.log('🔧 Fixing UUID fields and cleaning up admin@example.com...\n');
+  console.log('🔧 Fixing UUID fields and cleaning up admin@agent.dev...\n');
 
   // 用 raw query 避免被 Prisma 的 UUID 校验拦截
   const users = await prisma.$queryRaw<Array<{
@@ -81,19 +81,19 @@ async function main() {
     }
   }
 
-  // 2. 删除 admin@example.com
-  console.log('\n--- Cleaning up admin@example.com ---');
-  const adminUser = users.find(u => u.email === 'admin@example.com');
+  // 2. 删除 admin@agent.dev
+  console.log('\n--- Cleaning up admin@agent.dev ---');
+  const adminUser = users.find(u => u.email === 'admin@agent.dev');
   if (adminUser) {
     // 先删除关联数据
     await prisma.$executeRaw`DELETE FROM audit_logs WHERE actor_id = ${adminUser.id}`;
     await prisma.$executeRaw`DELETE FROM reports WHERE author_id = ${adminUser.id}`;
     await prisma.$executeRaw`DELETE FROM marketplace_agents WHERE owner_id = ${adminUser.id}`;
     // 删除用户
-    await prisma.$executeRaw`DELETE FROM users WHERE email = 'admin@example.com'`;
-    console.log(`  🗑️  Deleted admin@example.com (id: ${adminUser.id})`);
+    await prisma.$executeRaw`DELETE FROM users WHERE email = 'admin@agent.dev'`;
+    console.log(`  🗑️  Deleted admin@agent.dev (id: ${adminUser.id})`);
   } else {
-    console.log('  ℹ️  admin@example.com not found (already cleaned)');
+    console.log('  ℹ️  admin@agent.dev not found (already cleaned)');
   }
 
   // 3. 验证
