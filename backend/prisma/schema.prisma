@@ -81,6 +81,22 @@ model PasswordPolicy {
   @@map("password_policies")
 }
 
+model BusinessDomain {
+  // Stable business key (folder identity). Never reused.
+  key         String   @id
+  name        String
+  description String   @default("")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  requirements      Requirement[]       @relation("RequirementDomain")
+  roleBindings      DomainRoleBinding[] @relation("DomainRoleBindingDomain")
+
+  @@map("business_domains")
+}
+
 model Requirement {
   id                  String                @id @default(uuid()) @db.Uuid
   title               String
@@ -113,6 +129,12 @@ model Requirement {
   projectId           String?               @db.Uuid
   status              String                @default("pending")
 
+  // Domain (Folder V1): stable business key → BusinessDomain.key
+  // Expansion phase: nullable; NOT NULL enforced in a later batch.
+  // onDelete: Restrict — a Domain still referenced by requirements cannot be deleted.
+  domainKey           String?               @map("domain_key")
+  domain              BusinessDomain?       @relation("RequirementDomain", fields: [domainKey], references: [key], onDelete: Restrict)
+
   // Kernel: workflow state version
   stateVersion        Int                   @default(0) @map("state_version")
 
@@ -140,7 +162,36 @@ model Requirement {
   @@index([assignee])
   @@index([assigneeId])
   @@index([projectId])
+  @@index([domainKey])
   @@map("requirements")
+}
+
+model DomainRoleBinding {
+  // Single source of truth for "which Role can access which BusinessDomain".
+  //
+  // Binds a platform role string (e.g. "adc:developer", "adc:qa",
+  // "adc:admin") to a BusinessDomain. A user's effective accessible domains
+  // are computed at request time by resolving their platform roles to the
+  // bound domainKeys — NOT cached long-term in the JWT.
+  //
+  // The adc:admin role bound with isDomainAdmin=true is the Domain manager
+  // scope. A separate explicit global flag on the binding (isGlobal) grants
+  // cross-domain access only when present (never silently derived from a
+  // legacy role).
+  id            String         @id @default(uuid()) @db.Uuid
+  role          String
+  domainKey     String         @map("domain_key")
+  isDomainAdmin Boolean        @default(false) @map("is_domain_admin")
+  isGlobal      Boolean        @default(false) @map("is_global")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  domain        BusinessDomain @relation("DomainRoleBindingDomain", fields: [domainKey], references: [key], onDelete: Cascade)
+
+  @@unique([role, domainKey])
+  @@index([domainKey])
+  @@index([role])
+  @@map("domain_role_bindings")
 }
 
 model Task {
