@@ -83,6 +83,7 @@ export function buildRequirementListFilters(query: {
   search?: string;
   assigneeId?: string;
   projectId?: string;
+  domainKey?: string;
 }): Prisma.RequirementWhereInput[] {
   const filters: Prisma.RequirementWhereInput[] = [];
 
@@ -116,6 +117,9 @@ export function buildRequirementListFilters(query: {
   }
   if (query.projectId) {
     filters.push({ projectId: query.projectId });
+  }
+  if (query.domainKey) {
+    filters.push({ domainKey: query.domainKey });
   }
 
   return filters;

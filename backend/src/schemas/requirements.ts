@@ -46,7 +46,8 @@ export const createRequirementSchema = z.object({
     assignee: nullableString,
     dueDate: optionalDate,
     attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
-    projectId: nullableUuid
+    projectId: nullableUuid,
+    domainKey: z.string().trim().min(1).max(60).optional()
   })
 });
 
@@ -64,7 +65,8 @@ export const listRequirementsSchema = z.object({
     ),
     search: z.string().trim().max(100).optional(),
     assigneeId: z.string().uuid().optional(),
-    projectId: z.string().uuid().optional()
+    projectId: z.string().uuid().optional(),
+    domainKey: z.string().trim().min(1).max(60).optional()
   })
 });
 
@@ -95,7 +97,8 @@ export const patchRequirementSchema = requirementIdSchema.extend({
       branch: z.string().trim().optional(),
       workflowId: z.string().trim().optional(),
       dependsOnIds: z.array(z.string().uuid()).optional().default([]),
-      blockedBy: z.array(z.string().uuid()).optional().default([])
+      blockedBy: z.array(z.string().uuid()).optional().default([]),
+      domainKey: z.string().trim().min(1).max(60).optional()
     })
     .refine((body) => Object.keys(body).length > 0, {
       message: '至少提供一个要更新的字段'
@@ -118,7 +121,8 @@ export const updateRequirementSchema = requirementIdSchema.extend({
       notes: z.string().optional(),
       projectId: nullableUuid,
       dependsOnIds: z.array(z.string().uuid()).max(20).optional().default([]),
-      blockedBy: z.array(z.string().uuid()).max(20).optional().default([])
+      blockedBy: z.array(z.string().uuid()).max(20).optional().default([]),
+      domainKey: z.string().trim().min(1).max(60).optional()
     })
     .refine((body) => Object.keys(body).length > 0, {
       message: '至少提供一个要更新的字段'

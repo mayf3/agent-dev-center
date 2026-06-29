@@ -35,6 +35,27 @@ router.patch(
     if (!existing) throw new HttpError(404, 'requirement not found');
     if (!canEditRequirement(req.user!, existing)) throw new HttpError(403, 'forbidden');
 
+    // domainKey change validation — requires domain admin or cross-domain access
+    if (body.domainKey !== undefined && body.domainKey !== existing.domainKey) {
+      const actor = req.user!;
+      const oldDk = existing.domainKey ?? 'engineering';
+      const newDk = body.domainKey;
+      const isDomainAdmin = actor.crossDomainAccess ||
+        (Array.isArray(actor.adminDomainKeys) && (
+          actor.adminDomainKeys.includes(oldDk) || actor.adminDomainKeys.includes(newDk)
+        ));
+      if (!isDomainAdmin) {
+        throw new HttpError(403, 'insufficient privileges to change domainKey');
+      }
+      // Validate new domain exists and is active
+      const targetDomain = await prisma.businessDomain.findUnique({
+        where: { key: newDk },
+        select: { key: true, isActive: true },
+      });
+      if (!targetDomain) throw new HttpError(400, `domain「${newDk}」not found`);
+      if (!targetDomain.isActive) throw new HttpError(400, `domain「${newDk}」is inactive`);
+    }
+
     // pm_review field-level permission control
     if (existing.currentStep === 'pm_review') {
       const user = req.user!;
@@ -139,6 +160,7 @@ router.patch(
     if (body.description !== undefined) patchData.description = body.description;
     if (body.branch !== undefined) patchData.branch = body.branch;
     if (body.repoPath !== undefined) patchData.repoPath = body.repoPath;
+    if (body.domainKey !== undefined) patchData.domainKey = body.domainKey;
 
     const updated = await prisma.requirement.update({
       where: { id: params.id },
