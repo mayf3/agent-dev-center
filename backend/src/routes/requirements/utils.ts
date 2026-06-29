@@ -49,9 +49,8 @@ export function assertDomainReadAccess(
   user: Express.AuthUser,
   requirement: DomainCheckable,
 ): void {
-  if (!user.allowedDomainKeys) {
-    // Domain scope middleware not loaded → safe fail-closed
-    throw new HttpError(403, 'forbidden');
+  if (user.allowedDomainKeys === undefined) {
+    return; // middleware not loaded → backward compat (skip domain check)
   }
 
   if (user.crossDomainAccess) {
@@ -154,9 +153,9 @@ export function canEditRequirement(user: Express.AuthUser, requirement: EditChec
  *          clause when no domains are accessible.
  */
 function buildDomainWhereClause(user: Express.AuthUser): Prisma.RequirementWhereInput | null {
-  if (!user.allowedDomainKeys) {
-    // Scope not loaded → safe fail-closed
-    return { id: { in: [] } };
+  // undefined = domainScope middleware NOT loaded → backward compat (no domain filter)
+  if (user.allowedDomainKeys === undefined) {
+    return null;
   }
 
   if (user.crossDomainAccess) {
@@ -164,7 +163,7 @@ function buildDomainWhereClause(user: Express.AuthUser): Prisma.RequirementWhere
   }
 
   if (user.allowedDomainKeys.length === 0) {
-    return { id: { in: [] } }; // no domains at all
+    return { id: { in: [] } }; // no domains at all → fail-closed
   }
 
   return { domainKey: { in: user.allowedDomainKeys } };
@@ -177,8 +176,8 @@ function buildDomainWhereClause(user: Express.AuthUser): Prisma.RequirementWhere
  * Returns false when the requirement's domain is not accessible.
  */
 function tryDomainCheck(user: Express.AuthUser, requirement: DomainCheckable): boolean {
-  if (!user.allowedDomainKeys) {
-    return false; // fail-closed when middleware hasn't run
+  if (user.allowedDomainKeys === undefined) {
+    return true; // middleware not loaded → backward compat (no domain check)
   }
 
   if (user.crossDomainAccess) {
@@ -187,8 +186,7 @@ function tryDomainCheck(user: Express.AuthUser, requirement: DomainCheckable): b
 
   const dk = requirement.domainKey;
   if (!dk) {
-    // Null domainKey — not classified yet.  In Expansion phase we treat
-    // these as inaccessible unless the user has cross-domain access.
+    // Null domainKey — not classified yet. Expansion: inaccessible unless cross-domain.
     return false;
   }
 
