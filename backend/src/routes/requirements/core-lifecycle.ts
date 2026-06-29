@@ -15,7 +15,7 @@ import { requirementIdSchema } from '../../schemas/requirements.js';
 import { listRevisionsSchema } from '../../schemas/revision.js';
 import { serializeRequirement } from '../../utils/status.js';
 import { notifyEvent } from '../../utils/notifications.js';
-import { canReadRequirement } from './utils.js';
+import { canReadRequirement, assertDomainReadAccess } from './utils.js';
 
 // ── 校验 schema ──
 
@@ -77,6 +77,7 @@ router.post(
     const { params } = requirementIdSchema.parse({ params: req.params });
     const existing = await prisma.requirement.findUnique({ where: { id: params.id } });
     if (!existing) throw new HttpError(404, '需求不存在');
+    assertDomainReadAccess(req.user!, existing);
     if (!['rejected', 'review_rejected', 'acceptance_rejected'].includes(existing.currentStep ?? '')) {
       throw new HttpError(400, `只能放弃被驳回的需求，当前步骤：${existing.currentStep}`);
     }
@@ -113,6 +114,7 @@ router.post(
     const { params } = requirementIdSchema.parse({ params: req.params });
     const existing = await prisma.requirement.findUnique({ where: { id: params.id } });
     if (!existing) throw new HttpError(404, '需求不存在');
+    assertDomainReadAccess(req.user!, existing);
     if (existing.currentStep !== 'abandoned') {
       throw new HttpError(400, `只能重新激活已放弃的需求，当前步骤：${existing.currentStep}`);
     }
@@ -153,6 +155,7 @@ router.post(
 
     const existing = await prisma.requirement.findUnique({ where: { id: params.id } });
     if (!existing) throw new HttpError(404, '需求不存在');
+    assertDomainReadAccess(req.user!, existing);
 
     // 终态检查：已归档的不能重复归档
     if (existing.currentStep === 'archived') {
@@ -236,11 +239,19 @@ router.post(
       try {
         const existing = await prisma.requirement.findUnique({
           where: { id: item.id },
-          select: { id: true, title: true, currentStep: true, stateVersion: true },
+          select: { id: true, title: true, currentStep: true, stateVersion: true, domainKey: true },
         });
 
         if (!existing) {
           results.push({ id: item.id, success: false, error: '需求不存在' });
+          skipCount++;
+          continue;
+        }
+
+        try {
+          assertDomainReadAccess(req.user!, existing);
+        } catch {
+          results.push({ id: item.id, success: false, error: '无权操作该需求' });
           skipCount++;
           continue;
         }

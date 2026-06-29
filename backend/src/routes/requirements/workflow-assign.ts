@@ -11,6 +11,7 @@ import { requirementIdSchema } from '../../schemas/requirements.js';
 import { assignWorkflowSchema } from '../../schemas/workflow.js';
 import { parseSteps, logTransition, extractRoleUserMap } from './workflow-helpers.js';
 import { resolveAssigneeForStep } from '../../lib/assignee-resolver.js';
+import { assertDomainReadAccess } from './utils.js';
 
 export function registerWorkflowAssignRoutes(router: import('express').Router): void {
 
@@ -23,6 +24,7 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
 
       const requirement = await prisma.requirement.findUnique({ where: { id: params.id } });
       if (!requirement) throw new HttpError(404, 'requirement not found');
+      assertDomainReadAccess(req.user!, requirement);
 
       const template = await prisma.workflowTemplate.findFirst({
         where: { name: body.workflowName, isActive: true },

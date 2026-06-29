@@ -10,25 +10,84 @@ import {
 import { createReadStream, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Minimal set of fields needed for domain-scope checks.  If you extend this
+ * interface, also update the select in ensureDomainAccessibleRequirement.
+ */
+interface DomainCheckable {
+  readonly domainKey?: string | null;
+}
+
+interface ReadCheckable extends DomainCheckable {
+  readonly requesterId: string | null;
+  readonly requester: string;
+  readonly assigneeId: string | null;
+  readonly assignee: string | null;
+}
+
+interface EditCheckable extends DomainCheckable {
+  readonly requesterId: string | null;
+  readonly requester: string;
+  readonly assigneeId: string | null;
+  readonly assignee: string | null;
+  readonly currentStep: string | null;
+}
+
+// ─── Domain-scope assertion (primary gate for single-resource access) ────────
+
+/**
+ * Assert that the user has domain-level access to the given requirement.
+ * Throws 403 if the requirement's domainKey is not in the user's allowed
+ * domain set (or if the domain scope has not been loaded).
+ *
+ * Call this FIRST before canReadRequirement / canEditRequirement so that
+ * domain isolation holds regardless of legacy role logic.
+ */
+export function assertDomainReadAccess(
+  user: Express.AuthUser,
+  requirement: DomainCheckable,
+): void {
+  if (!user.allowedDomainKeys) {
+    // Domain scope middleware not loaded → safe fail-closed
+    throw new HttpError(403, 'forbidden');
+  }
+
+  if (user.crossDomainAccess) {
+    return; // cross-domain admin bypasses domain filter
+  }
+
+  const dk = requirement.domainKey;
+  if (!dk || !user.allowedDomainKeys.includes(dk)) {
+    throw new HttpError(403, 'forbidden');
+  }
+}
+
+// ─── Read permission ─────────────────────────────────────────────────────────
+
 /** 权限判断：是否可查看该需求（基于 user.id）
  *
- * 2026-06-04 修复：QA/tester/security/ops 角色可查看所有需求。
- * 这些角色是工作流的审批者/执行者，不应该被 assignee 限制。
+ * 2026-07-01 集成 Domain scope：domainKey 必须是用户可访问的。
+ * 无 domain scope 信息 → 403（安全 fail-closed）。
  *
- * 2026-06-04 安全更新：需求可见性与操作权限控制（P1 需求 ef8419f2）
- * - developer（internalRole 或 role）按 assigneeId 判断
+ * 2026-06-04 修复：QA/tester/security/ops 角色可查看所有需求。
  */
-export function canReadRequirement(user: Express.AuthUser, requirement: { requesterId: string | null; requester: string; assigneeId: string | null; assignee: string | null }) {
+export function canReadRequirement(user: Express.AuthUser, requirement: ReadCheckable): boolean {
+  // 1. Domain scope gate
+  if (!tryDomainCheck(user, requirement)) {
+    return false;
+  }
+
+  // 2. Legacy role-based check
   if (user.role === 'admin' || user.role === 'cto_agent' || user.internalRole === 'cto') {
     return true;
   }
 
-  // 工作流审批角色：可查看所有需求
   if (user.internalRole === 'qa' || user.internalRole === 'tester' || user.internalRole === 'security' || user.internalRole === 'ops') {
     return true;
   }
 
-  // 开发者（含所有细分角色）：只看分配给自己的
   const CAN_READ_DEV_INTERNAL_ROLES = new Set([
     'backend_developer', 'frontend_developer',
     'mobile_developer', 'miniapp_developer', 'game_developer'
@@ -38,35 +97,32 @@ export function canReadRequirement(user: Express.AuthUser, requirement: { reques
            (requirement.assignee === user.name || requirement.assignee === user.email);
   }
 
-  // 纯 requester：只看自己提的
   if (user.role === 'requester') {
     return requirement.requesterId === user.id ||
            requirement.requester === user.name ||
            requirement.requester === user.email;
   }
 
-  // 默认：按 assignee 判断
   return requirement.assigneeId === user.id ||
          (requirement.assignee === user.name || requirement.assignee === user.email);
 }
 
 /** 权限判断：是否可编辑该需求（基于 user.id）
  *
- * 2026-06-13 修复：PM 角色在 pm_review 步骤时允许编辑（打回 draft / 改 assignee）
- * 字段级限制在 core-crud.ts PATCH handler 中单独处理（禁止改 title/description 等）。
+ * 2026-07-01 集成 Domain scope：无 domain 访问权限 → 403。
+ * 2026-06-13 修复：PM 角色在 pm_review 步骤时允许编辑。
  */
-export function canEditRequirement(user: Express.AuthUser, requirement: {
-  requesterId: string | null;
-  requester: string;
-  assigneeId: string | null;
-  assignee: string | null;
-  currentStep: string | null;
-}) {
+export function canEditRequirement(user: Express.AuthUser, requirement: EditCheckable): boolean {
+  // 1. Domain scope gate
+  if (!tryDomainCheck(user, requirement)) {
+    return false;
+  }
+
+  // 2. Legacy role-based check
   if (user.role === 'admin' || user.role === 'cto_agent') {
     return true;
   }
 
-  // PM 角色：在 pm_review 步骤时允许编辑（打回 draft、改 assignee 回 requester）
   const isPmRole = user.internalRole === 'pm' || user.role === 'pm';
   const currentStep = requirement.currentStep ?? 'pending';
   if (isPmRole && currentStep === 'pm_review') {
@@ -88,32 +144,113 @@ export function canEditRequirement(user: Express.AuthUser, requirement: {
   return false;
 }
 
-/** 基于角色过滤查询条件（使用 user.id）
+// ─── Build domain WHERE clause for list queries ──────────────────────────────
+
+/**
+ * Build the domain-scope WHERE clause for use inside roleAwareRequirementWhere.
  *
- * 2026-06-04 修复：QA/tester/security/ops 角色应该能看到所有有工作流步骤的需求，
- * 因为他们需要审查报告、审批流程。之前只看 assignee=自己的逻辑导致
- * QA 完全看不到任何需求（工作流中从没有 QA 作为 assignee）。
+ * @returns null if no domain filtering is needed (crossDomainAccess),
+ *          or a Prisma clause narrowing to allowed domains, or a forced-empty
+ *          clause when no domains are accessible.
+ */
+function buildDomainWhereClause(user: Express.AuthUser): Prisma.RequirementWhereInput | null {
+  if (!user.allowedDomainKeys) {
+    // Scope not loaded → safe fail-closed
+    return { id: { in: [] } };
+  }
+
+  if (user.crossDomainAccess) {
+    return null; // no domain filter needed
+  }
+
+  if (user.allowedDomainKeys.length === 0) {
+    return { id: { in: [] } }; // no domains at all
+  }
+
+  return { domainKey: { in: user.allowedDomainKeys } };
+}
+
+// ─── Private helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Non-throwing domain check for use inside canRead / canEdit.
+ * Returns false when the requirement's domain is not accessible.
+ */
+function tryDomainCheck(user: Express.AuthUser, requirement: DomainCheckable): boolean {
+  if (!user.allowedDomainKeys) {
+    return false; // fail-closed when middleware hasn't run
+  }
+
+  if (user.crossDomainAccess) {
+    return true;
+  }
+
+  const dk = requirement.domainKey;
+  if (!dk) {
+    // Null domainKey — not classified yet.  In Expansion phase we treat
+    // these as inaccessible unless the user has cross-domain access.
+    return false;
+  }
+
+  return user.allowedDomainKeys.includes(dk);
+}
+
+// ─── Role-aware requirement WHERE (list / kanban / summary) ──────────────────
+
+/** 基于角色 + Domain 范围过滤查询条件
  *
- * 2026-06-04 安全更新：需求可见性与操作权限控制（P1 需求 ef8419f2）
- * - admin/cto/pm → 看所有
- * - developer（internalRole 或 role） → 只看 assignee=自己的需求
- * - requester（role=requester 且无 internalRole） → 只看自己提的
- * - qa/tester/security/ops → 看所有（工作流审批者）
+ * 2026-07-01 Domain scope integration:
+ *   - Domain scope is the PRIMARY gate.
+ *   - Without domain scope middleware → fail-closed empty set.
+ *   - crossDomainAccess → no domain filter (legacy logic applies).
+ *   - domain-scoped → AND(domainKey IN allowed, legacyRoleClause).
+ *
+ * Unknown/invalid roles → fail-closed (legacy behavior preserved).
  */
 export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.RequirementWhereInput {
+  // ── Step 1: Domain scope gate ────────────────────────────────────
+  const domainClause = buildDomainWhereClause(user);
+  if (domainClause && 'id' in domainClause && domainClause.id?.in?.length === 0) {
+    // Forced empty: no domains accessible
+    return domainClause;
+  }
+
+  // ── Step 2: Build legacy role filter ─────────────────────────────
+  const roleClause = buildLegacyRoleClause(user);
+
+  // ── Step 3: Combine ──────────────────────────────────────────────
+  if (roleClause && domainClause) {
+    return { AND: [domainClause, roleClause] };
+  }
+  if (domainClause) {
+    return domainClause; // only domain filter (cross-domain admin case: roleClause is {} which is omitted)
+  }
+  if (roleClause) {
+    return roleClause; // only role filter (crossDomainAccess without admin role → role filter applies)
+  }
+  return {};
+}
+
+/**
+ * Pure legacy role clause — no domain logic.
+ * Returns {} (empty = no filter) for roles that see everything,
+ * or a Prisma condition narrowing by assignee/requester.
+ * Returns forced-empty { id: { in: [] } } for unrecognised roles.
+ */
+function buildLegacyRoleClause(user: Express.AuthUser): Prisma.RequirementWhereInput | null {
   // 1. 平台管理员/CTO：看所有
   if (user.role === 'admin' || user.role === 'cto_agent') {
-    return {};
+    return null; // null = no filter (combined with domain filter, this becomes just domain filter)
   }
 
   // 2. 特权内部角色：看所有
   if (user.internalRole === 'pm' || user.internalRole === 'cto') {
-    return {};
+    return null;
   }
 
   // 3. 工作流审批角色：看所有
   if (user.internalRole === 'qa' || user.internalRole === 'tester' || user.internalRole === 'security' || user.internalRole === 'ops') {
-    return {};
+    return null;
   }
 
   // 4. 开发者角色：只看分配给自己的
@@ -142,11 +279,17 @@ export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.Requir
   }
 
   // 7. 无法识别的角色组合 → fail-closed 空集合
-  return {
-    id: { in: [] },
-  };
+  return { id: { in: [] } };
 }
 
+// ─── Single-resource helpers ─────────────────────────────────────────────────
+
+/**
+ * Load a requirement by UUID and check both domain + role read access.
+ * Throws 404 (not found) or 403 (forbidden).
+ *
+ * Always selects domainKey so domain scope can be enforced.
+ */
 export async function ensureReadableRequirement(requirementId: string, user: Express.AuthUser) {
   const requirement = await prisma.requirement.findUnique({
     where: { id: requirementId },
@@ -155,7 +298,8 @@ export async function ensureReadableRequirement(requirementId: string, user: Exp
       requesterId: true,
       requester: true,
       assigneeId: true,
-      assignee: true
+      assignee: true,
+      domainKey: true,
     }
   });
 
@@ -169,6 +313,8 @@ export async function ensureReadableRequirement(requirementId: string, user: Exp
 
   return requirement;
 }
+
+// ─── Attachment helpers (unchanged) ──────────────────────────────────────────
 
 export function getRequirementAttachmentPath(requirementId: string, filename: string): string {
   return getRequirementUploadPath(path.join(requirementId, filename));

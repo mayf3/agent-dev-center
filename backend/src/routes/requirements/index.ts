@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authRequired } from '../../middleware/auth.js';
+import { domainScope } from '../../middleware/domain-scope.js';
 import { registerCoreCreateRoutes } from './core-create.js';
 import { registerCoreListRoutes } from './core-list.js';
 import { registerCorePutRoutes } from './core-put.js';
@@ -31,6 +32,9 @@ export const requirementsRouter = Router();
 
 // All requirement routes require authentication
 requirementsRouter.use(authRequired);
+
+// Domain scope — resolved from DB at every request (NOT cached in JWT)
+requirementsRouter.use(domainScope);
 
 // Register workflow routes (must be before core CRUD to avoid /:id param conflicts)
 registerWorkflowTestEnvRoutes(requirementsRouter);
