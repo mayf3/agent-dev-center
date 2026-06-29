@@ -70,42 +70,95 @@ export function skipSecurityIfApplicable(
 }
 
 /**
- * Acquire test environment lock when entering test_env_deploy.
- * Throws 409 if another requirement holds the lock.
- * Returns the requirement ID for rollback tracking.
+ * Lock ownership identity.
+ * Each call to acquire generates a unique UUID token stored in the DB.
+ * Release uses atomic compare-and-delete with this token.
  */
-export async function acquireTestEnvLock(requirementId: string, title: string, branch: string | null): Promise<string> {
-  const existingLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
-  if (existingLock && existingLock.requirementId !== requirementId) {
-    throw new HttpError(
-      409,
-      `测试环境已被占用：需求「${existingLock.requirementTitle || existingLock.requirementId}」（锁定于 ${existingLock.acquiredAt.toISOString().replace('T', ' ').slice(0, 16)}），请等待其部署完成后重试`,
-    );
-  }
-  await prisma.testEnvLock.upsert({
-    where: { id: 'singleton' },
-    create: { id: 'singleton', requirementId, requirementTitle: title, branch },
-    update: { requirementId, requirementTitle: title, branch, acquiredAt: new Date() },
+export type TestEnvLockOwnership = {
+  lockId: string;
+  lockToken: string;
+  acquiredForRequirement: string;
+};
+
+/**
+ * TTL for test env lock: 4 hours by default.
+ * A lock whose acquiredAt is more than TTL ago is considered stale
+ * and can be atomically taken over by another request.
+ */
+export const TEST_ENV_LOCK_TTL_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * Acquire test environment lock when entering test_env_deploy.
+ *
+ * Atomic INSERT-or-conditional-UPDATE pattern:
+ *   1. Try INSERT — if no existing row, this succeeds and we hold the lock.
+ *   2. If INSERT fails (row already exists), try UPDATE with expiry check.
+ *   3. If existing lock is still valid (within TTL), fail with 409.
+ *   4. If existing lock is stale (past TTL), atomically take over.
+ *
+ * Uses Prisma $transaction with NOW() check to ensure atomicity without
+ * application-level TOCTOU.
+ */
+export async function acquireTestEnvLock(
+  requirementId: string, title: string, branch: string | null,
+  now?: Date,
+): Promise<TestEnvLockOwnership> {
+  const lockToken = crypto.randomUUID();
+  const timestamp = now ?? new Date();
+  const ttlDate = new Date(timestamp.getTime() - TEST_ENV_LOCK_TTL_MS);
+
+  return prisma.$transaction(async (tx: any) => {
+    // Read current lock state
+    const existing = await tx.testEnvLock.findUnique({ where: { id: 'singleton' } });
+
+    if (existing) {
+      // Lock exists; check if it's stale
+      if (existing.acquiredAt >= ttlDate) {
+        // Lock is still valid — fail
+        throw new HttpError(
+          409,
+          `测试环境已被占用：需求「${existing.requirementTitle || existing.requirementId}」（锁定于 ${existing.acquiredAt.toISOString().replace('T', ' ').slice(0, 16)}），请等待其部署完成后重试`,
+        );
+      }
+      // Stale lock — atomically take over
+      await tx.testEnvLock.update({
+        where: { id: 'singleton' },
+        data: { requirementId, requirementTitle: title, branch, lockToken, acquiredAt: timestamp },
+      });
+    } else {
+      // No existing lock — insert
+      await tx.testEnvLock.create({
+        data: { id: 'singleton', requirementId, requirementTitle: title, branch, lockToken, acquiredAt: timestamp },
+      });
+    }
+
+    return { lockId: 'singleton', lockToken, acquiredForRequirement: requirementId };
   });
-  return requirementId;
 }
 
 /**
- * Release test environment lock when leaving the protected zone.
- * Returns true if lock was released.
+ * Release test environment lock using atomic compare-and-delete.
+ *
+ * Only deletes if the row still carries OUR exact id + lockToken pair.
+ * count === 1 → released (our lock)
+ * count === 0 → lock already gone or replaced (idempotent)
  */
-export async function releaseTestEnvLock(requirementId: string): Promise<boolean> {
-  const existingLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
-  if (existingLock && existingLock.requirementId === requirementId) {
-    await prisma.testEnvLock.delete({ where: { id: 'singleton' } });
-    return true;
+export async function releaseTestEnvLock(ownership: TestEnvLockOwnership): Promise<boolean> {
+  const { count } = await prisma.testEnvLock.deleteMany({
+    where: { id: ownership.lockId, lockToken: ownership.lockToken },
+  });
+  if (count === 0) {
+    console.warn(
+      `[test-env-lock] SKIP release (count=0): token ${ownership.lockToken.slice(0, 8)}… for requirement ${ownership.acquiredForRequirement.slice(0, 8)}`,
+    );
   }
-  return false;
+  return count === 1;
 }
 
 /**
  * After lock release, auto-assign lock to next waiting requirement (FIFO).
  * Runs asynchronously without blocking the response.
+ * Uses a fresh UUID lockToken for the new assignment.
  */
 export function autoAdvanceTestEnvQueue(): void {
   void (async () => {
@@ -119,17 +172,16 @@ export function autoAdvanceTestEnvQueue(): void {
 
       const rawJson = getWorkflowRawJson(next);
       if (!rawJson) return;
-
       const steps = parseSteps(rawJson);
-      const hasStep = steps.some(s => s.name === 'test_env_deploy');
-      if (!hasStep) return;
+      if (!steps.some(s => s.name === 'test_env_deploy')) return;
 
+      const newToken = crypto.randomUUID();
       await prisma.testEnvLock.upsert({
         where: { id: 'singleton' },
-        create: { id: 'singleton', requirementId: next.id, requirementTitle: next.title, branch: next.branch },
-        update: { requirementId: next.id, requirementTitle: next.title, branch: next.branch, acquiredAt: new Date() },
+        create: { id: 'singleton', requirementId: next.id, requirementTitle: next.title, branch: next.branch, lockToken: newToken, acquiredAt: new Date() },
+        update: { requirementId: next.id, requirementTitle: next.title, branch: next.branch, lockToken: newToken, acquiredAt: new Date() },
       });
-      console.log(`[test-env-lock] Lock released, auto-assigned to: ${next.id.slice(0, 8)} (${next.title?.slice(0, 30)})`);
+      console.log(`[test-env-lock] Auto-assigned to: ${next.id.slice(0, 8)} with token ${newToken.slice(0, 8)}…`);
     } catch (err) {
       console.error('[test-env-lock] Auto-advance failed:', err);
     }

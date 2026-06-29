@@ -29,6 +29,7 @@ import {
   releaseTestEnvLock,
   shouldReleaseTestEnvLock,
 } from './workflow-advance-helpers.js';
+import { casUpdateRequirement, txCreateTransition, txReadRequirement } from './workflow-cas-helper.js';
 import { createFeedbackEvent } from './feedback-events.js';
 
 export function registerWorkflowRejectRoutes(router: import('express').Router): void {
@@ -173,8 +174,15 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
 
       // 从测试环境保护范围 reject → 释放锁
       try {
-        if (shouldReleaseTestEnvLock(requirement.currentStep, targetStepName)) {
-          await releaseTestEnvLock(params.id);
+        if (shouldReleaseTestEnvLock(requirement.currentStep ?? '', targetStepName)) {
+          const currentLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
+          if (currentLock?.lockToken) {
+            await releaseTestEnvLock({
+              lockId: 'singleton',
+              lockToken: currentLock.lockToken,
+              acquiredForRequirement: currentLock.requirementId,
+            });
+          }
         }
       } catch (err) {
         console.error(`[test-env-lock] reject lock release failed for ${params.id.slice(0, 8)}:`, err);
