@@ -17,7 +17,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { fetchProjects, type Project } from '../../api/projects';
-import type { Requirement, RequirementPriority, RequirementType } from '../../api/types';
+import type { Domain, Requirement, RequirementPriority, RequirementType } from '../../api/types';
 import {
   ACCEPTED_FILE_TYPES,
   MAX_FILE_COUNT,
@@ -37,6 +37,7 @@ interface RequirementFormValues {
   tags?: string[];
   projectId?: string;
   department: string;
+  domainKey?: string;
   dueDate?: Dayjs;
   attachment?: string;
 }
@@ -50,6 +51,7 @@ function toPayload(values: RequirementFormValues) {
     tags: values.tags,
     projectId: values.projectId || undefined,
     department: values.department,
+    domainKey: values.domainKey || undefined,
     dueDate: values.dueDate?.toISOString(),
     attachment: values.attachment?.trim() || undefined
   };
@@ -71,6 +73,8 @@ export function SubmitRequirementPage() {
   const [submitting, setSubmitting] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectLoading, setProjectLoading] = useState(false);
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [domainLoading, setDomainLoading] = useState(false);
   const [attachmentFiles, setAttachmentFiles] = useState<UploadFile[]>([]);
 
   useEffect(() => {
@@ -79,6 +83,14 @@ export function SubmitRequirementPage() {
       .then((response) => setProjects(response.data))
       .catch(() => message.warning('项目列表加载失败，仍可继续提交需求'))
       .finally(() => setProjectLoading(false));
+  }, [message]);
+
+  useEffect(() => {
+    setDomainLoading(true);
+    api.get<{ data: Domain[] }>('/domains')
+      .then(({ data }) => setDomains(data.data || []))
+      .catch(() => message.warning('领域列表加载失败，仍可继续提交需求'))
+      .finally(() => setDomainLoading(false));
   }, [message]);
 
   const beforeAttachmentUpload: UploadProps['beforeUpload'] = (file, fileList) => {
@@ -226,6 +238,25 @@ export function SubmitRequirementPage() {
                 label: project.name,
                 value: project.id
               }))}
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="所属领域"
+            name="domainKey"
+            rules={[{ required: true, message: '请选择所属领域' }]}
+          >
+            <Select
+              showSearch
+              allowClear
+              loading={domainLoading}
+              placeholder="选择所属领域（Folder）"
+              options={domains
+                .filter((d) => d.isActive)
+                .map((domain) => ({
+                  label: domain.name,
+                  value: domain.key
+                }))}
             />
           </Form.Item>
 
