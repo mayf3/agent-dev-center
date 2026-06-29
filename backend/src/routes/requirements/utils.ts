@@ -63,6 +63,64 @@ export function assertDomainReadAccess(
   }
 }
 
+/**
+ * Assert that the user has contribute-level access to the given domain (i.e.
+ * at least member binding).  For most write operations (create, advance,
+ * reject) this is equivalent to assertDomainReadAccess — every domain member
+ * can contribute by default.
+ *
+ * The distinction between CONTRIBUTE and ADMIN is used for management
+ * operations (domain key change, archive, domain settings) where mere
+ * membership is insufficient.
+ *
+ * @see assertDomainAdminAccess for the strict admin-level check.
+ */
+export function assertDomainContributeAccess(
+  user: Express.AuthUser,
+  domainKey: string | null | undefined,
+): void {
+  if (user.allowedDomainKeys === undefined) {
+    return; // middleware not loaded → backward compat
+  }
+
+  if (user.crossDomainAccess) {
+    return; // global admin bypasses domain check
+  }
+
+  if (!domainKey || !user.allowedDomainKeys.includes(domainKey)) {
+    throw new HttpError(403, 'forbidden');
+  }
+}
+
+/**
+ * Assert that the user has admin-level access to the given domain (isDomainAdmin
+ * flag or crossDomainAccess).  Used for management operations that should not
+ * be available to ordinary domain members.
+ *
+ * Current callers:
+ * - PATCH domainKey change (core-patch.ts)
+ * - Future: domain settings, batch lifecycle
+ */
+export function assertDomainAdminAccess(
+  user: Express.AuthUser,
+  domainKey: string | null | undefined,
+): void {
+  if (user.allowedDomainKeys === undefined) {
+    return; // middleware not loaded → backward compat
+  }
+
+  if (user.crossDomainAccess) {
+    return; // global admin bypasses
+  }
+
+  if (!domainKey) {
+    throw new HttpError(403, 'forbidden');
+  }
+  if (!user.adminDomainKeys?.includes(domainKey)) {
+    throw new HttpError(403, 'forbidden');
+  }
+}
+
 // ─── Read permission ─────────────────────────────────────────────────────────
 
 /** 权限判断：是否可查看该需求（基于 user.id）
