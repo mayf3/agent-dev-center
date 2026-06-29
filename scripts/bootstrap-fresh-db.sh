@@ -100,19 +100,30 @@ if [ "$COVERED_SHA" != "$EXPECTED_COVERED_SHA" ]; then
 fi
 echo "  covered-migrations.txt SHA256: $COVERED_SHA (match)"
 
-# ── Verify cutoff ─────────────────────────────────────────────────────────
+# ── Verify cutoff (HARD GATE — runs BEFORE any database write) ────────────
+# Contract: the cutoff migration (a) must exist on disk, (b) must be present in
+# covered-migrations.txt, and (c) must be the LAST entry of that manifest.
+# All three must hold; failure aborts before baseline.sql is applied.
 echo "[bootstrap] Verifying cutoff migration..."
-LAST_COVERED=$(tail -1 "$COVERED")
-if [ "$LAST_COVERED" != "$CUTOFF" ]; then
-  echo "[FAIL] Cutoff mismatch: covered-migrations.txt ends with '$LAST_COVERED', expected '$CUTOFF'"
-  exit 1
-fi
 CUTOFF_SQL="backend/prisma/migrations/${CUTOFF}/migration.sql"
 if [ ! -f "$CUTOFF_SQL" ]; then
   echo "[FAIL] Cutoff migration SQL not found: $CUTOFF_SQL"
   exit 1
 fi
-echo "  Cutoff: $CUTOFF (present, last in covered list)"
+
+# (b) cutoff must appear somewhere in the covered manifest
+if ! grep -qxF "$CUTOFF" "$COVERED"; then
+  echo "[FAIL] Cutoff '$CUTOFF' is not listed in covered-migrations.txt"
+  exit 1
+fi
+
+# (c) cutoff must be the LAST (covered) entry of the manifest
+LAST_COVERED=$(grep -v '^[[:space:]]*$' "$COVERED" | tail -1)
+if [ "$LAST_COVERED" != "$CUTOFF" ]; then
+  echo "[FAIL] Cutoff mismatch: covered-migrations.txt ends with '$LAST_COVERED', expected '$CUTOFF'"
+  exit 1
+fi
+echo "  Cutoff: $CUTOFF (exists on disk, present in manifest, last covered entry)"
 
 # ── Verify per-migration checksums ────────────────────────────────────────
 echo "[bootstrap] Verifying per-migration checksums..."
