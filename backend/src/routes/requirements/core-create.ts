@@ -78,8 +78,17 @@ router.post(
       }
     }
 
-    // Resolve domainKey: prefer body value, default to 'engineering' (compat)
-    const domainKey = body.domainKey || 'engineering';
+    // Resolve domainKey:
+    // - Normal API consumers MUST provide domainKey explicitly.
+    // - Legacy callers (X-Domain-Legacy: true header) get the old default 'engineering'.
+    //   This compat path exists only for pre-existing automated callers that cannot
+    //   be updated immediately.  It will be removed in a future batch.
+    const isLegacy = req.headers['x-domain-legacy'] === 'true';
+    const domainKey = (() => {
+      if (body.domainKey) return body.domainKey;
+      if (isLegacy) return 'engineering';
+      throw new HttpError(400, 'domainKey is required.  Include X-Domain-Legacy: true header for legacy compat.');
+    })();
 
     // Validate domain exists, is active, and user has access
     const domain = await prisma.businessDomain.findUnique({
