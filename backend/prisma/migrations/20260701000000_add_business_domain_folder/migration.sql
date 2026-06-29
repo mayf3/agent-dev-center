@@ -67,6 +67,34 @@ VALUES
     ('legacy-todo',  'Legacy Todo',   'Pre-Folder todo backlog (migrated)',    true, true, CURRENT_TIMESTAMP)
 ON CONFLICT ("key") DO NOTHING;
 
+-- ── 4b. Seed initial role bindings (idempotent via (role,domain_key) unique key)
+--    Only adc:admin gets cross-domain (is_global).  Standard engineering roles
+--    get member-level access to engineering + legacy-todo (migration backlog).
+--    Ops additionally gets operations domain.
+--    Personal/family/health/finance/content/learning have NO default bindings:
+--    only adc:admin (is_global=true) can access them.
+--    This ensures existing users don't get fail-closed after migration deploy.
+-- ============================================================================
+INSERT INTO "domain_role_bindings" ("id", "role", "domain_key", "is_domain_admin", "is_global", "updated_at")
+VALUES
+    (gen_random_uuid(), 'adc:admin', 'engineering', true, true, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:developer', 'engineering', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:developer', 'legacy-todo', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:tester', 'engineering', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:tester', 'legacy-todo', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:security', 'engineering', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:security', 'legacy-todo', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:ops', 'operations', true, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:ops', 'engineering', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:ops', 'legacy-todo', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:pm', 'engineering', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:pm', 'legacy-todo', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:qa', 'engineering', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:qa', 'legacy-todo', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:viewer', 'engineering', false, false, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'adc:viewer', 'legacy-todo', false, false, CURRENT_TIMESTAMP)
+ON CONFLICT ("role", "domain_key") DO NOTHING;
+
 -- ── 5. Backfill Requirement.domainKey ───────────────────────────────────────
 -- Classification rule: only assign a non-engineering domain when the existing
 -- data is unambiguous. With no reliable per-row signal (department/project/tags
