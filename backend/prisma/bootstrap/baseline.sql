@@ -1025,7 +1025,3 @@ INSERT INTO "workflow_templates" ("id","name","displayName","description","steps
 SELECT gen_random_uuid(),'hotfix','紧急修复','紧急修复流程',
   '[{"name":"dev_self_check","displayName":"开发自检","role":"developer","requiredReports":["DEV_SELF_CHECK"],"autoAdvance":false},{"name":"deploy","displayName":"紧急部署","role":"ops","requiredReports":["DEPLOY_CONFIRM"],"autoAdvance":false},{"name":"done","displayName":"完成","role":"auto","requiredReports":[],"autoAdvance":true}]'::jsonb,true,NOW(),NOW();
 
--- Test env lock singleton seed
-INSERT INTO "test_env_lock" ("id", "requirementId", "acquiredAt")
-SELECT 'singleton', gen_random_uuid(), NOW() - INTERVAL '365 days'
-WHERE NOT EXISTS(SELECT 1 FROM "test_env_lock" WHERE "id"='singleton');
