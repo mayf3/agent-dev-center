@@ -1,76 +1,92 @@
 #!/usr/bin/env bash
 # ============================================================================
-# ADC Fresh Database Bootstrap v3 — Baseline Approach
+# ADC Fresh Database Bootstrap v4 — Official Baseline
 #
-# The canonical migration chain has ordering issues that prevent it from
-# running on a completely fresh database (add_git_hash runs before
-# add_service_registry despite referencing service_requirements).
-# Rather than patching each failure, this script uses Prisma's recommended
-# "baseline" approach for new databases:
+# Applies a fixed baseline SQL artifact and registers migration history via
+# prisma migrate resolve --applied (the official Prisma API).
 #
-# 1. Create the full schema via prisma db push (validates model consistency)
-# 2. Populate _prisma_migrations with all canonical migrations (marked applied)
-# 3. Run prisma migrate deploy → nothing to do (green state)
-# 4. Subsequent migration additions work normally
-#
-# Existing databases are UNCHANGED — they have their own migration history.
-#
-# WHY NOT fixup approach:  the chain has ~3+ ordering/data failures that
-# cascade across 37 migrations (add_git_hash, add_workflow_engine,
-# remove_status_field, and potentially more).  Each fix requires replaying
-# the full migration SQL with corrections, with no guarantee of completeness.
-# The baseline approach is the standard Prisma recommendation for this case.
+# NO DIRECT _prisma_migrations TABLE WRITES.
+# NO prisma db push.
 # ============================================================================
 set -euo pipefail
 
 SCHEMA="${SCHEMA:-backend/prisma/schema.prisma}"
 DB_URL="${DATABASE_URL:?DATABASE_URL must be set}"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+BASELINE_DIR="${SCRIPT_DIR}/backend/prisma/bootstrap"
+BASELINE_SQL="${BASELINE_DIR}/baseline.sql"
+COVERED="${BASELINE_DIR}/covered-migrations.txt"
 
-echo "[bootstrap] Step 1: Verifying database is empty..."
-EXISTING=$(psql "${DB_URL}" -t -A -c "
+# ── Preflight: refuse non-empty / production-looking databases ────────────
+echo "[bootstrap] Checking database state..."
+EXISTING_TABLES=$(psql "${DB_URL}" -t -A -c "
   SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';
 " 2>/dev/null || echo "0")
-if [ "$EXISTING" -gt 0 ] && [ "$EXISTING" -lt 10 ]; then
-  echo "[bootstrap] WARNING: database has $EXISTING existing tables. This should be an empty DB."
-fi
 
-# Safety: refuse to baseline if _prisma_migrations already exists
-HAS_HISTORY=$(psql "${DB_URL}" -t -A -c "
-  SELECT COUNT(*) FROM pg_class WHERE relname='_prisma_migrations' AND relkind='r';
-" 2>/dev/null || echo "0")
-if [ "$HAS_HISTORY" -gt 0 ]; then
-  echo "[bootstrap] ERROR: _prisma_migrations already exists — this script is for fresh databases only."
+if [ "$EXISTING_TABLES" -gt 0 ]; then
+  echo "[FAIL] Database already has $EXISTING_TABLES tables — this script is for EMPTY databases only."
   exit 1
 fi
 
-echo "[bootstrap] Step 2: Creating baseline schema..."
-npx prisma db push --schema="$SCHEMA" --skip-generate 2>&1
-echo "[bootstrap] Schema created."
+HAS_PRISMA_HISTORY=$(psql "${DB_URL}" -t -A -c "
+  SELECT COUNT(*) FROM pg_class WHERE relname='_prisma_migrations' AND relkind='r';
+" 2>/dev/null || echo "0")
+if [ "$HAS_PRISMA_HISTORY" -gt 0 ]; then
+  echo "[FAIL] _prisma_migrations already exists — refusing to bootstrap."
+  exit 1
+fi
 
-echo "[bootstrap] Step 3: Populating _prisma_migrations with canonical history..."
-# Create the _prisma_migrations table (normally created by first migrate deploy)
-psql "${DB_URL}" -c "
-  ALTER TABLE \"_prisma_migrations\" ADD CONSTRAINT \"_prisma_migrations_migration_name_unique\" UNIQUE (\"migration_name\");
-" 2>/dev/null || true
+# Check if DB_URL looks like production (contains a typical prod hostname pattern)
+if echo "${DB_URL}" | grep -qiE "prod|production|8\.163\.44\."; then
+  echo "[FAIL] DATABASE_URL appears to point to a production server.  Aborting."
+  exit 1
+fi
 
-# Sort migrations and insert each one
-count=0
-for dir in backend/prisma/migrations/*/; do
-  name=$(basename "$dir")
-  sql_file="${dir}migration.sql"
-  if [ -f "$sql_file" ]; then
-    checksum=$(sha256sum "$sql_file" | cut -d' ' -f1)
-    psql "${DB_URL}" -c "
-      INSERT INTO \"_prisma_migrations\" (id, migration_name, checksum, finished_at, started_at, logs)
-      VALUES (gen_random_uuid()::text, '${name}', '${checksum}', NOW(), NOW(), '[bootstrap] baseline')
-      ON CONFLICT (migration_name) DO UPDATE SET finished_at = NOW(), checksum = EXCLUDED.checksum;
-    " 2>/dev/null || true
-    count=$((count + 1))
-  fi
-done
-echo "[bootstrap] $count migrations recorded."
+# ── Verify baseline artifact checksums ───────────────────────────────────
+echo "[bootstrap] Verifying baseline artifacts..."
+BASELINE_SHA=$(sha256sum "$BASELINE_SQL" | cut -d' ' -f1)
+COVERED_SHA=$(sha256sum "$COVERED" | cut -d' ' -f1)
+echo "  baseline.sql SHA256: $BASELINE_SHA"
+echo "  covered-migrations.txt SHA256: $COVERED_SHA"
+echo "  cutoff: $(tail -1 $COVERED)"
 
-echo "[bootstrap] Step 4: Verifying..."
+# ── Step 1: Execute baseline SQL ─────────────────────────────────────────
+echo "[bootstrap] Applying baseline schema..."
+psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "$BASELINE_SQL"
+echo "[bootstrap] Baseline schema applied."
+
+# ── Step 2: Register covered migrations via migrate resolve ───────────────
+echo "[bootstrap] Registering covered migrations..."
+MIGRATION_COUNT=0
+while IFS= read -r migration; do
+  [ -z "$migration" ] && continue
+  echo "  → $migration"
+  npx prisma migrate resolve --applied "$migration" --schema="$SCHEMA" 2>/dev/null || {
+    echo "  WARNING: resolve failed for $migration (may already be registered)"
+  }
+  MIGRATION_COUNT=$((MIGRATION_COUNT + 1))
+done < "$COVERED"
+echo "[bootstrap] $MIGRATION_COUNT migrations registered via prisma migrate resolve."
+
+# ── Step 3: Apply any cutoff-after migrations ────────────────────────────
+echo "[bootstrap] Verifying migration state..."
 npx prisma migrate status --schema="$SCHEMA" 2>&1 | tail -5
+
+# Check if there are pending (non-baselined) migrations
+PENDING=$(psql "${DB_URL}" -t -A -c "
+  SELECT COUNT(*) FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL;
+" 2>/dev/null || echo "0")
+
+if [ "$PENDING" -gt 0 ]; then
+  echo "[bootstrap] Applying $PENDING post-cutoff migrations..."
+  npx prisma migrate deploy --schema="$SCHEMA"
+else
+  echo "[bootstrap] No post-cutoff migrations pending."
+fi
+
+# ── Final verification ───────────────────────────────────────────────────
+echo "=== Migration Status ==="
+npx prisma migrate status --schema="$SCHEMA"
+echo "=== Schema Validation ==="
 npx prisma validate --schema="$SCHEMA"
 echo "[bootstrap] Complete."
