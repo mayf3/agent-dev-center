@@ -27,7 +27,9 @@ import {
   releaseTestEnvLock,
   shouldReleaseTestEnvLock,
   autoAdvanceTestEnvQueue,
+  TestEnvLockOwnership,
 } from './workflow-advance-helpers.js';
+import { casUpdateRequirement, txCreateTransition, txReadRequirement } from './workflow-cas-helper.js';
 
 export function registerWorkflowAdvanceRoutes(router: import('express').Router): void {
 
@@ -146,17 +148,24 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       }
 
       // --- Test environment lock ---
-      // 锁的语义：从部署测试环境到最终上线完成，测试环境只服务这一个任务
-      // 保护范围 = test_env_deploy → deploying，离开保护范围时释放
-      let lockAcquired = false;
+      let lockOwnership: TestEnvLockOwnership | null = null;
       let lockReleased = false;
 
       if (targetStep.name === 'test_env_deploy') {
-        await acquireTestEnvLock(params.id, requirement.title, requirement.branch);
-        lockAcquired = true;
+        lockOwnership = await acquireTestEnvLock(params.id, requirement.title, requirement.branch);
       }
       if (shouldReleaseTestEnvLock(currentStep.name, targetStep.name)) {
-        lockReleased = await releaseTestEnvLock(params.id);
+        if (lockOwnership) {
+          lockReleased = await releaseTestEnvLock(lockOwnership);
+        } else {
+          const currentLock = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
+          if (currentLock && currentLock.lockToken) {
+            lockReleased = await releaseTestEnvLock({
+              lockId: 'singleton', lockToken: currentLock.lockToken,
+              acquiredForRequirement: currentLock.requirementId,
+            });
+          }
+        }
       }
 
       // --- Resolve assignee for target step (snapshot-first) ---
@@ -173,33 +182,45 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         } else {
           newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
         }
-      } catch (err: unknown) {
-        // 锁已获取但后续失败 → 回滚锁，防止孤儿锁
-        if (lockAcquired) {
-          try { await releaseTestEnvLock(params.id); } catch { /* ignore rollback error */ }
+	      } catch (err: unknown) {
+	        if (lockOwnership) {
+	          try { await releaseTestEnvLock(lockOwnership); } catch { /* ignore rollback error */ }
+	        }
+	        const msg = err instanceof Error ? err.message : String(err);
+	        throw new HttpError(400, `assignee 解析失败: ${msg}`);
+	      }
+
+	      // --- Persist step transition (CAS + transaction) ---
+	      let updated;
+	      try {
+	        updated = await prisma.$transaction(async (tx: any) => {
+	          const currentReq = await txReadRequirement(tx, params.id);
+	          const newAssigneeName = await getAssigneeName(newAssigneeId);
+	          const updatedReq = await casUpdateRequirement(tx, params.id, currentReq.stateVersion ?? 0, {
+	            currentStep: targetStep.name, assigneeId: newAssigneeId, rejectReason: null,
+	          });
+	          await txCreateTransition(tx, {
+	            requirement: { connect: { id: params.id } },
+	            fromStep: requirement.currentStep, toStep: targetStep.name,
+	            action: 'advance', actorId: req.user!.id, actorName: req.user!.name,
+	            actorRole: req.user!.internalRole ?? req.user!.role, comment: body.comment,
+	            metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+	          });
+	          return { updatedReq, newAssigneeName };
+	        });
+      } catch (err) {
+        if (lockOwnership) {
+          try { await releaseTestEnvLock(lockOwnership); } catch {}
         }
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new HttpError(400, `assignee 解析失败: ${msg}`);
+        throw err;
       }
 
-      // --- Persist step transition ---
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: { currentStep: targetStep.name, assigneeId: newAssigneeId, rejectReason: null },
-      });
-      const newAssigneeName = await getAssigneeName(newAssigneeId);
-
-      await logTransition({
-        requirementId: params.id, fromStep: requirement.currentStep, toStep: targetStep.name,
-        action: 'advance', actorId: req.user!.id, actorName: req.user!.name,
-        actorRole: req.user!.internalRole ?? req.user!.role, comment: body.comment,
-        metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
-      });
+      const { updatedReq, newAssigneeName } = updated;
 
       res.json({
         success: true,
         data: {
-          requirementId: updated.id, fromStep: requirement.currentStep, toStep: targetStep.name,
+          requirementId: updatedReq.id, fromStep: requirement.currentStep, toStep: targetStep.name,
           toStepDisplayName: targetStep.displayName, newAssigneeId, newAssigneeName,
           isDone: targetStep.name === steps[steps.length - 1]?.name,
         },
