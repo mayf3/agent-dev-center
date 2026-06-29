@@ -45,11 +45,24 @@ router.get(
 
     // where is ALWAYS scoped to the authenticated user — no query param overrides this
     // The identity condition ANDs with the validated filters
+    const conditions: Prisma.RequirementWhereInput[] = [
+      { requesterId: actor.id },
+      ...filters,
+    ];
+
+    // Domain scope: AND with allowedDomainKeys so a domain-member user only
+    // sees requested-items that belong to their authorized domains.
+    if (!actor.crossDomainAccess) {
+      if (actor.allowedDomainKeys && actor.allowedDomainKeys.length > 0) {
+        conditions.push({ domainKey: { in: actor.allowedDomainKeys } });
+      } else {
+        // No domain bindings at all → fail-closed (no results)
+        conditions.push({ id: { in: [] } });
+      }
+    }
+
     const where: Prisma.RequirementWhereInput = {
-      AND: [
-        { requesterId: actor.id },
-        ...filters,
-      ],
+      AND: conditions,
     };
 
     const [requirements, total] = await prisma.$transaction([
