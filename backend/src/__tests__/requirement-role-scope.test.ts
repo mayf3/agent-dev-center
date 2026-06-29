@@ -67,8 +67,9 @@ function filterFixtures(where: any): typeof ALL {
 
 // ── Mocks ──
 
-const { mockFindMany, mockCount, mockJwtVerify, mockUserFindUnique } = vi.hoisted(() => ({
+const { mockFindMany, mockCount, mockJwtVerify, mockUserFindUnique, mockBindingFindMany } = vi.hoisted(() => ({
   mockFindMany: vi.fn(), mockCount: vi.fn(), mockJwtVerify: vi.fn(), mockUserFindUnique: vi.fn(),
+  mockBindingFindMany: vi.fn(),
 }));
 
 vi.mock('jsonwebtoken', () => ({ default: { verify: mockJwtVerify }, verify: mockJwtVerify }));
@@ -76,6 +77,8 @@ vi.mock('../lib/prisma.js', () => ({
   prisma: {
     requirement: { findMany: mockFindMany, count: mockCount },
     user: { findUnique: mockUserFindUnique },
+    domainRoleBinding: { findMany: mockBindingFindMany },
+    businessDomain: {},
     $transaction: vi.fn(async (qs: any[]) => Promise.all(qs.map((q: any) => {
       if (typeof q === 'object' && q !== null && (q.include !== undefined || q.select !== undefined || q.where !== undefined)) return mockFindMany();
       if (typeof q === 'function') return q();
@@ -114,6 +117,39 @@ function setupUser(overrides: Record<string, unknown> = {}) {
   mockUserFindUnique.mockResolvedValue({ id: USER_ID, name: 'Tester', email: 't@t.com', role: 'developer', internalRole: 'backend_developer', enabled: true, ...overrides });
 }
 
+/**
+ * Make domain scope return cross-domain access so legacy role tests
+ * are not affected by domain isolation.
+ * Sets both the user's roles array (so getPlatformRoles returns it)
+ * and the domain role binding mock (so the middleware finds the binding).
+ */
+function setupGlobalDomain(user: Record<string, unknown>) {
+  const role = user.role ?? 'developer';
+  const internalRole = user.internalRole;
+  let platformRole = 'adc:developer';
+  if (role === 'admin' || internalRole === 'cto') {
+    platformRole = 'adc:admin';
+  } else if (role === 'cto_agent') {
+    platformRole = 'adc:admin';
+  } else if (role === 'agent' || role === 'requester') {
+    platformRole = 'adc:viewer';
+  } else if (internalRole === 'qa' || internalRole === 'tester' || internalRole === 'security' || internalRole === 'ops') {
+    platformRole = `adc:${internalRole}`;
+  }
+  // Set the user's roles so getPlatformRoles returns the correct value
+  mockUserFindUnique.mockResolvedValue({
+    id: USER_ID, name: 'Tester', email: 't@t.com',
+    role: 'developer', internalRole: 'backend_developer',
+    roles: [platformRole],
+    enabled: true,
+    ...user,
+  });
+  // Make the binding always return a global binding for the platform role
+  mockBindingFindMany.mockResolvedValue([
+    { role: platformRole, domainKey: 'engineering', isDomainAdmin: false, isGlobal: true },
+  ]);
+}
+
 function smartMock() {
   mockFindMany.mockImplementation(async (args: any) => filterFixtures(args.where));
   mockCount.mockImplementation(async (args: any) => filterFixtures(args.where).length);
@@ -126,6 +162,7 @@ describe('roleAwareRequirementWhere — R1/R2/R3 evidence', () => {
   async function check(desc: string, user: Record<string, unknown>, expectR1: boolean, expectR2: boolean, expectR3: boolean) {
     setupJwt(USER_ID);
     setupUser(user);
+    setupGlobalDomain(user);
     const res = await get('/api/requirements/');
     expect(res.status).toBe(200);
     const ids = (res.body.data ?? []).map((r: any) => r.id);
@@ -207,6 +244,7 @@ describe('roleAwareRequirementWhere — R1/R2/R3 evidence', () => {
   it('14. corrupted + search → still EMPTY', async () => {
     setupJwt(USER_ID);
     setupUser({ role: 'corrupted_role' as any, internalRole: 'corrupted_internal' });
+    setupGlobalDomain({ role: 'corrupted_role' as any, internalRole: 'corrupted_internal' });
     const res = await get('/api/requirements/?search=keyword');
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(0);
@@ -216,6 +254,7 @@ describe('roleAwareRequirementWhere — R1/R2/R3 evidence', () => {
   it('15. corrupted + priority filter → still EMPTY', async () => {
     setupJwt(USER_ID);
     setupUser({ role: 'corrupted_role' as any, internalRole: 'corrupted_internal' });
+    setupGlobalDomain({ role: 'corrupted_role' as any, internalRole: 'corrupted_internal' });
     const res = await get('/api/requirements/?priority=P0');
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(0);
@@ -224,6 +263,7 @@ describe('roleAwareRequirementWhere — R1/R2/R3 evidence', () => {
   it('16. count and findMany use same where for corrupted', async () => {
     setupJwt(USER_ID);
     setupUser({ role: 'corrupted_role' as any, internalRole: 'corrupted_internal' });
+    setupGlobalDomain({ role: 'corrupted_role' as any, internalRole: 'corrupted_internal' });
     let findManyWhere: any = null;
     mockFindMany.mockImplementation(async (args: any) => { findManyWhere = args.where; return []; });
     mockCount.mockImplementation(async (args: any) => { expect(args.where).toEqual(findManyWhere); return 0; });
@@ -238,6 +278,7 @@ describe('roleAwareRequirementWhere — R1/R2/R3 evidence', () => {
   it('17. /mine still filters by assigneeId for corrupted', async () => {
     setupJwt(USER_ID);
     setupUser({ role: 'corrupted_role' as any, internalRole: 'corrupted_internal' });
+    setupGlobalDomain({ role: 'corrupted_role' as any, internalRole: 'corrupted_internal' });
     mockFindMany.mockImplementation(async (args: any) => {
       expect(args.where.assigneeId).toBe(USER_ID);
       return [];
@@ -250,6 +291,7 @@ describe('roleAwareRequirementWhere — R1/R2/R3 evidence', () => {
   it('18. /requested still filters by requesterId for corrupted', async () => {
     setupJwt(USER_ID);
     setupUser({ role: 'corrupted_role' as any, internalRole: 'corrupted_internal' });
+    setupGlobalDomain({ role: 'corrupted_role' as any, internalRole: 'corrupted_internal' });
     mockFindMany.mockImplementation(async (args: any) => {
       expect(args.where.AND[0].requesterId).toBe(USER_ID);
       return [];
