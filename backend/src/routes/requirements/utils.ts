@@ -208,9 +208,11 @@ function tryDomainCheck(user: Express.AuthUser, requirement: DomainCheckable): b
 export function roleAwareRequirementWhere(user: Express.AuthUser): Prisma.RequirementWhereInput {
   // ── Step 1: Domain scope gate ────────────────────────────────────
   const domainClause = buildDomainWhereClause(user);
-  if (domainClause && 'id' in domainClause && domainClause.id?.in?.length === 0) {
-    // Forced empty: no domains accessible
-    return domainClause;
+  if (domainClause && typeof domainClause === 'object' && 'id' in domainClause) {
+    const idFilter = (domainClause as any).id;
+    if (idFilter && typeof idFilter === 'object' && 'in' in idFilter && Array.isArray(idFilter.in) && idFilter.in.length === 0) {
+      return domainClause;
+    }
   }
 
   // ── Step 2: Build legacy role filter ─────────────────────────────
