@@ -15,7 +15,7 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { serializeRequirement } from '../../utils/status.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
 import { findOverdueRequirements, runOverdueCheck } from '../../utils/overdue-check.js';
-import { roleAwareRequirementWhere } from './utils.js';
+import { roleAwareRequirementWhere, assertDomainReadAccess } from './utils.js';
 
 export function registerCoreKanbanRoutes(router: import('express').Router): void {
 
@@ -26,7 +26,11 @@ router.get(
     const threshold = z.coerce.number().min(0).max(1).default(DEFAULT_SIMILARITY_THRESHOLD).parse(req.query.threshold);
     const normalizedInput = normalizeTitle(title);
 
+    const actor = req.user!;
+    const domainWhere = roleAwareRequirementWhere(actor);
+
     const allRequirements = await prisma.requirement.findMany({
+      where: domainWhere,
       select: { id: true, title: true, currentStep: true, priority: true, createdAt: true },
     });
 

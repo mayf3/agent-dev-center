@@ -26,6 +26,10 @@ declare global {
       role: string;
       internalRole?: InternalRole;
       roles?: string[];
+      // Domain scope (resolved at request time by domainScope middleware)
+      allowedDomainKeys?: string[];
+      adminDomainKeys?: string[];
+      crossDomainAccess?: boolean;
     }
   }
 }

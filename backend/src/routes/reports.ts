@@ -11,6 +11,7 @@ import { ReportType } from '@prisma/client';
 import { requireInternalRole } from '../middleware/internal-workflow.js';
 import { getPlatformRoles, hasPlatformRole, isPlatformAdmin } from '../lib/platform-roles.js';
 import { getWorkflowRawJson, parseSteps } from './requirements/workflow-helpers.js';
+import { assertDomainReadAccess } from './requirements/utils.js';
 import {
   submitReportSchema,
   listReportsSchema,
@@ -31,6 +32,32 @@ reportsRouter.use((req, _res, next) => {
   }
   next();
 });
+
+/**
+ * Load requirement by id and assert domain read access.
+ * Throws 404/403 if not found or domain-forbidden.
+ */
+async function assertRequirementDomainById(reqId: string, user: Express.AuthUser): Promise<void> {
+  const requirement = await prisma.requirement.findUnique({
+    where: { id: reqId },
+    select: { id: true, domainKey: true },
+  });
+  if (!requirement) throw new HttpError(404, '需求不存在');
+  assertDomainReadAccess(user, requirement);
+}
+
+/**
+ * Load the requirement linked to a report and assert domain read access.
+ */
+async function assertReportRequirementDomain(reportId: string, user: Express.AuthUser): Promise<{ requirementId: string }> {
+  const report = await prisma.requirementReport.findUnique({
+    where: { id: reportId },
+    select: { requirementId: true },
+  });
+  if (!report) throw new HttpError(404, '报告不存在');
+  await assertRequirementDomainById(report.requirementId, user);
+  return report;
+}
 
 /**
  * 报告类型 → 允许提交的角色/身份映射
@@ -171,6 +198,7 @@ reportsRouter.post(
       include: { assigneeUser: { select: { name: true, roles: true } } },
     });
     if (!requirement) throw new HttpError(404, '需求不存在');
+    assertDomainReadAccess(req.user!, requirement);
 
     // assigneeId 校验：非 assignee 不能提交报告（CTO 可以代操作）
     if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
@@ -265,6 +293,16 @@ reportsRouter.get(
       reportType: { in: ['DEV_SELF_CHECK', 'TEST_REPORT', 'SECURITY_REVIEW'] },
     };
 
+    // Domain scope filtering: restrict to user's allowed domains
+    if (actor.crossDomainAccess) {
+      // cross-domain admin sees all
+    } else if (actor.allowedDomainKeys && actor.allowedDomainKeys.length > 0) {
+      where.requirement = { domainKey: { in: actor.allowedDomainKeys } };
+    } else {
+      // No domain access → empty result
+      (where as any).id = { in: [] };
+    }
+
     const [reports, total] = await prisma.$transaction([
       prisma.requirementReport.findMany({
         where,
@@ -308,6 +346,7 @@ reportsRouter.get(
       where: { id: reqId },
     });
     if (!requirement) throw new HttpError(404, '需求不存在');
+    assertDomainReadAccess(req.user!, requirement);
 
     const where: Prisma.RequirementReportWhereInput = {
       requirementId: reqId,
@@ -381,8 +420,10 @@ reportsRouter.patch(
     if (body.status === 'rejected' || body.status === 'changes_requested') {
       const reqInfo = await prisma.requirement.findUnique({
         where: { id: report.requirementId },
-        select: { title: true, currentStep: true, workflowId: true, workflowSnapshot: true, assigneeId: true, assignee: true, workflow: { select: { steps: true } } },
+        select: { title: true, currentStep: true, workflowId: true, workflowSnapshot: true, assigneeId: true, assignee: true, domainKey: true, workflow: { select: { steps: true } } },
       });
+
+      if (reqInfo) assertDomainReadAccess(req.user!, reqInfo);
 
       if (reqInfo?.workflowId && reqInfo.currentStep) {
         void notifyEvent('report.rejected' as any, {
@@ -530,8 +571,9 @@ reportsRouter.patch(
     if (autoStatus === 'rejected') {
       const reqInfo = await prisma.requirement.findUnique({
         where: { id: report.requirementId },
-        select: { title: true, currentStep: true, workflowId: true, assigneeId: true, assignee: true },
+        select: { title: true, currentStep: true, workflowId: true, assigneeId: true, assignee: true, domainKey: true },
       });
+      if (reqInfo) assertDomainReadAccess(req.user!, reqInfo);
 
       if (reqInfo?.workflowId && reqInfo.currentStep) {
         void notifyEvent('report.rejected' as any, {
@@ -623,11 +665,12 @@ reportsRouter.patch(
     // 查需求的工作流当前步骤（snapshot-first）
     const requirement = await prisma.requirement.findUnique({
       where: { id: report.requirementId },
-      select: { id: true, currentStep: true, workflowSnapshot: true, workflow: { select: { steps: true } } },
+      select: { id: true, currentStep: true, workflowSnapshot: true, domainKey: true, workflow: { select: { steps: true } } },
     });
     if (!requirement?.currentStep) {
       throw new HttpError(403, '只有 CTO 可以审批报告');
     }
+    assertDomainReadAccess(req.user!, requirement);
     const rawJson = getWorkflowRawJson(requirement);
     if (!rawJson) {
       throw new HttpError(403, '只有 CTO 可以审批报告');
@@ -704,8 +747,9 @@ reportsRouter.patch(
     // 通知相关方
     const reqInfo = await prisma.requirement.findUnique({
       where: { id: params.id },
-      select: { title: true, requesterId: true, assigneeId: true, assignee: true, currentStep: true, workflowId: true, workflowSnapshot: true, workflow: { select: { steps: true } } },
+      select: { title: true, requesterId: true, assigneeId: true, assignee: true, currentStep: true, workflowId: true, workflowSnapshot: true, domainKey: true, workflow: { select: { steps: true } } },
     });
+    if (reqInfo) assertDomainReadAccess(req.user!, reqInfo);
     const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
     void notifyEvent(reportEvent as any, {
       id: params.id,
@@ -847,8 +891,9 @@ reportsRouter.get(
       if (report.requirementId !== req.params.id) {
         throw new HttpError(400, '报告与需求不匹配');
       }
-      const reqInfo = await prisma.requirement.findUnique({ where: { id: req.params.id }, select: { id: true } });
+      const reqInfo = await prisma.requirement.findUnique({ where: { id: req.params.id }, select: { id: true, domainKey: true } });
       if (!reqInfo) throw new HttpError(404, '需求不存在');
+      assertDomainReadAccess(req.user!, reqInfo);
     }
 
     res.json({ success: true, data: report });
@@ -869,6 +914,7 @@ reportsRouter.delete(
     });
     if (!report) throw new HttpError(404, '报告不存在');
     if (report.requirementId !== params.id) throw new HttpError(400, '报告与需求不匹配');
+    await assertRequirementDomainById(report.requirementId, req.user!);
 
     // 权限检查：仅提交者本人或 adc:admin
     const isOwner = report.submittedById === req.user!.id;

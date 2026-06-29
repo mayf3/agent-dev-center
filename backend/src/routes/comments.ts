@@ -3,31 +3,46 @@ import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { HttpError } from '../utils/http-error.js';
 import { authRequired } from '../middleware/auth.js';
+import { domainScope } from '../middleware/domain-scope.js';
+import { assertDomainReadAccess } from './requirements/utils.js';
 
 const router = Router();
+
+// All comment routes require authentication + domain scope
+router.use(authRequired);
+router.use(domainScope);
 
 function param(req: { params: Record<string, string | string[]> }, key: string): string {
   const v = req.params[key];
   return Array.isArray(v) ? v[0] : v;
 }
 
+/** Load requirement and check domain access. Returns the requirement. */
+async function requireAccessibleRequirement(id: string, user: Express.AuthUser): Promise<{ id: string; domainKey: string | null }> {
+  const requirement = await prisma.requirement.findUnique({
+    where: { id },
+    select: { id: true, domainKey: true },
+  });
+  if (!requirement) throw new HttpError(404, '需求不存在');
+  assertDomainReadAccess(user, requirement);
+  return requirement;
+}
+
 /**
  * GET /api/requirements/:id/comments
  * List comments for a requirement (paginated, threaded)
  */
-router.get('/:id/comments', authRequired, asyncHandler(async (req, res) => {
+router.get('/:id/comments', asyncHandler(async (req, res) => {
   const id = param(req, 'id');
+  await requireAccessibleRequirement(id, req.user!);
+
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
   const status = req.query.status as string | undefined;
 
-  const requirement = await prisma.requirement.findUnique({ where: { id } });
-  if (!requirement) throw new HttpError(404, '需求不存在');
-
   const where: Record<string, unknown> = { requirementId: id };
   if (status) where.status = status;
 
-  // Get top-level comments (no parentId) + count
   const [comments, total] = await Promise.all([
     prisma.requirementComment.findMany({
       where: { ...where, parentId: null },
@@ -57,8 +72,10 @@ router.get('/:id/comments', authRequired, asyncHandler(async (req, res) => {
  * POST /api/requirements/:id/comments
  * Add a comment to a requirement
  */
-router.post('/:id/comments', authRequired, asyncHandler(async (req, res) => {
+router.post('/:id/comments', asyncHandler(async (req, res) => {
   const id = param(req, 'id');
+  await requireAccessibleRequirement(id, req.user!);
+
   const userId = req.user!.id;
   const { content, parentId, type, mentions } = req.body as {
     content?: string;
@@ -68,9 +85,6 @@ router.post('/:id/comments', authRequired, asyncHandler(async (req, res) => {
   };
 
   if (!content || !content.trim()) throw new HttpError(400, '评论内容不能为空');
-
-  const requirement = await prisma.requirement.findUnique({ where: { id } });
-  if (!requirement) throw new HttpError(404, '需求不存在');
 
   // Validate parentId if provided
   if (parentId) {
@@ -101,20 +115,20 @@ router.post('/:id/comments', authRequired, asyncHandler(async (req, res) => {
  * PATCH /api/requirements/:id/comments/:commentId
  * Update comment status (resolve/archive)
  */
-router.patch('/:id/comments/:commentId', authRequired, asyncHandler(async (req, res) => {
+router.patch('/:id/comments/:commentId', asyncHandler(async (req, res) => {
   const id = param(req, 'id'); const commentId = param(req, 'commentId');
+  await requireAccessibleRequirement(id, req.user!);
+
   const { status, content } = req.body as { status?: string; content?: string };
   const userId = req.user!.id;
 
   const comment = await prisma.requirementComment.findUnique({ where: { id: commentId } });
   if (!comment || comment.requirementId !== id) throw new HttpError(404, '评论不存在');
 
-  // Only author or admin can edit content
   if (content !== undefined && comment.authorId !== userId && req.user!.role !== 'admin') {
     throw new HttpError(403, '只能编辑自己的评论');
   }
 
-  // Anyone authenticated can change status (resolve/archive)
   const validStatuses = ['open', 'resolved', 'archived'];
   if (status && !validStatuses.includes(status)) {
     throw new HttpError(400, `无效状态，允许: ${validStatuses.join(', ')}`);
@@ -138,8 +152,10 @@ router.patch('/:id/comments/:commentId', authRequired, asyncHandler(async (req, 
  * DELETE /api/requirements/:id/comments/:commentId
  * Soft delete (archive) a comment
  */
-router.delete('/:id/comments/:commentId', authRequired, asyncHandler(async (req, res) => {
+router.delete('/:id/comments/:commentId', asyncHandler(async (req, res) => {
   const id = param(req, 'id'); const commentId = param(req, 'commentId');
+  await requireAccessibleRequirement(id, req.user!);
+
   const userId = req.user!.id;
 
   const comment = await prisma.requirementComment.findUnique({ where: { id: commentId } });

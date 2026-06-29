@@ -17,6 +17,7 @@ import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { rejectStepSchema } from '../../schemas/workflow.js';
 import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
+import { assertDomainReadAccess } from './utils.js';
 import {
   getWorkflowRoutingContext,
   getCurrentStep,
@@ -49,6 +50,7 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         include: { workflow: true },
       });
       if (!requirement) throw new HttpError(404, '需求不存在');
+      assertDomainReadAccess(req.user!, requirement);
       if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
       if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
 
