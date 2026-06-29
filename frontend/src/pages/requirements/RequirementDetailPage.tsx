@@ -275,6 +275,11 @@ export function RequirementDetailPage() {
             <Descriptions.Item label="类型"><TypeTag type={requirement.type} /></Descriptions.Item>
             <Descriptions.Item label="状态"><StatusTag status={requirement.status} /></Descriptions.Item>
             <Descriptions.Item label="提交者">{requirement.requester}</Descriptions.Item>
+            <Descriptions.Item label="所属领域">
+              {requirement.domainKey
+                ? <AntTag color="blue">{requirement.domainKey}</AntTag>
+                : <Typography.Text type="secondary">未分类</Typography.Text>}
+            </Descriptions.Item>
             <Descriptions.Item label="业务部门">{requirement.department}</Descriptions.Item>
             <Descriptions.Item label="标签">
               {requirement.tags && requirement.tags.length > 0
