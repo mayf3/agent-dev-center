@@ -99,25 +99,21 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
           const allText = Array.isArray(items) ? items.join(' ') : '';
           const issues: string[] = [];
 
-          // 通用校验（所有报告都执行）
-          if (!items || !Array.isArray(items) || items.length < 8) {
-            issues.push(`报告条目不足（${Array.isArray(items) ? items.length : 0}/8）`);
-          }
-          if (allText.length + summary.length < 800) issues.push('报告总字数不足 800');
-          const codeRefs = Array.isArray(items) ? items.filter((i: unknown) => typeof i === 'string' && i.includes('[代码引用]')).length : 0;
-          if (codeRefs < 2) issues.push(`代码引用不足（${codeRefs}/2）`);
-          if (!allText.includes('gitHash=')) issues.push('缺少 gitHash 元数据');
-          if (!allText.includes('分支=')) issues.push('缺少分支元数据');
-          if (!allText.includes('workspace/project/')) issues.push('缺少仓库路径');
-
-          // Grandfather clause: 门禁上线前的报告跳过新关键词校验
+          // Grandfather clause: 门禁上线前的报告跳过所有校验
           const isLegacy = selfCheckReport.createdAt < QUALITY_GATE_DEPLOYED_AT;
           if (isLegacy) {
-            // 存量报告 — 跳过关键词校验，只保留基础结构校验
-            // 日志记录但不输出到 issues
-            console.log(`[Grandfather] 存量报告 ${selfCheckReport.id} 跳过关键词校验（提交于 ${selfCheckReport.createdAt.toISOString()}）`);
+            console.log(`[Grandfather] 存量报告 ${selfCheckReport.id} 跳过所有门禁检查（提交于 ${selfCheckReport.createdAt.toISOString()}）`);
           } else {
-            // 新报告 — 完整门禁校验
+            // 门禁上线后的报告执行完整校验
+            if (!items || !Array.isArray(items) || items.length < 8) {
+              issues.push(`报告条目不足（${Array.isArray(items) ? items.length : 0}/8）`);
+            }
+            if (allText.length + summary.length < 800) issues.push('报告总字数不足 800');
+            const codeRefs = Array.isArray(items) ? items.filter((i: unknown) => typeof i === 'string' && i.includes('[代码引用]')).length : 0;
+            if (codeRefs < 2) issues.push(`代码引用不足（${codeRefs}/2）`);
+            if (!allText.includes('gitHash=')) issues.push('缺少 gitHash 元数据');
+            if (!allText.includes('分支=')) issues.push('缺少分支元数据');
+            if (!allText.includes('workspace/project/')) issues.push('缺少仓库路径');
             if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[正向测试]'))) issues.push('缺少正向测试');
             if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[反向测试]'))) issues.push('缺少反向测试');
             if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[边界测试]'))) issues.push('缺少边界测试');
