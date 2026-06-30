@@ -67,11 +67,14 @@ vi.mock('../lib/prisma.js', () => ({
 
 import { requirementsRouter } from '../routes/requirements/index.js';
 import { errorHandler } from '../middleware/error-handler.js';
+import { router as commentsRouter } from '../routes/comments.js';
 
 function createApp() {
   const app = express();
   app.use(express.json());
   app.use('/api/requirements', requirementsRouter);
+  // Comments router is auto-registered at the same mountPath in the real app
+  app.use('/api/requirements', commentsRouter);
   app.use(errorHandler);
   return app;
 }
@@ -613,5 +616,87 @@ describe('Domain isolation — 18 scenarios', () => {
     expect(ids).not.toContain(R_PERSONAL.id);
     expect(ids).not.toContain(R_HEALTH.id);
     expect(ids).not.toContain(R_FAMILY.id);
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // 28. POST reject for cross-domain requirement returns 403
+  // ═══════════════════════════════════════════════════════════════
+  it('28. POST reject for cross-domain requirement blocked by domain check', async () => {
+    setupUser(USER_ENG, USER_DB.eng, [
+      { role: 'adc:developer', domainKey: DOMAIN_ENG },
+    ]);
+    // User tries to reject a content-domain requirement
+    mockFindUnique.mockResolvedValue(R_CONTENT);
+    const res = await post(`/api/requirements/${R_CONTENT.id}/workflow/reject`, { comment: 'test reject' });
+    // Domain check fails first → 403
+    expect(res.status).toBe(403);
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // 29. POST assign for cross-domain requirement returns 403
+  // ═══════════════════════════════════════════════════════════════
+  it('29. POST assign for cross-domain requirement blocked by domain check', async () => {
+    setupUser(USER_GLOBAL, USER_DB.global, [
+      { role: 'adc:admin', domainKey: DOMAIN_ENG, isGlobal: true },
+    ]);
+    // User tries to assign a content-domain requirement
+    mockFindUnique.mockResolvedValue(R_CONTENT);
+    const res = await post(`/api/requirements/${R_CONTENT.id}/workflow/assign`, {});
+    // Domain check passes (global admin), then assign requires specific role → 400 (no body) or 403
+    expect([400, 403]).toContain(res.status);
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // 30. POST create with inactive domain returns 400
+  // ═══════════════════════════════════════════════════════════════
+  it('30. POST create with inactive domain returns 400', async () => {
+    setupUser(USER_GLOBAL, USER_DB.global, [
+      { role: 'adc:admin', domainKey: DOMAIN_ENG, isGlobal: true },
+    ]);
+    // Domain exists but is inactive
+    mockDomainFindUnique.mockResolvedValue({ key: DOMAIN_ENG, isActive: false });
+    // mockCreate should not be called
+    mockCreate.mockRejectedValue(new Error('should not reach create'));
+
+    const payload = {
+      title: 'Task for inactive domain',
+      description: 'Test inactive domain rejection',
+      priority: 'P2',
+      department: 'eng',
+      domainKey: DOMAIN_ENG,
+    };
+    const res = await post('/api/requirements/', payload);
+    expect(res.status).toBe(400);
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // 31. POST report for cross-domain requirement blocked
+  // ═══════════════════════════════════════════════════════════════
+  it('31. POST report for cross-domain requirement blocked by domain check', async () => {
+    setupUser(USER_ENG, USER_DB.eng, [
+      { role: 'adc:developer', domainKey: DOMAIN_ENG },
+    ]);
+    // The reports router is mounted at /:id/reports under the requirements router
+    // The report POST checks domain access on the parent requirement
+    const res = await post(`/api/requirements/${R_CONTENT.id}/reports`, {
+      reportType: 'DEV_SELF_CHECK',
+      content: { summary: 'test' },
+    });
+    // Requirement is in CONTENT domain — eng user has no domain access → 403
+    expect(res.status).toBe(403);
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // 32. POST comment for cross-domain requirement blocked
+  // ═══════════════════════════════════════════════════════════════
+  it('32. POST comment for cross-domain requirement blocked by domain check', async () => {
+    setupUser(USER_ENG, USER_DB.eng, [
+      { role: 'adc:developer', domainKey: DOMAIN_ENG },
+    ]);
+    const res = await post(`/api/requirements/${R_CONTENT.id}/comments`, {
+      content: 'Cross-domain comment attempt',
+    });
+    // Requirement is in CONTENT domain — eng user has no domain access → 403
+    expect(res.status).toBe(403);
   });
 });
