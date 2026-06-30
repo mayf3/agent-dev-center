@@ -514,9 +514,9 @@ describe('Domain isolation — 18 scenarios', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // 23. POST create with X-Domain-Legacy defaults to engineering
+  // 23. POST create with explicit domainKey succeeds
   // ═══════════════════════════════════════════════════════════════
-  it('23. POST create with X-Domain-Legacy defaults to engineering', async () => {
+  it('23. POST create with explicit domainKey succeeds', async () => {
     setupUser(USER_ENG, USER_DB.eng, [
       { role: 'adc:developer', domainKey: DOMAIN_ENG },
     ]);
@@ -535,13 +535,14 @@ describe('Domain isolation — 18 scenarios', () => {
     });
 
     const payload = {
-      title: 'Legacy task without domain',
-      description: 'Test legacy create flow',
+      title: 'Task with domain',
+      description: 'Test standard create with domainKey',
       priority: 'P2',
       department: 'eng',
+      domainKey: DOMAIN_ENG,
     };
-    const res = await post('/api/requirements/', payload, { 'x-domain-legacy': 'true' });
-    // Should succeed (domainKey defaulted to engineering)
+    const res = await post('/api/requirements/', payload);
+    // Should succeed (domainKey provided)
     expect([200, 201]).toContain(res.status);
     expect(mockCreate).toHaveBeenCalled();
     const createArgs = mockCreate.mock.calls[0][0];

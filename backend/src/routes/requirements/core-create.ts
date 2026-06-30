@@ -79,15 +79,12 @@ router.post(
     }
 
     // Resolve domainKey:
-    // - Normal API consumers MUST provide domainKey explicitly.
-    // - Legacy callers (X-Domain-Legacy: true header) get the old default 'engineering'.
-    //   This compat path exists only for pre-existing automated callers that cannot
-    //   be updated immediately.  It will be removed in a future batch.
-    const isLegacy = req.headers['x-domain-legacy'] === 'true';
+    // ALL consumers MUST provide domainKey explicitly.
+    // The schema makes domainKey required; this fallback handles any edge case
+    // where schema validation passes but body.domainKey is falsy.
     const domainKey = (() => {
       if (body.domainKey) return body.domainKey;
-      if (isLegacy) return 'engineering';
-      throw new HttpError(400, 'domainKey is required.  Include X-Domain-Legacy: true header for legacy compat.');
+      throw new HttpError(400, 'domainKey is required');
     })();
 
     // Validate domain exists, is active, and user has access
