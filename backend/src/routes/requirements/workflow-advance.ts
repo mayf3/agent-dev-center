@@ -83,6 +83,10 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       }
 
       // ── DEV_SELF_CHECK 报告质量门禁（软模式） ──
+      // 2026-06-30: 新增 Grandfather clause — 在门禁上线前提交的报告跳过新关键词校验
+      // 原因: 门禁上线后 62 条存量报告缺少 [正向测试]/[反向测试]/[边界测试] 关键词而全部卡死
+      // 门禁上线时间: commit d3dcfb2 ~2026-06-29
+      const QUALITY_GATE_DEPLOYED_AT = new Date('2026-06-29T00:00:00.000Z');
       if (currentStep.name === 'dev_self_check') {
         const selfCheckReport = await prisma.requirementReport.findFirst({
           where: { requirementId: params.id, reportType: 'DEV_SELF_CHECK', status: { in: ['pending', 'approved'] } },
@@ -92,20 +96,33 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
           const c = selfCheckReport.content as Record<string, unknown>;
           const items = c.items;
           const summary = (c.summary?.toString() ?? '');
+          const allText = Array.isArray(items) ? items.join(' ') : '';
           const issues: string[] = [];
+
+          // 通用校验（所有报告都执行）
           if (!items || !Array.isArray(items) || items.length < 8) {
             issues.push(`报告条目不足（${Array.isArray(items) ? items.length : 0}/8）`);
           }
-          const allText = Array.isArray(items) ? items.join(' ') : '';
           if (allText.length + summary.length < 800) issues.push('报告总字数不足 800');
           const codeRefs = Array.isArray(items) ? items.filter((i: unknown) => typeof i === 'string' && i.includes('[代码引用]')).length : 0;
           if (codeRefs < 2) issues.push(`代码引用不足（${codeRefs}/2）`);
-          if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[正向测试]'))) issues.push('缺少正向测试');
-          if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[反向测试]'))) issues.push('缺少反向测试');
-          if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[边界测试]'))) issues.push('缺少边界测试');
           if (!allText.includes('gitHash=')) issues.push('缺少 gitHash 元数据');
           if (!allText.includes('分支=')) issues.push('缺少分支元数据');
           if (!allText.includes('workspace/project/')) issues.push('缺少仓库路径');
+
+          // Grandfather clause: 门禁上线前的报告跳过新关键词校验
+          const isLegacy = selfCheckReport.createdAt < QUALITY_GATE_DEPLOYED_AT;
+          if (isLegacy) {
+            // 存量报告 — 跳过关键词校验，只保留基础结构校验
+            // 日志记录但不输出到 issues
+            console.log(`[Grandfather] 存量报告 ${selfCheckReport.id} 跳过关键词校验（提交于 ${selfCheckReport.createdAt.toISOString()}）`);
+          } else {
+            // 新报告 — 完整门禁校验
+            if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[正向测试]'))) issues.push('缺少正向测试');
+            if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[反向测试]'))) issues.push('缺少反向测试');
+            if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[边界测试]'))) issues.push('缺少边界测试');
+          }
+
           if (issues.length > 0) throw new HttpError(400, `DEV_SELF_CHECK 报告质量门禁：\n${issues.join('\n')}`);
         }
       }
