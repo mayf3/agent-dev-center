@@ -11,6 +11,7 @@ import { ReportType } from '@prisma/client';
 import { requireInternalRole } from '../middleware/internal-workflow.js';
 import { getPlatformRoles, hasPlatformRole, isPlatformAdmin } from '../lib/platform-roles.js';
 import { getWorkflowRawJson, parseSteps } from './requirements/workflow-helpers.js';
+import { casUpdateRequirement, txCreateTransition, txReadRequirement } from './requirements/workflow-cas-helper.js';
 import {
   submitReportSchema,
   listReportsSchema,
@@ -418,25 +419,39 @@ reportsRouter.patch(
             ? targetStep
             : currentIdx > 0 ? steps[currentIdx - 1].name : targetStep;
 
-          if (actualTarget !== reqInfo.currentStep) {
-            await prisma.requirement.update({
-              where: { id: report.requirementId },
-              data: { currentStep: actualTarget },
-            });
+	          if (actualTarget !== reqInfo.currentStep) {
+	            // Resolve target step assignee for consistent rollback
+	            // If resolution fails, the whole CAS transaction rolls back (no stale assignee leak)
+	            let targetAssigneeId: string | null = null;
+	            let targetAssigneeName: string | null = null;
+	            const targetStepDef = steps.find((s: any) => s.name === actualTarget);
+	            if (targetStepDef?.role) {
+	              targetAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
+	              if (targetAssigneeId) {
+	                targetAssigneeName = await getAssigneeName(targetAssigneeId);
+	              }
+	            }
 
-            await prisma.workflowTransition.create({
-              data: {
-                requirement: { connect: { id: report.requirementId } },
-                fromStep: reqInfo.currentStep,
-                toStep: actualTarget,
-                action: 'reject',
-                actorId: req.user!.id,
-                actorName: req.user!.name,
-                actorRole: 'qa',
-                comment: body.reviewComment || `QA 驳回 ${report.reportType} 报告，自动退回`,
-              },
-            });
-          }
+	            // CAS transaction: requirement update + transition atomic
+	            await prisma.$transaction(async (tx) => {
+	              const currentReq = await txReadRequirement(tx as any, report.requirementId);
+	              await casUpdateRequirement(tx as any, report.requirementId, currentReq.stateVersion ?? 0, {
+	                currentStep: actualTarget,
+	                assigneeId: targetAssigneeId,
+	                assignee: targetAssigneeName,
+	              });
+	              await txCreateTransition(tx as any, {
+	                requirement: { connect: { id: report.requirementId } },
+	                fromStep: reqInfo.currentStep ?? actualTarget,
+	                toStep: actualTarget,
+	                action: 'reject',
+	                actorId: req.user!.id,
+	                actorName: req.user!.name,
+	                actorRole: 'qa',
+	                comment: body.reviewComment || `QA 驳回 ${report.reportType} 报告，自动退回`,
+	              } as Prisma.WorkflowTransitionCreateInput);
+	            });
+	          }
         }
       }
     }
@@ -569,24 +584,37 @@ reportsRouter.patch(
             ? targetStep
             : currentIdx > 0 ? steps[currentIdx - 1]?.name ?? targetStep : targetStep;
 
-          if (actualTarget !== reqInfo.currentStep) {
-            await prisma.requirement.update({
-              where: { id: params.id },
-              data: { currentStep: actualTarget },
-            });
+	          if (actualTarget !== reqInfo.currentStep) {
+	            // Resolve target step assignee
+	            let targetAssigneeId: string | null = null;
+	            let targetAssigneeName: string | null = null;
+	            const targetStepDef = steps.find((s: any) => s.name === actualTarget);
+	            if (targetStepDef?.role) {
+	              targetAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
+	              if (targetAssigneeId) {
+	                targetAssigneeName = await getAssigneeName(targetAssigneeId);
+	              }
+	            }
 
-            await prisma.workflowTransition.create({
-              data: {
-                requirement: { connect: { id: params.id } },
-                fromStep: reqInfo.currentStep,
-                toStep: actualTarget,
-                action: 'reject',
-                actorId: req.user!.id,
-                actorName: req.user!.name,
-                actorRole: 'qa',
-                comment: autoReason,
-              },
-            });
+	            // CAS transaction: requirement update + transition atomic
+	            await prisma.$transaction(async (tx) => {
+	              const currentReq = await txReadRequirement(tx as any, params.id!);
+	              await casUpdateRequirement(tx as any, params.id!, currentReq.stateVersion ?? 0, {
+	                currentStep: actualTarget,
+	                assigneeId: targetAssigneeId,
+	                assignee: targetAssigneeName,
+	              });
+	              await txCreateTransition(tx as any, {
+	                requirement: { connect: { id: params.id } },
+	                fromStep: reqInfo.currentStep ?? actualTarget,
+	                toStep: actualTarget,
+	                action: 'reject',
+	                actorId: req.user!.id,
+	                actorName: req.user!.name,
+	                actorRole: 'qa',
+	                comment: autoReason,
+	              } as Prisma.WorkflowTransitionCreateInput);
+	            });
           }
         }
       }
@@ -782,29 +810,44 @@ reportsRouter.patch(
             }
           }
 
-          await prisma.requirement.update({
-            where: { id: params.id },
-            data: {
-              currentStep: targetStep,
-              assignee: rollbackAssigneeName,
-              assigneeId: rollbackAssigneeId,
-            },
-          });
+	          await prisma.$transaction(async (tx) => {
+	            const currentReq = await txReadRequirement(tx as any, params.id!);
 
-          await prisma.requirementRevision.create({
-            data: {
-              requirementId: params.id,
-              title: reqInfo.title ?? '',
-              description: '',
-              priority: 'P2',
-              status: 'in_progress',
-              requester: '',
-              department: '',
-              assignee: rollbackAssigneeName,
-              revisionNote: `${reportType} 报告被打回，步骤回退至 ${targetStep}，assignee 回退为 ${rollbackAssigneeName ?? '原开发者'}`,
-              operatorId: req.user!.id,
-            },
-          });
+	            // CAS update: currentStep + assigneeId + assignee
+	            await casUpdateRequirement(tx as any, params.id!, currentReq.stateVersion ?? 0, {
+	              currentStep: targetStep,
+	              assigneeId: rollbackAssigneeId,
+	              assignee: rollbackAssigneeName,
+	            });
+
+	            // Create transition atomically
+	            await txCreateTransition(tx as any, {
+	              requirement: { connect: { id: params.id! } },
+	              fromStep: reqInfo.currentStep ?? targetStep,
+	              toStep: targetStep,
+	              action: 'reject',
+	              actorId: req.user!.id,
+	              actorName: req.user!.name,
+	              actorRole: 'cto',
+	              comment: `${reportType} 报告被打回，步骤回退至 ${targetStep}`,
+	            } as Prisma.WorkflowTransitionCreateInput);
+
+	            // Revision (also in same transaction — consistent with new state)
+	            await tx.requirementRevision.create({
+	              data: {
+	                requirementId: params.id!,
+	                title: reqInfo.title ?? '',
+	                description: '',
+	                priority: 'P2',
+	                status: 'in_progress',
+	                requester: '',
+	                department: '',
+	                assignee: rollbackAssigneeName,
+	                revisionNote: `${reportType} 报告被打回，步骤回退至 ${targetStep}，assignee 回退为 ${rollbackAssigneeName ?? '原开发者'}`,
+	                operatorId: req.user!.id,
+	              },
+	            });
+	          });
 
           void notifyEvent('requirement.step_changed' as any, {
             id: params.id,

@@ -27,29 +27,57 @@ const BACKFILL_USER_ID = '99999999-9999-9999-9999-999999999991';
 // ── Hoisted mocks (aligned with production Prisma surface) ────
 
 const {
-  mockFindUnique, mockUpdate, mockTransitionCreate,
+  mockFindUnique, mockUpdate, mockUpdateMany, mockTransitionCreate,
   mockFindFirst, mockUserFindUnique,
-  mockLockFindUnique, mockLockDeleteMany,
+  mockLockFindUnique, mockLockDeleteMany, mockTx,
 } = vi.hoisted(() => ({
   mockFindUnique: vi.fn(),
   mockUpdate: vi.fn(),
+  mockUpdateMany: vi.fn(),
   mockTransitionCreate: vi.fn(),
   mockFindFirst: vi.fn(),
   mockUserFindUnique: vi.fn(),
   mockLockFindUnique: vi.fn(),
   mockLockDeleteMany: vi.fn(),
+  mockTx: vi.fn(),
 }));
 
-vi.mock('../lib/prisma.js', () => ({
-  prisma: {
-    requirement: { findUnique: mockFindUnique, update: mockUpdate },
-    user: { findUnique: mockUserFindUnique, findFirst: mockFindFirst },
-    workflowTransition: { create: mockTransitionCreate },
-    notification: { create: vi.fn().mockResolvedValue({}) },
-    workflowTemplate: { findFirst: vi.fn() },
-    testEnvLock: { findUnique: mockLockFindUnique, deleteMany: mockLockDeleteMany },
-  },
-}));
+vi.mock('../lib/prisma.js', () => {
+  // Build a $transaction mock that forwards to a fake tx object.
+  // The tx.requirement.updateMany also delegates to mockUpdate to keep
+  // backward compatibility with existing test assertions.
+  const makeTx = () => {
+    const txUpdateMany = vi.fn((args: any) => {
+      // Forward to both updateMany (new CAS) and update (legacy assertions)
+      mockUpdateMany(args);
+      mockUpdate({ where: args.where, data: args.data });
+      return { count: 1 };
+    });
+    return {
+      requirement: { findUnique: mockFindUnique, updateMany: txUpdateMany },
+      workflowTransition: { create: mockTransitionCreate },
+      testEnvLock: { findUnique: mockLockFindUnique, deleteMany: mockLockDeleteMany },
+      notification: { create: vi.fn().mockResolvedValue({}) },
+      requirementRevision: { create: vi.fn().mockResolvedValue({}) },
+    };
+  };
+
+  const mockTransaction = vi.fn((cb: (tx: any) => any) => cb(makeTx()));
+
+  return {
+    prisma: {
+      $transaction: mockTransaction,
+      $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+      requirement: { findUnique: mockFindUnique, update: mockUpdate, updateMany: mockUpdateMany },
+      user: { findUnique: mockUserFindUnique, findFirst: mockFindFirst },
+      workflowTransition: { create: mockTransitionCreate },
+      notification: { create: vi.fn().mockResolvedValue({}) },
+      workflowTemplate: { findFirst: vi.fn() },
+      testEnvLock: { findUnique: mockLockFindUnique, deleteMany: mockLockDeleteMany },
+      requirementRevision: { create: vi.fn().mockResolvedValue({}) },
+    },
+  };
+});
 
 // Partial mock: resolveAssigneeForStep is a spy forwarding to the actual resolver.
 // getAssigneeName is mocked so we can test user-not-found / error paths.

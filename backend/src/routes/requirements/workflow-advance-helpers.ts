@@ -90,14 +90,13 @@ export const TEST_ENV_LOCK_TTL_MS = 4 * 60 * 60 * 1000;
 /**
  * Acquire test environment lock when entering test_env_deploy.
  *
- * Atomic INSERT-or-conditional-UPDATE pattern:
- *   1. Try INSERT — if no existing row, this succeeds and we hold the lock.
- *   2. If INSERT fails (row already exists), try UPDATE with expiry check.
- *   3. If existing lock is still valid (within TTL), fail with 409.
- *   4. If existing lock is stale (past TTL), atomically take over.
+ * Atomic single-statement INSERT ... ON CONFLICT ... WHERE pattern:
+ *   - No existing row → INSERT returns 1 row (lock acquired)
+ *   - Existing row but stale (past TTL) → conditional UPDATE returns 1 row (taken over)
+ *   - Existing row still valid → WHERE clause fails, UPDATE returns 0 rows → 409 conflict
  *
- * Uses Prisma $transaction with NOW() check to ensure atomicity without
- * application-level TOCTOU.
+ * Uses raw PostgreSQL via $queryRawUnsafe to guarantee database-level atomicity.
+ * Two concurrent requests for an empty/stale lock: exactly one succeeds.
  */
 export async function acquireTestEnvLock(
   requirementId: string, title: string, branch: string | null,
@@ -107,45 +106,55 @@ export async function acquireTestEnvLock(
   const timestamp = now ?? new Date();
   const ttlDate = new Date(timestamp.getTime() - TEST_ENV_LOCK_TTL_MS);
 
-  return prisma.$transaction(async (tx: any) => {
-    // Read current lock state
-    const existing = await tx.testEnvLock.findUnique({ where: { id: 'singleton' } });
+  // Single atomic SQL: insert or take over if stale.
+  // SAFETY: All dynamic values ($1..$7) use independent positional parameter binding.
+  // The SQL structure (table names, column names) is entirely static.
+  // No user-controlled value enters the SQL string via concatenation.
+  // UUIDs, title, branch, timestamps are all parameterized.
+  const rows: Array<{ id: string; requirementId: string; lockToken: string }> = await prisma.$queryRawUnsafe(
+    `INSERT INTO "test_env_lock" ("id", "requirementId", "requirementTitle", "branch", "acquiredAt", "lockToken")
+     VALUES ($1, $2::uuid, $3, $4, $5, $6::uuid)
+     ON CONFLICT ("id") DO UPDATE
+       SET "requirementId" = EXCLUDED."requirementId",
+           "requirementTitle" = EXCLUDED."requirementTitle",
+           "branch" = EXCLUDED."branch",
+           "acquiredAt" = EXCLUDED."acquiredAt",
+           "lockToken" = EXCLUDED."lockToken"
+     WHERE "test_env_lock"."acquiredAt" < $7
+     RETURNING "id", "requirementId", "lockToken"`,
+    'singleton', requirementId, title, branch, timestamp, lockToken, ttlDate,
+  );
 
-    if (existing) {
-      // Lock exists; check if it's stale
-      if (existing.acquiredAt >= ttlDate) {
-        // Lock is still valid — fail
-        throw new HttpError(
-          409,
-          `测试环境已被占用：需求「${existing.requirementTitle || existing.requirementId}」（锁定于 ${existing.acquiredAt.toISOString().replace('T', ' ').slice(0, 16)}），请等待其部署完成后重试`,
-        );
-      }
-      // Stale lock — atomically take over
-      await tx.testEnvLock.update({
-        where: { id: 'singleton' },
-        data: { requirementId, requirementTitle: title, branch, lockToken, acquiredAt: timestamp },
-      });
-    } else {
-      // No existing lock — insert
-      await tx.testEnvLock.create({
-        data: { id: 'singleton', requirementId, requirementTitle: title, branch, lockToken, acquiredAt: timestamp },
-      });
-    }
+  if (rows.length === 0) {
+    // Lock exists and is still valid — read current details for a helpful error
+    const existing = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
+    throw new HttpError(
+      409,
+      `测试环境已被占用：需求「${existing?.requirementTitle || existing?.requirementId || '未知'}」（锁定于 ${existing?.acquiredAt?.toISOString().replace('T', ' ').slice(0, 16) || '未知'}），请等待其部署完成后重试`,
+    );
+  }
 
-    return { lockId: 'singleton', lockToken, acquiredForRequirement: requirementId };
-  });
+  return { lockId: rows[0].id, lockToken: rows[0].lockToken, acquiredForRequirement: rows[0].requirementId };
 }
 
 /**
  * Release test environment lock using atomic compare-and-delete.
  *
- * Only deletes if the row still carries OUR exact id + lockToken pair.
+ * Only deletes if the row still carries OUR exact id + requirementId + lockToken triplet.
  * count === 1 → released (our lock)
  * count === 0 → lock already gone or replaced (idempotent)
+ *
+ * The requirementId check prevents cross-generation release:
+ * - A holds L1 (token T1), B takes over with T2, A's delayed release cannot delete B's lock
+ *   because requirementId matches but T1 ≠ T2 → no rows match the triplet
  */
 export async function releaseTestEnvLock(ownership: TestEnvLockOwnership): Promise<boolean> {
   const { count } = await prisma.testEnvLock.deleteMany({
-    where: { id: ownership.lockId, lockToken: ownership.lockToken },
+    where: {
+      id: ownership.lockId,
+      requirementId: ownership.acquiredForRequirement,
+      lockToken: ownership.lockToken,
+    },
   });
   if (count === 0) {
     console.warn(
