@@ -1,16 +1,18 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
-RUN apk add --no-cache python3 make g++ openssl
 COPY package.json package-lock.json* ./
 COPY backend/package.json ./backend/package.json
 COPY frontend/package.json ./frontend/package.json
-RUN npm ci
+RUN apk add --no-cache python3 make g++ openssl \
+  && npm ci --no-audit --no-fund \
+  && apk del python3 make g++ openssl \
+  && rm -rf /root/.npm /tmp/*
 
 FROM deps AS build
 WORKDIR /app
 COPY backend ./backend
-RUN npm --workspace @agent-dev-center/backend run prisma:generate
-RUN npm --workspace @agent-dev-center/backend run build
+RUN npm --workspace @agent-dev-center/backend run prisma:generate \
+  && npm --workspace @agent-dev-center/backend run build
 
 FROM node:20-alpine AS production
 WORKDIR /app
@@ -19,15 +21,13 @@ RUN apk add --no-cache openssl tini \
   && addgroup -S app \
   && adduser -S app -G app
 
-COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/package-lock.json ./package-lock.json
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/backend/package.json ./backend/package.json
+COPY --from=deps /app/package.json /app/package-lock.json ./
+COPY --from=deps /app/backend/package.json ./backend/
+COPY --from=deps /app/frontend/package.json ./frontend/
+COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/backend/dist ./backend/dist
 COPY --from=build /app/backend/prisma ./backend/prisma
-COPY --from=build /app/frontend/package.json ./frontend/package.json
-RUN npm prune --omit=dev \
-  && npm cache clean --force \
+RUN npm prune --omit=dev --no-audit --no-fund \
   && chown -R app:app /app
 
 USER app

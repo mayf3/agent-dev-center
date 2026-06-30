@@ -196,9 +196,17 @@ reportsRouter.post(
     let report;
 
     if (existingReport) {
-      // 如果已存在且为 approved，拒绝提交（已通过的报告不能覆盖）
+      // 如果已存在且为 approved
       if (existingReport.status === 'approved') {
-        throw new HttpError(409, `该需求当前步骤已存在 ${body.reportType} 报告（状态：approved），无法重复提交`);
+        // DEV_SELF_CHECK 是自认证报告：自动驳回旧报告，允许重新提交
+        if (body.reportType === 'DEV_SELF_CHECK') {
+          await prisma.requirementReport.update({
+            where: { id: existingReport.id },
+            data: { status: 'rejected', reviewComment: '[auto] 自动驳回：开发者重新提交了新版自检报告' }
+          });
+        } else {
+          throw new HttpError(409, `该需求当前步骤已存在 ${body.reportType} 报告（状态：approved），无法重复提交`);
+        }
       }
 
       // pending / changes_requested / rejected → 更新内容重新提交（upsert）

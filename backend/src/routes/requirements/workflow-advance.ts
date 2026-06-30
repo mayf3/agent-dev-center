@@ -108,6 +108,16 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
           if (!allText.includes('workspace/project/')) issues.push('缺少仓库路径');
           if (issues.length > 0) throw new HttpError(400, `DEV_SELF_CHECK 报告质量门禁：\n${issues.join('\n')}`);
         }
+
+        // --- dev_self_check 字段校验：gitHash/branch/repoPath 必须填 ---
+        const devReq = await prisma.requirement.findUnique({
+          where: { id: params.id }, select: { gitHash: true, branch: true, repoPath: true },
+        });
+        const devErrors: string[] = [];
+        if (!devReq?.gitHash) devErrors.push('缺少 gitHash，请先提交代码并在需求上设置 gitHash');
+        if (!devReq?.branch) devErrors.push('缺少 branch，请指定代码分支名');
+        if (!devReq?.repoPath) devErrors.push('缺少 repoPath，请指定仓库路径');
+        if (devErrors.length > 0) throw new HttpError(400, `dev_self_check 验证失败：\n${devErrors.join('\n')}`);
       }
 
       // --- merge_to_main validation ---

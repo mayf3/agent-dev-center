@@ -19,6 +19,14 @@ backend/prisma/dev.db
 # Archive directory (soft-deleted items, not tracked in git)
 archive/
 baby-daily-print/
+baby-tracker/
+
+# Token cache
 .adc-token
+.adc-token-cache*
+.adc-token-cache.d/
+
+# Build trigger / internal state
+.buildtrigger
 .adc-token-cache*
 .adc-token-cache.d/
