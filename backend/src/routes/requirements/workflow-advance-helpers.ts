@@ -111,27 +111,26 @@ export function autoAdvanceTestEnvQueue(): void {
   void (async () => {
     try {
       const next = await prisma.requirement.findFirst({
-        where: { currentStep: 'test_env_deploy' },
+        where: { currentStep: 'pending_deploy' },
         orderBy: { updatedAt: 'asc' },
-        select: { id: true, title: true, branch: true, workflowSnapshot: true, workflow: { select: { steps: true } } },
+        select: { id: true, title: true, branch: true },
       });
       if (!next) return;
 
-      const rawJson = getWorkflowRawJson(next);
-      if (!rawJson) return;
-
-      const steps = parseSteps(rawJson);
-      const hasStep = steps.some(s => s.name === 'test_env_deploy');
-      if (!hasStep) return;
+      // Advance the task from pending_deploy to test_env_deploy
+      await prisma.requirement.update({
+        where: { id: next.id },
+        data: { currentStep: 'test_env_deploy', updatedAt: new Date() },
+      });
 
       await prisma.testEnvLock.upsert({
         where: { id: 'singleton' },
         create: { id: 'singleton', requirementId: next.id, requirementTitle: next.title, branch: next.branch },
         update: { requirementId: next.id, requirementTitle: next.title, branch: next.branch, acquiredAt: new Date() },
       });
-      console.log(`[test-env-lock] Lock released, auto-assigned to: ${next.id.slice(0, 8)} (${next.title?.slice(0, 30)})`);
+      console.log(`[test-env-lock] Queue auto-advance: ${next.id.slice(0, 8)} (${next.title?.slice(0, 30)}) → test_env_deploy`);
     } catch (err) {
-      console.error('[test-env-lock] Auto-advance failed:', err);
+      console.error('[test-env-lock] Auto-advance queue failed:', err);
     }
   })();
 }
