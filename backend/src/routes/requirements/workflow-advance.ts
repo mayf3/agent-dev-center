@@ -182,10 +182,18 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         } else {
           newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
         }
-	      } catch (err: unknown) {
-	        if (lockOwnership) {
-	          try { await releaseTestEnvLock(lockOwnership); } catch { /* ignore rollback error */ }
-	        }
+      } catch (err: unknown) {
+		        if (lockOwnership) {
+		          try { await releaseTestEnvLock(lockOwnership); } catch (releaseError) {
+		            console.error('[test-env-lock]', JSON.stringify({
+		              event: 'test_env_lock_release_failed',
+		              lockId: lockOwnership.lockId,
+		              requirementId: lockOwnership.acquiredForRequirement,
+		              lockToken: lockOwnership.lockToken,
+		              error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+		            }));
+		          }
+		        }
 	        const msg = err instanceof Error ? err.message : String(err);
 	        throw new HttpError(400, `assignee 解析失败: ${msg}`);
 	      }
@@ -208,12 +216,20 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
 	          });
 	          return { updatedReq, newAssigneeName };
 	        });
-      } catch (err) {
-        if (lockOwnership) {
-          try { await releaseTestEnvLock(lockOwnership); } catch {}
-        }
-        throw err;
-      }
+	      } catch (err) {
+	        if (lockOwnership) {
+	          try { await releaseTestEnvLock(lockOwnership); } catch (releaseError) {
+	            console.error('[test-env-lock]', JSON.stringify({
+	              event: 'test_env_lock_release_failed',
+	              lockId: lockOwnership.lockId,
+	              requirementId: lockOwnership.acquiredForRequirement,
+	              lockToken: lockOwnership.lockToken,
+	              error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+	            }));
+	          }
+	        }
+	        throw err;
+	      }
 
       const { updatedReq, newAssigneeName } = updated;
 
