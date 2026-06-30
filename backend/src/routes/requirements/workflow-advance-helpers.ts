@@ -13,6 +13,19 @@ import { HttpError } from '../../utils/http-error.js';
 import { getNextStep, parseSteps, getWorkflowRawJson, type WorkflowStep } from './workflow-helpers.js';
 
 /**
+ * Minimal database client interface for test-env lock operations.
+ * Defines only the methods that acquireTestEnvLock / releaseTestEnvLock need,
+ * so tests can inject independent PrismaClient instances.
+ */
+export interface LockDbClient {
+  $queryRawUnsafe<T = unknown>(query: string, ...values: unknown[]): Promise<T>;
+  testEnvLock: {
+    findUnique(args: { where: { id: string } }): Promise<Record<string, unknown> | null>;
+    deleteMany(args: { where: Record<string, unknown> }): Promise<{ count: number }>;
+  };
+}
+
+/**
  * 测试环境锁保护范围
  * 
  * 一个任务从部署测试环境（test_env_deploy）到最终上线完成（done），
@@ -100,10 +113,11 @@ export const TEST_ENV_LOCK_TTL_MS = 4 * 60 * 60 * 1000;
  */
 export async function acquireTestEnvLock(
   requirementId: string, title: string, branch: string | null,
-  now?: Date,
+  opts?: { db?: LockDbClient; now?: Date },
 ): Promise<TestEnvLockOwnership> {
+  const db = opts?.db ?? prisma;
   const lockToken = crypto.randomUUID();
-  const timestamp = now ?? new Date();
+  const timestamp = opts?.now ?? new Date();
   const ttlDate = new Date(timestamp.getTime() - TEST_ENV_LOCK_TTL_MS);
 
   // Single atomic SQL: insert or take over if stale.
@@ -111,7 +125,7 @@ export async function acquireTestEnvLock(
   // The SQL structure (table names, column names) is entirely static.
   // No user-controlled value enters the SQL string via concatenation.
   // UUIDs, title, branch, timestamps are all parameterized.
-  const rows: Array<{ id: string; requirementId: string; lockToken: string }> = await prisma.$queryRawUnsafe(
+  const rows: Array<{ id: string; requirementId: string; lockToken: string }> = await db.$queryRawUnsafe(
     `INSERT INTO "test_env_lock" ("id", "requirementId", "requirementTitle", "branch", "acquiredAt", "lockToken")
      VALUES ($1, $2::uuid, $3, $4, $5, $6::uuid)
      ON CONFLICT ("id") DO UPDATE
@@ -127,10 +141,10 @@ export async function acquireTestEnvLock(
 
   if (rows.length === 0) {
     // Lock exists and is still valid — read current details for a helpful error
-    const existing = await prisma.testEnvLock.findUnique({ where: { id: 'singleton' } });
+    const existing = await db.testEnvLock.findUnique({ where: { id: 'singleton' } }) as Record<string, unknown> | null;
     throw new HttpError(
       409,
-      `测试环境已被占用：需求「${existing?.requirementTitle || existing?.requirementId || '未知'}」（锁定于 ${existing?.acquiredAt?.toISOString().replace('T', ' ').slice(0, 16) || '未知'}），请等待其部署完成后重试`,
+      `测试环境已被占用：需求「${(existing?.requirementTitle as string) || (existing?.requirementId as string) || '未知'}」（锁定于 ${String((existing?.acquiredAt as Date)?.toISOString()?.replace('T', ' ').slice(0, 16) || '未知')}），请等待其部署完成后重试`,
     );
   }
 
@@ -148,8 +162,12 @@ export async function acquireTestEnvLock(
  * - A holds L1 (token T1), B takes over with T2, A's delayed release cannot delete B's lock
  *   because requirementId matches but T1 ≠ T2 → no rows match the triplet
  */
-export async function releaseTestEnvLock(ownership: TestEnvLockOwnership): Promise<boolean> {
-  const { count } = await prisma.testEnvLock.deleteMany({
+export async function releaseTestEnvLock(
+  ownership: TestEnvLockOwnership,
+  opts?: { db?: LockDbClient },
+): Promise<boolean> {
+  const db = opts?.db ?? prisma;
+  const { count } = await db.testEnvLock.deleteMany({
     where: {
       id: ownership.lockId,
       requirementId: ownership.acquiredForRequirement,
