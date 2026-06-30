@@ -27,7 +27,7 @@ router.get(
     const view = requirementViewSchema.parse(req.query.view);
 
     const terminalSteps = ['done', 'abandoned', 'cancelled', 'rejected'];
-    const requesterSteps = ['draft', 'pm_review'];
+    const requesterSteps = ['draft'];
 
     const where: Prisma.RequirementWhereInput = {
       assigneeId: actor.id,
