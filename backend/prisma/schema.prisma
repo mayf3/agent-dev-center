@@ -43,6 +43,13 @@ model User {
   manager               User?                 @relation("UserManager", fields: [managerId], references: [id])
   directReports         User[]                @relation("UserManager")
   executionLeasesOwned  ExecutionLease[]      @relation("ExecutionLeaseOwner")
+  // 19e0e2bd: Agent fields migrated from MarketplaceAgent (additive, no breaking change)
+  agentDescription     String?
+  agentCapabilities    Json                   @default("[]") @map("agent_capabilities")
+  agentApiEndpoint     String?                @map("agent_api_endpoint")
+  agentToken           String?                @unique @map("agent_token")
+  openclawAgentId      String?                @map("openclaw_agent_id")
+  agentLastHeartbeat   DateTime?              @map("agent_last_heartbeat")
 
   @@index([lastLoginAt])
   @@map("users")
