@@ -48,6 +48,7 @@ ADC (SSO Provider)          LLM Todo (SP)           OpenClaw (SP)
 
 ```
 1. Agent → POST /api/auth/sso/agent-login
+   # token 为占位符示例
    Body: { agentId: "cto-agent", token: "0f4de5ae..." }
    
 2. ADC 验证 agent token（查 agent_access_tokens 或 legacy agents.json token）

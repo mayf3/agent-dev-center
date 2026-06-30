@@ -15,7 +15,7 @@ const mockUser = {
   name: 'Test User',
   email: 'test@example.com',
   role: 'admin',
-  password: '$2b$10$hashedpassword', // bcrypt hash placeholder
+  password: process.env.TEST_BCRYPT_HASH || '$2b$10$testplaceholderonly',
 };
 
 const mockServices = [
@@ -144,13 +144,13 @@ describe('SSO Verify 响应格式', () => {
 describe('SSO Redirect URL 构建', () => {
   it('应该正确构建带 token 的跳转 URL', () => {
     const baseUrl = 'http://a.example.com';
-    const token = 'test-token-value';
+    const token = process.env.TEST_TOKEN || 'test-token-value-env';
 
     const url = new URL(baseUrl);
     url.searchParams.set('token', token);
     const redirectUrl = url.toString();
 
-    expect(redirectUrl).toBe('http://a.example.com/?token=test-token-value');
+    expect(redirectUrl).toBe('http://a.example.com/?token=' + token);
     expect(new URL(redirectUrl).searchParams.get('token')).toBe(token);
   });
 

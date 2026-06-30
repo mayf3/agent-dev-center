@@ -11,6 +11,9 @@ import { env } from '../config/env.js';
 import { loginSchema, registerSchema, changePasswordSchema, adminResetPasswordSchema, batchRegisterSchema, forceChangePasswordSchema } from '../schemas/auth.js';
 import { UserRole, InternalRole } from '@prisma/client';
 
+// SSO 用户密码占位符 — 非真实密码，仅供标识 SSO 托管用户
+const SSO_MANAGED_PASSWORD = 'sso-managed';
+
 // 登录/注册速率限制：15分钟内最多50次请求
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -168,7 +171,7 @@ authRouter.post(
             data: {
               name: data.user?.name || email.split('@')[0],
               email,
-              password: 'sso-managed', // SSO 用户不需要本地密码
+              password: SSO_MANAGED_PASSWORD,
               role: (data.user?.role as any) || 'developer',
               mustChangePassword: false,
             },

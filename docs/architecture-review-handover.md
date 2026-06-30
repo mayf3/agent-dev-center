@@ -82,7 +82,7 @@ agent-dev-center/
 
 ### Nginx 反代
 - 配置文件: `/etc/nginx/sites-enabled/agent-dev-center`
-- 本地副本: `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/deliverables/nginx-full-config.conf`
+- 本地副本: `{home}/.openclaw/groups/workspace-oc_{uid}/deliverables/nginx-full-config.conf`
 - HTTPS 强制跳转, 自签名证书
 - 路由表:
   - `/` → frontend (静态文件)
@@ -94,7 +94,7 @@ agent-dev-center/
   - `/hr-admin/` → (port 4002, 无根路由)
 
 ### 部署流程
-- **deploy.sh**: `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy.sh`
+- **deploy.sh**: `{home}/.openclaw/groups/workspace-oc_{uid}/skills/itops-agent-deploy/scripts/deploy.sh`
   - 通过 SSH stdin 管道调用 deploy-agent API
   - deploy-agent.js 是服务器端 HTTP agent (port 9876)
   - 支持 build, migrate, rollback 等操作
@@ -191,8 +191,8 @@ agent-dev-center/
 ### 6.4 Docker 构建与部署流程
 - `backend/Dockerfile`
 - `docker-compose.yml`
-- Deploy script: `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy.sh`
-- deploy-agent.js: `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy-agent.js`
+- Deploy script: `{home}/.openclaw/groups/workspace-oc_{uid}/skills/itops-agent-deploy/scripts/deploy.sh`
+- deploy-agent.js: `{home}/.openclaw/groups/workspace-oc_{uid}/skills/itops-agent-deploy/scripts/deploy-agent.js`
 - 问题: build cache 导致 Prisma Engine 不一致, 无 CI, git remote 未配置
 
 ### 6.5 数据库安全性
@@ -236,17 +236,17 @@ agent-dev-center/
 |------|------|
 | `{home}/workspace/project/agent-dev-center/docker-compose.yml` | 容器编排 |
 | `{home}/workspace/project/agent-dev-center/backend/Dockerfile` | 后端 Dockerfile |
-| `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy.sh` | 部署脚本 v5 |
-| `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/skills/itops-agent-deploy/scripts/deploy-agent.js` | 部署助手 API |
-| `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/deliverables/nginx-full-config.conf` | Nginx 完整配置 |
-| `{home}/.openclaw/groups/workspace-oc_53a977b9dc9e50a350d95b70c6e4631d/memory/health-check-state.json` | 最近健康检查快照 |
+| `{home}/.openclaw/groups/workspace-oc_{uid}/skills/itops-agent-deploy/scripts/deploy.sh` | 部署脚本 v5 |
+| `{home}/.openclaw/groups/workspace-oc_{uid}/skills/itops-agent-deploy/scripts/deploy-agent.js` | 部署助手 API |
+| `{home}/.openclaw/groups/workspace-oc_{uid}/deliverables/nginx-full-config.conf` | Nginx 完整配置 |
+| `{home}/.openclaw/groups/workspace-oc_{uid}/memory/health-check-state.json` | 最近健康检查快照 |
 
 ### 配置与环境
 | 文件 | 说明 |
 |------|------|
-| `{home}/.openclaw/groups/workspace-oc_648db8f3df0ef0249b761ebb0b7a56ab/.env` | CTO 工作区凭据 (ADC EMAIL/PASS) |
+| `{home}/.openclaw/groups/workspace-oc_{uid}/.env` | CTO 工作区凭据 (ADC EMAIL/PASS) |
 | `{home}/.openclaw/cron/jobs.json` | 所有 Agent 的 cron 任务 |
-| `{home}/.openclaw/groups/workspace-oc_648db8f3df0ef0249b761ebb0b7a56ab/docs/team-members.md` | 团队 UUID / Session Key 映射 |
+| `{home}/.openclaw/groups/workspace-oc_{uid}/docs/team-members.md` | 团队 UUID / Session Key 映射 |
 
 ---
 

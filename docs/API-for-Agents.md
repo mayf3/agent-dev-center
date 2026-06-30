@@ -263,7 +263,7 @@ done (已完成)
 const axios = require('axios');
 
 const API_BASE = 'http://{your-server-ip}';
-let token = 'your-jwt-token';
+let token = 'YOUR_JWT_TOKEN';
 
 // 登录
 async function login(email, password) {
