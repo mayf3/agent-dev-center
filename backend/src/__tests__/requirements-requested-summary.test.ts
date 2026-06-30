@@ -19,12 +19,13 @@ const OTHER_USER_ID = '33333333-3333-3333-3333-333333333333';
 
 // ── Mocks (all hoisted, all defined before any real import) ───
 
-const { mockFindMany, mockCount, mockFindUnique, mockUserFindUnique, mockJwtVerify } = vi.hoisted(() => ({
+const { mockFindMany, mockCount, mockFindUnique, mockUserFindUnique, mockJwtVerify, mockBindingFindMany } = vi.hoisted(() => ({
   mockFindMany: vi.fn(),
   mockCount: vi.fn(),
   mockFindUnique: vi.fn(),
   mockUserFindUnique: vi.fn(),
   mockJwtVerify: vi.fn(),
+  mockBindingFindMany: vi.fn(),
 }));
 
 vi.mock('jsonwebtoken', () => ({
@@ -39,6 +40,7 @@ vi.mock('../lib/prisma.js', () => ({
     workflowTransition: { create: vi.fn() },
     notification: { create: vi.fn().mockResolvedValue({}) },
     workflowTemplate: { findFirst: vi.fn() },
+    domainRoleBinding: { findMany: mockBindingFindMany },
     $transaction: vi.fn(async (queries: any[]) => Promise.all(queries.map((q: any) => {
       if (typeof q === 'object' && q !== null && (q.include !== undefined || q.select !== undefined || q.where !== undefined)) {
         return mockFindMany();
@@ -134,8 +136,36 @@ function setupDefaultMock() {
   mockFindMany.mockReset();
   mockCount.mockReset();
   mockFindUnique.mockReset();
+  mockBindingFindMany.mockReset();
   mockFindMany.mockResolvedValue([]);
   mockCount.mockResolvedValue(0);
+  setupDefaultDomainBindings();
+}
+
+/**
+ * Set up domain role binding mock so the domainScope middleware resolves
+ * successfully.  Returns bindings matching the user's platform role:
+ *   - adc:developer → engineering (member)
+ *   - adc:admin     → engineering (admin, not global)
+ *   - adc:viewer    → engineering (member)
+ *
+ * Tests that need different domain scopes call this with custom bindings.
+ */
+function setupDefaultDomainBindings() {
+  mockBindingFindMany.mockImplementation(async (args: any) => {
+    const roleFilter: string[] = args?.where?.role?.in ?? [];
+    const results: Array<{ role: string; domainKey: string; isDomainAdmin: boolean; isGlobal: boolean }> = [];
+    if (roleFilter.includes('adc:developer')) {
+      results.push({ role: 'adc:developer', domainKey: 'engineering', isDomainAdmin: false, isGlobal: false });
+    }
+    if (roleFilter.includes('adc:admin')) {
+      results.push({ role: 'adc:admin', domainKey: 'engineering', isDomainAdmin: true, isGlobal: false });
+    }
+    if (roleFilter.includes('adc:viewer')) {
+      results.push({ role: 'adc:viewer', domainKey: 'engineering', isDomainAdmin: false, isGlobal: false });
+    }
+    return results;
+  });
 }
 
 // ── Helper: authorization header for authenticated requests ───
