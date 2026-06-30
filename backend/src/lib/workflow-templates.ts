@@ -115,6 +115,15 @@ const ARCH_REVIEW: StepDef = {
   autoAdvance: false,
 };
 
+/** 等待测试环境（排队队列 — 解决测试环境锁冲突） */
+const WAITING_TEST_ENV: StepDef = {
+  name: 'pending_deploy',
+  displayName: '等待测试环境',
+  role: 'qa',
+  requiredReports: [],
+  autoAdvance: false,
+};
+
 /** QA 预发布综合审查 */
 const QA_PRE_RELEASE: StepDef = {
   name: 'qa_pre_release',
@@ -125,6 +134,7 @@ const QA_PRE_RELEASE: StepDef = {
 };
 
 const STANDARD_DEV_MIDDLE_V4: StepDef[] = [
+  WAITING_TEST_ENV,
   { name: 'test_env_deploy', displayName: '部署测试环境', role: 'ops', requiredReports: ['DEV_SELF_CHECK'], autoAdvance: false, targetBranch: 'develop' },
   { name: 'testing',         displayName: '测试验证',       role: 'tester',  requiredReports: [],                    autoAdvance: false },
   { name: 'security_review', displayName: '安全审查',       role: 'security',requiredReports: [],                    autoAdvance: false },
