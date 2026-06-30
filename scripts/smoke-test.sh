@@ -109,7 +109,8 @@ print(json.dumps({
     'description': '临时测试需求，冒烟测试自动创建，测试完后自动删除',
     'type': 'INFRA',
     'priority': 'P3',
-    'department': 'engineering'
+    'department': 'engineering',
+    'domainKey': 'engineering'
 }))
 ")
   local create_resp
@@ -194,7 +195,8 @@ print(json.dumps({
     'description': '冒烟测试 Test 2',
     'type': 'INFRA',
     'priority': 'P3',
-    'department': 'engineering'
+    'department': 'engineering',
+    'domainKey': 'engineering'
 }))
 ")
   local create_resp
@@ -284,7 +286,8 @@ print(json.dumps({
     'description': '冒烟测试 Test 3',
     'type': 'INFRA',
     'priority': 'P3',
-    'department': 'engineering'
+    'department': 'engineering',
+    'domainKey': 'engineering'
 }))
 ")
   local create_resp
@@ -428,7 +431,8 @@ print(json.dumps({
     'description': '冒烟测试 Test 4',
     'type': 'INFRA',
     'priority': 'P3',
-    'department': 'engineering'
+    'department': 'engineering',
+    'domainKey': 'engineering'
 }))
 ")
   local create_resp
@@ -497,7 +501,8 @@ print(json.dumps({
     'description': '冒烟测试 Test 5',
     'type': 'INFRA',
     'priority': 'P3',
-    'department': 'engineering'
+    'department': 'engineering',
+    'domainKey': 'engineering'
 }))
 ")
   local create_resp

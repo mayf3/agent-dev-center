@@ -37,7 +37,7 @@ log "服务器: $HOST"
 
 # 创建测试需求
 TEST_REQ=$(api POST '/api/requirements' \
-  '{"title":"[test-drift] state drift test","description":"auto test","priority":"P2","type":"BUGFIX","department":"技术部"}')
+  '{"title":"[test-drift] state drift test","description":"auto test","priority":"P2","type":"BUGFIX","department":"技术部","domainKey":"engineering"}')
 TEST_ID=$(echo "$TEST_REQ" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
 [[ -z "$TEST_ID" ]] && { fail "创建测试需求失败"; exit 1; }
 pass "创建测试需求 $TEST_ID"
