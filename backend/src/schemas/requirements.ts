@@ -47,7 +47,7 @@ export const createRequirementSchema = z.object({
     dueDate: optionalDate,
     attachment: z.string().trim().url().optional().or(z.literal('').transform(() => undefined)),
     projectId: nullableUuid,
-    domainKey: z.string().trim().min(1).max(60).optional()
+    domainKey: z.string().trim().min(1).max(60)
   })
 });
 
