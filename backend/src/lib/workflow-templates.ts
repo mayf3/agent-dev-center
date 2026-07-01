@@ -119,7 +119,7 @@ const ARCH_REVIEW: StepDef = {
 const WAITING_TEST_ENV: StepDef = {
   name: 'pending_deploy',
   displayName: '等待测试环境',
-  role: 'qa',
+  role: 'ops',
   requiredReports: [],
   autoAdvance: false,
 };
