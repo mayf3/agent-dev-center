@@ -34,8 +34,11 @@ export function registerWorkflowSubmitRoutes(router: import('express').Router): 
         include: { workflow: true },
       });
       if (!requirement) throw new HttpError(404, '需求不存在');
-      if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
+      if (!requirement.workflow && !requirement.workflowSnapshot) {
+        throw new HttpError(400, '该需求未分配工作流');
+      }
       if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
+      if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
 
       // 只能在 draft 步骤提交
       if (requirement.currentStep !== 'draft') {
