@@ -34,6 +34,17 @@ router.get(
       currentStep: { notIn: [...terminalSteps, ...requesterSteps] },
     };
 
+    // Domain scope: AND with allowedDomainKeys so a domain-member user only
+    // sees mine-items that belong to their authorized domains.
+    if (!actor.crossDomainAccess) {
+      if (actor.allowedDomainKeys && actor.allowedDomainKeys.length > 0) {
+        where.domainKey = { in: actor.allowedDomainKeys };
+      } else {
+        // No domain bindings at all → fail-closed (no results)
+        where.id = { in: [] };
+      }
+    }
+
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50));
 

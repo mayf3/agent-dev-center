@@ -16,8 +16,9 @@ const CTO_USER_ID = '44444444-4444-4444-4444-444444444444';
 const ARCH_USER_ID = '55555555-5555-5555-5555-555555555555';
 const OPS_USER_ID = '66666666-6666-6666-6666-666666666666';
 
-const { mockFindMany, mockCount, mockJwtVerify, mockUserFindUnique } = vi.hoisted(() => ({
+const { mockFindMany, mockCount, mockJwtVerify, mockUserFindUnique, mockBindingFindMany } = vi.hoisted(() => ({
   mockFindMany: vi.fn(), mockCount: vi.fn(), mockJwtVerify: vi.fn(), mockUserFindUnique: vi.fn(),
+  mockBindingFindMany: vi.fn(),
 }));
 
 vi.mock('jsonwebtoken', () => ({ default: { verify: mockJwtVerify }, verify: mockJwtVerify }));
@@ -25,6 +26,8 @@ vi.mock('../lib/prisma.js', () => ({
   prisma: {
     requirement: { findMany: mockFindMany, count: mockCount },
     user: { findUnique: mockUserFindUnique },
+    domainRoleBinding: { findMany: mockBindingFindMany },
+    businessDomain: {},
     $transaction: vi.fn(async (qs: any[]) => Promise.all(qs.map((q: any) => {
       if (typeof q === 'object' && q !== null && (q.include !== undefined || q.select !== undefined || q.where !== undefined)) return mockFindMany();
       if (typeof q === 'function') return q();
@@ -35,6 +38,14 @@ vi.mock('../lib/prisma.js', () => ({
 
 import { requirementsRouter } from '../routes/requirements/index.js';
 import { errorHandler } from '../middleware/error-handler.js';
+
+// Global domain binding: return a global binding for any platform role
+function setupDomain() {
+  mockBindingFindMany.mockImplementation(async (args: any) => {
+    const roles = args?.where?.role?.in ?? [];
+    return roles.map((role: string) => ({ role, domainKey: 'engineering', isDomainAdmin: false, isGlobal: true }));
+  });
+}
 
 const DEV_STEP = { name: 'dev_self_check', displayName: '开发自检', role: 'backend_developer', requiredReports: ['DEV_SELF_CHECK'], autoAdvance: false, assigneeMode: 'role-based' };
 const ARCH_STEP = { name: 'arch_design', displayName: '架构设计', role: 'architect', requiredReports: ['ARCH_DESIGN'], autoAdvance: false, assigneeMode: 'role-based' };
@@ -94,7 +105,7 @@ async function get(path: string): Promise<Res> {
 }
 
 describe('GET /mine — nextAction (round 2)', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => { vi.clearAllMocks(); setupDomain(); });
 
   // ── P0: Missing reports must be RECONCILE, not WAIT ──
 

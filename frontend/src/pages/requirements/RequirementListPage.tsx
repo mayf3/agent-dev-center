@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
 import type {
+  Domain,
   PaginatedResponse,
   Requirement,
   RequirementPriority,
@@ -43,6 +44,7 @@ interface FilterValues {
   type?: RequirementType;
   assignee?: string;
   department?: string;
+  domainKey?: string;
 }
 
 function taskProgress(requirement: Requirement) {
@@ -86,6 +88,7 @@ export function RequirementListPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
+  const [domains, setDomains] = useState<Domain[]>([]);
   const [isMobile, setIsMobile] = useState(false);
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
@@ -119,6 +122,12 @@ export function RequirementListPage() {
     setDepartments(Array.from(deps));
   }, [requirements]);
 
+  useEffect(() => {
+    api.get<{ data: Domain[] }>('/domains').then(({ data }) => {
+      setDomains(data.data || []);
+    }).catch(() => {});
+  }, []);
+
   const fetchRequirements = useCallback(async (
     page = pagination.current ?? 1,
     pageSize = pagination.pageSize ?? 10
@@ -134,6 +143,7 @@ export function RequirementListPage() {
         type: filters.type,
         assignee: filters.assignee,
         department: filters.department,
+        domainKey: filters.domainKey,
       };
       if (tabValue === 'my' && user) {
         params.assignee = user.name;
@@ -401,6 +411,12 @@ export function RequirementListPage() {
                 <Select
                   allowClear placeholder="负责人" style={{ width: 140 }}
                   options={users.filter(u => u.role !== 'requester').map(u => ({ value: u.name, label: u.name }))}
+                />
+              </Form.Item>
+              <Form.Item name="domainKey">
+                <Select
+                  allowClear placeholder="领域" style={{ width: 140 }}
+                  options={domains.filter(d => d.isActive).map(d => ({ value: d.key, label: d.name }))}
                 />
               </Form.Item>
             </>

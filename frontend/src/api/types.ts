@@ -73,6 +73,7 @@ export interface Requirement {
   dueDate?: string | null;
   attachment?: string | null;
   rejectReason?: string | null;
+  domainKey?: string | null;
   gitHash?: string | null;
   deployVersion?: string | null;
   projectId?: string | null;
@@ -80,6 +81,17 @@ export interface Requirement {
   createdAt: string;
   updatedAt: string;
   tasks?: Task[];
+}
+
+// ─── Domain / Folder ──────────────────────────────────────────────
+
+export interface Domain {
+  key: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  isSystem: boolean;
+  role: 'admin' | 'member';
 }
 
 // ─── Service Registry ─────────────────────────────────────────────

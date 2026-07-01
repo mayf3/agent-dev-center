@@ -9,6 +9,7 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { logTransition } from './workflow-helpers.js';
+import { assertDomainReadAccess } from './utils.js';
 
 export function registerWorkflowLifecycleRoutes(router: import('express').Router): void {
 
@@ -19,9 +20,10 @@ export function registerWorkflowLifecycleRoutes(router: import('express').Router
 
       const requirement = await prisma.requirement.findUnique({
         where: { id: params.id },
-        select: { id: true, currentStep: true, requesterId: true, assigneeId: true },
+        select: { id: true, currentStep: true, requesterId: true, assigneeId: true, domainKey: true },
       });
       if (!requirement) throw new HttpError(404, 'requirement not found');
+      assertDomainReadAccess(req.user!, requirement);
 
       const user = req.user!;
       const isOwner = requirement.requesterId === user.id;
@@ -73,9 +75,10 @@ export function registerWorkflowLifecycleRoutes(router: import('express').Router
 
       const requirement = await prisma.requirement.findUnique({
         where: { id: params.id },
-        select: { id: true, currentStep: true, requesterId: true, assigneeId: true },
+        select: { id: true, currentStep: true, requesterId: true, assigneeId: true, domainKey: true },
       });
       if (!requirement) throw new HttpError(404, 'requirement not found');
+      assertDomainReadAccess(req.user!, requirement);
       if (requirement.currentStep !== 'abandoned') {
         throw new HttpError(400, 'only abandoned requirements can be reactivated to draft');
       }

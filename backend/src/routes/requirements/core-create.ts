@@ -78,6 +78,27 @@ router.post(
       }
     }
 
+    // Resolve domainKey:
+    // ALL consumers MUST provide domainKey explicitly.
+    // The schema makes domainKey required; this fallback handles any edge case
+    // where schema validation passes but body.domainKey is falsy.
+    const domainKey = (() => {
+      if (body.domainKey) return body.domainKey;
+      throw new HttpError(400, 'domainKey is required');
+    })();
+
+    // Validate domain exists, is active, and user has access
+    const domain = await prisma.businessDomain.findUnique({
+      where: { key: domainKey },
+      select: { key: true, isActive: true },
+    });
+    if (!domain) throw new HttpError(400, `domain「${domainKey}」not found`);
+    if (!domain.isActive) throw new HttpError(400, `domain「${domainKey}」is inactive`);
+
+    const hasDomainAccess = actor.crossDomainAccess ||
+      (actor.allowedDomainKeys && actor.allowedDomainKeys.includes(domainKey));
+    if (!hasDomainAccess) throw new HttpError(403, `no access to domain「${domainKey}」`);
+
     const requirement = await prisma.requirement.create({
       data: {
         title: body.title, description: body.description, priority: body.priority,
@@ -87,7 +108,8 @@ router.post(
         assignee: createAssigneeName, assigneeId: createAssigneeId,
         dueDate: body.dueDate, attachment: body.attachment,
         projectId: body.projectId ?? null,
-        dependsOnIds: (body as any).dependsOnIds ?? []
+        dependsOnIds: (body as any).dependsOnIds ?? [],
+        domainKey,
       },
       include: requirementInclude
     });
