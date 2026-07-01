@@ -72,6 +72,11 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       let targetStepName: string;
       let targetStepDef: WorkflowStep | undefined;
 
+      // 测试环境锁保护范围：test_env_deploy → deploying
+      // 从保护范围内 reject 时，目标必须回到 pending_deploy（等锁排队），不允许跳回保护范围内任何步骤
+      const PROTECTED_STEPS = ['test_env_deploy', 'testing', 'security_review', 'qa_pre_release', 'cto_review', 'merge_to_main', 'deploying'];
+      const isFromProtected = PROTECTED_STEPS.includes(requirement.currentStep ?? '');
+
       if (body.targetStep) {
         const target = steps.find(s => s.name === body.targetStep);
         if (!target) {
@@ -81,6 +86,10 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         const targetIndex = steps.findIndex(s => s.name === body.targetStep);
         if (targetIndex >= currentIndex) {
           throw new HttpError(400, `回退目标步骤「${target.displayName}」必须在当前步骤「${currentStep.displayName}」之前`);
+        }
+        // 防御：从保护范围内 reject 时，禁止指定保护范围内的步骤为目标
+        if (isFromProtected && PROTECTED_STEPS.includes(target.name)) {
+          throw new HttpError(400, `从测试环境保护范围内 reject 时，目标必须回到「pending_deploy」排队等锁，不能直接跳回「${target.displayName}」`);
         }
         targetStepName = target.name;
         targetStepDef = target;
@@ -94,6 +103,15 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
           const prevStep = getPreviousStep(steps, requirement.currentStep);
           targetStepName = prevStep ? prevStep.name : steps[0]?.name ?? 'dev_self_check';
           targetStepDef = prevStep ?? steps[0];
+        }
+      }
+
+      // 从测试环境保护范围内 reject → 强制回到 pending_deploy 排队等锁
+      if (isFromProtected && targetStepName !== 'dev_self_check' && targetStepName !== 'draft') {
+        const pendingDeployStep = steps.find(s => s.name === 'pending_deploy');
+        if (pendingDeployStep) {
+          targetStepName = pendingDeployStep.name;
+          targetStepDef = pendingDeployStep;
         }
       }
 
