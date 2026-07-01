@@ -27,29 +27,57 @@ const BACKFILL_USER_ID = '99999999-9999-9999-9999-999999999991';
 // ── Hoisted mocks (aligned with production Prisma surface) ────
 
 const {
-  mockFindUnique, mockUpdate, mockTransitionCreate,
+  mockFindUnique, mockUpdate, mockUpdateMany, mockTransitionCreate,
   mockFindFirst, mockUserFindUnique,
-  mockLockFindUnique, mockLockDelete,
+  mockLockFindUnique, mockLockDeleteMany, mockTx,
 } = vi.hoisted(() => ({
   mockFindUnique: vi.fn(),
   mockUpdate: vi.fn(),
+  mockUpdateMany: vi.fn(),
   mockTransitionCreate: vi.fn(),
   mockFindFirst: vi.fn(),
   mockUserFindUnique: vi.fn(),
   mockLockFindUnique: vi.fn(),
-  mockLockDelete: vi.fn(),
+  mockLockDeleteMany: vi.fn(),
+  mockTx: vi.fn(),
 }));
 
-vi.mock('../lib/prisma.js', () => ({
-  prisma: {
-    requirement: { findUnique: mockFindUnique, update: mockUpdate },
-    user: { findUnique: mockUserFindUnique, findFirst: mockFindFirst },
-    workflowTransition: { create: mockTransitionCreate },
-    notification: { create: vi.fn().mockResolvedValue({}) },
-    workflowTemplate: { findFirst: vi.fn() },
-    testEnvLock: { findUnique: mockLockFindUnique, delete: mockLockDelete },
-  },
-}));
+vi.mock('../lib/prisma.js', () => {
+  // Build a $transaction mock that forwards to a fake tx object.
+  // The tx.requirement.updateMany also delegates to mockUpdate to keep
+  // backward compatibility with existing test assertions.
+  const makeTx = () => {
+    const txUpdateMany = vi.fn((args: any) => {
+      // Forward to both updateMany (new CAS) and update (legacy assertions)
+      mockUpdateMany(args);
+      mockUpdate({ where: args.where, data: args.data });
+      return { count: 1 };
+    });
+    return {
+      requirement: { findUnique: mockFindUnique, updateMany: txUpdateMany },
+      workflowTransition: { create: mockTransitionCreate },
+      testEnvLock: { findUnique: mockLockFindUnique, deleteMany: mockLockDeleteMany },
+      notification: { create: vi.fn().mockResolvedValue({}) },
+      requirementRevision: { create: vi.fn().mockResolvedValue({}) },
+    };
+  };
+
+  const mockTransaction = vi.fn((cb: (tx: any) => any) => cb(makeTx()));
+
+  return {
+    prisma: {
+      $transaction: mockTransaction,
+      $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+      requirement: { findUnique: mockFindUnique, update: mockUpdate, updateMany: mockUpdateMany },
+      user: { findUnique: mockUserFindUnique, findFirst: mockFindFirst },
+      workflowTransition: { create: mockTransitionCreate },
+      notification: { create: vi.fn().mockResolvedValue({}) },
+      workflowTemplate: { findFirst: vi.fn() },
+      testEnvLock: { findUnique: mockLockFindUnique, deleteMany: mockLockDeleteMany },
+      requirementRevision: { create: vi.fn().mockResolvedValue({}) },
+    },
+  };
+});
 
 // Partial mock: resolveAssigneeForStep is a spy forwarding to the actual resolver.
 // getAssigneeName is mocked so we can test user-not-found / error paths.
@@ -357,7 +385,7 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockTransitionCreate).not.toHaveBeenCalled();
     expect(mockLockFindUnique).not.toHaveBeenCalled();
-    expect(mockLockDelete).not.toHaveBeenCalled();
+    expect(mockLockDeleteMany).not.toHaveBeenCalled();
   });
 
   it('target role not in roleUserMap: 400, no writes', async () => {
@@ -375,7 +403,7 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockTransitionCreate).not.toHaveBeenCalled();
     expect(mockLockFindUnique).not.toHaveBeenCalled();
-    expect(mockLockDelete).not.toHaveBeenCalled();
+    expect(mockLockDeleteMany).not.toHaveBeenCalled();
   });
 
   it('resolver throws (no map): 400, no writes, stable error', async () => {
@@ -388,7 +416,7 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockTransitionCreate).not.toHaveBeenCalled();
     expect(mockLockFindUnique).not.toHaveBeenCalled();
-    expect(mockLockDelete).not.toHaveBeenCalled();
+    expect(mockLockDeleteMany).not.toHaveBeenCalled();
   });
 
   it('both snapshot + template have invalid map: 400, no writes', async () => {
@@ -404,7 +432,7 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockTransitionCreate).not.toHaveBeenCalled();
     expect(mockLockFindUnique).not.toHaveBeenCalled();
-    expect(mockLockDelete).not.toHaveBeenCalled();
+    expect(mockLockDeleteMany).not.toHaveBeenCalled();
   });
 
   // ── Fail-closed: mapped ID / user / name ────────────────────
@@ -423,7 +451,7 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockTransitionCreate).not.toHaveBeenCalled();
     expect(mockLockFindUnique).not.toHaveBeenCalled();
-    expect(mockLockDelete).not.toHaveBeenCalled();
+    expect(mockLockDeleteMany).not.toHaveBeenCalled();
   });
 
   it('mapped ID valid UUID but user not found: 400, no writes', async () => {
@@ -437,7 +465,7 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockTransitionCreate).not.toHaveBeenCalled();
     expect(mockLockFindUnique).not.toHaveBeenCalled();
-    expect(mockLockDelete).not.toHaveBeenCalled();
+    expect(mockLockDeleteMany).not.toHaveBeenCalled();
   });
 
   it('getAssigneeName throws: 400, no writes, stable error', async () => {
@@ -453,7 +481,7 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockTransitionCreate).not.toHaveBeenCalled();
     expect(mockLockFindUnique).not.toHaveBeenCalled();
-    expect(mockLockDelete).not.toHaveBeenCalled();
+    expect(mockLockDeleteMany).not.toHaveBeenCalled();
   });
 
   // ── roleUserMap 类型异常 → template fallback（表驱动） ─────
@@ -530,7 +558,7 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockTransitionCreate).not.toHaveBeenCalled();
     expect(mockLockFindUnique).not.toHaveBeenCalled();
-    expect(mockLockDelete).not.toHaveBeenCalled();
+    expect(mockLockDeleteMany).not.toHaveBeenCalled();
   });
 
   // ── Lock 失败路径：真实 protected→unprotected，assignee 失败 ─
@@ -550,7 +578,7 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     expect(res.status).toBe(400);
     expect((res.body as any)?.message).toContain('目标步骤负责人配置无效');
     expect(mockLockFindUnique).not.toHaveBeenCalled();
-    expect(mockLockDelete).not.toHaveBeenCalled();
+    expect(mockLockDeleteMany).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockTransitionCreate).not.toHaveBeenCalled();
   });
@@ -564,8 +592,8 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
       workflowSnapshot: SNAPSHOT_OBJECT_WITH_MAP,
     });
     mockFindUnique.mockResolvedValue(req);
-    mockLockFindUnique.mockResolvedValue({ id: 'singleton', requirementId: UUID });
-    mockLockDelete.mockResolvedValue({});
+    mockLockFindUnique.mockResolvedValue({ id: 'singleton', requirementId: UUID, lockToken: 'test-token' });
+    mockLockDeleteMany.mockResolvedValue({});
     mockUpdate.mockImplementation(async (args: any) => ({ ...req, ...args.data }));
     mockTransitionCreate.mockResolvedValue({});
     const app = createApp(QA_USER as unknown as Record<string, unknown>);
@@ -574,13 +602,13 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
 
     expect(res.status).toBe(200);
     expect(mockLockFindUnique).toHaveBeenCalledTimes(1);
-    expect(mockLockFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'singleton' } }));
-    expect(mockLockDelete).toHaveBeenCalledTimes(1);
-    expect(mockLockDelete).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'singleton' } }));
+    expect(mockLockFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'singleton' }) }));
+    expect(mockLockDeleteMany).toHaveBeenCalledTimes(1);
+    expect(mockLockDeleteMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'singleton' }) }));
 
     // 完整调用顺序：findUnique < delete < update < transition
     const findOrder = mockLockFindUnique.mock.invocationCallOrder[0];
-    const deleteOrder = mockLockDelete.mock.invocationCallOrder[0];
+    const deleteOrder = mockLockDeleteMany.mock.invocationCallOrder[0];
     const updateOrder = mockUpdate.mock.invocationCallOrder[0];
     const transitionOrder = mockTransitionCreate.mock.invocationCallOrder[0];
 
@@ -644,7 +672,7 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockTransitionCreate).not.toHaveBeenCalled();
     expect(mockLockFindUnique).not.toHaveBeenCalled();
-    expect(mockLockDelete).not.toHaveBeenCalled();
+    expect(mockLockDeleteMany).not.toHaveBeenCalled();
   });
 
   it('draft with null requesterId + no requester name: 400, no writes', async () => {
