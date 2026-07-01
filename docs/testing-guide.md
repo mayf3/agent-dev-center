@@ -54,7 +54,7 @@ npx playwright test e2e/token-login.spec.ts --reporter=line
 E2E_BASE_URL=http://{your-server-ip}    # 前端地址
 E2E_API_URL=http://{your-server-ip}/api # API 地址
 E2E_TEST_EMAIL=admin@agent.dev      # 测试账号
-E2E_TEST_PASSWORD=PASSWORD_REMOVED_BY_SECURITY_CLEANUP       # 测试密码
+E2E_TEST_PASSWORD=${ADC_ADMIN_PASSWORD}  # ⚠️ 测试密码，从环境变量读取
 ```
 
 ## 4. 前端部署前必查清单

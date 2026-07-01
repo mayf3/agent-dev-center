@@ -144,13 +144,13 @@ describe('SSO Verify 响应格式', () => {
 describe('SSO Redirect URL 构建', () => {
   it('应该正确构建带 token 的跳转 URL', () => {
     const baseUrl = 'http://a.example.com';
-    const token = 'TOKEN_REMOVED_BY_SECURITY_CLEANUP';
+    const token = 'placeholder-test-token';
 
     const url = new URL(baseUrl);
     url.searchParams.set('token', token);
     const redirectUrl = url.toString();
 
-    expect(redirectUrl).toBe('http://a.example.com/?token=TOKEN_REMOVED_BY_SECURITY_CLEANUP');
+    expect(redirectUrl).toBe('http://a.example.com/?token=placeholder-test-token');
     expect(new URL(redirectUrl).searchParams.get('token')).toBe(token);
   });
 

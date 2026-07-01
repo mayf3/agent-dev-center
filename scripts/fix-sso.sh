@@ -12,12 +12,16 @@ echo "============================================"
 # Step 1: 创建统一密钥文件
 echo ""
 echo "[1/4] 创建 /opt/.sso-env ..."
-cat > /opt/.sso-env << 'EOF'
+# 生成随机密钥，避免硬编码泄露
+JWT_SECRET=$(openssl rand -hex 32)
+SSO_JWT_SECRET=$JWT_SECRET
+cat > /opt/.sso-env << EOF
 # 统一 SSO/JWT 密钥 — 所有服务引用此文件
 # 禁止在 docker-compose.yml 中硬编码 JWT_SECRET
-# 上次更新: 2026-05-25
-JWT_SECRET=JWT_SECRET_REMOVED_BY_SECURITY_CLEANUP
-SSO_JWT_SECRET=JWT_SECRET_REMOVED_BY_SECURITY_CLEANUP
+# 上次更新: $(date +%F)
+# ⚠️ 此文件自动生成，每次运行 fix-sso.sh 会生成新密钥
+JWT_SECRET=$JWT_SECRET
+SSO_JWT_SECRET=$SSO_JWT_SECRET
 EOF
 chmod 600 /opt/.sso-env
 echo "  ✅ /opt/.sso-env 已创建"
@@ -122,6 +126,17 @@ for svc_port_path in "llm-todo:3458:/api/todos" "svc-okr:3461:/api/goals" "artic
     PASS=$((PASS+1))
   else
     echo "  ❌ $name (:$port$path) — $with_token"
+    FAIL=$((FAIL+1))
+  fi
+done
+
+echo ""
+echo "通过: $PASS  失败: $FAIL"
+if [ "$FAIL" -eq 0 ]; then
+  echo "🎉 所有服务 SSO 密钥修复完成！"
+else
+  echo "⚠️  有服务验证失败，请检查日志"
+fi
     FAIL=$((FAIL+1))
   fi
 done
