@@ -52,7 +52,7 @@ check_endpoint "API 健康   " "$ADC_HTTPS/api/health" "200" "健康检查端点
 
 # 3. API 登录端点（401=路由存在需认证）
 echo -n "  API 登录   ... "
-AUTH_STATUS=$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"email":"test@test.com","password":"wrong"}' --connect-timeout 5 --max-time 10 "$ADC_HTTPS/api/auth/login" 2>/dev/null || echo "failed")
+AUTH_STATUS=$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"email\":\"\$TEST_USER\",\"password\":\"\$TEST_PASS\"}" --connect-timeout 5 --max-time 10 "$ADC_HTTPS/api/auth/login" 2>/dev/null || echo "failed")
 if [[ "$AUTH_STATUS" == "401" || "$AUTH_STATUS" == "200" ]]; then
   echo -e "${GREEN}✅ $AUTH_STATUS${NC}"
 else
