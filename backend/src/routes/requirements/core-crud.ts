@@ -196,13 +196,16 @@ router.post(
   })
 );
 
-// GET / - 列表
+// GET / - 列表（仅 CTO/admin 可用全局查询，其他角色用 /mine 和 /requested）
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const { query } = listRequirementsSchema.parse({ query: req.query });
     const actor = req.user!;
-    const where: Prisma.RequirementWhereInput = { AND: [roleAwareRequirementWhere(actor)] };
+    if (actor.role !== 'admin' && actor.role !== 'cto_agent' && actor.internalRole !== 'cto') {
+      throw new HttpError(403, '无权访问全局需求列表，请使用 /mine 或 /requested 接口');
+    }
+    const { query } = listRequirementsSchema.parse({ query: req.query });
+    const where: Prisma.RequirementWhereInput = {};
 
     if (query.currentStep) {
       where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { currentStep: query.currentStep }];
