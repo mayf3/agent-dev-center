@@ -26,6 +26,7 @@ import { notifyEvent } from '../../utils/notifications.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
 import { getWorkflowSteps, getCurrentStep } from './workflow-helpers.js';
 import { canReadRequirement, canEditRequirement, roleAwareRequirementWhere } from './utils.js';
+import { canAccessGlobalList } from '../../config/access-control.js';
 
 const requirementInclude = {
   tasks: true,
@@ -201,7 +202,7 @@ router.get(
   '/',
   asyncHandler(async (req, res) => {
     const actor = req.user!;
-    if (actor.role !== 'admin' && actor.role !== 'cto_agent' && actor.internalRole !== 'cto') {
+    if (!canAccessGlobalList(actor.role, actor.internalRole)) {
       throw new HttpError(403, '无权访问全局需求列表，请使用 /mine 或 /requested 接口');
     }
     const { query } = listRequirementsSchema.parse({ query: req.query });
