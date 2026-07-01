@@ -12,6 +12,7 @@ import { submitStepSchema } from '../../schemas/workflow.js';
 import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
 import {
   parseSteps,
+  getWorkflowSteps,
   getCurrentStep,
   mapUserRole,
   logTransition,
@@ -38,14 +39,13 @@ export function registerWorkflowSubmitRoutes(router: import('express').Router): 
         throw new HttpError(400, '该需求未分配工作流');
       }
       if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
-      if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
 
       // 只能在 draft 步骤提交
       if (requirement.currentStep !== 'draft') {
         throw new HttpError(400, `当前步骤为「${requirement.currentStep}」，只有草稿状态才能提交`);
       }
 
-      const steps = parseSteps(requirement.workflow.steps);
+      const steps = getWorkflowSteps(requirement);
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 

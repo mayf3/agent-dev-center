@@ -46,7 +46,9 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       });
       if (!requirement) throw new HttpError(404, '需求不存在');
       assertDomainReadAccess(req.user!, requirement);
-      if (!requirement.workflow) throw new HttpError(400, '该需求未分配工作流');
+      if (!requirement.workflow && !requirement.workflowSnapshot) {
+        throw new HttpError(400, '该需求未分配工作流');
+      }
       if (!requirement.currentStep) throw new HttpError(400, '该需求无当前步骤');
 
       const steps = getWorkflowSteps(requirement);
