@@ -37,7 +37,7 @@ export function mapUserRole(internalRole: string | null | undefined, role: strin
     // developer: deprecated — 各具体角色用自己的名称
     tester: ['tester'],
     security: ['security'],
-    ops: ['ops'],
+    ops: ['ops', 'qa'],  // pending_deploy snapshot 遗留 role=qa，临时允许 ops 处理
     pm: ['pm', 'requester'],
     architect: ['architect'],
     qa: ['qa'],
