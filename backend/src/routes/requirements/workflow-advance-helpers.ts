@@ -184,39 +184,85 @@ export async function releaseTestEnvLock(
 
 /**
  * After lock release, auto-assign lock to next waiting requirement (FIFO).
- * Runs asynchronously without blocking the response.
- * Uses a fresh UUID lockToken for the new assignment.
+ *
+ * Atomic transaction contract (Section IV of ADC-Task-Loop-CAS):
+ *   1. Select candidate at pending_deploy
+ *   2. Atomically acquire singleton lock via acquireTestEnvLock
+ *   3. CAS-advance requirement: pending_deploy → test_env_deploy
+ *   4. Commit (or rollback everything if any step fails)
+ *
+ * Runs asynchronously without blocking the response.  Never uses raw
+ * prisma.testEnvLock.upsert — all production lock acquisition goes
+ * through the unified acquireTestEnvLock helper.
  */
 export function autoAdvanceTestEnvQueue(): void {
-  void (async () => {
-    try {
-      const next = await prisma.requirement.findFirst({
-        where: { currentStep: 'pending_deploy' },
-        orderBy: { updatedAt: 'asc' },
-        select: { id: true, title: true, branch: true, workflowSnapshot: true, workflow: { select: { steps: true } } },
-      });
-      if (!next) return;
+  void autoAdvanceCandidates();
+}
 
-      // Advance the task from pending_deploy to test_env_deploy
-      const rawJson = getWorkflowRawJson(next);
-      if (!rawJson) return;
-      const steps = parseSteps(rawJson);
-      if (!steps.some(s => s.name === 'test_env_deploy')) return;
+/**
+ * Async body of autoAdvanceTestEnvQueue, exported for integration tests.
+ *
+ * Accepts optional db override for test injection (e.g. KERNEL_TEST_DATABASE_URL).
+ * Production callers omit db → uses default prisma singleton.
+ *
+ * Returns an object with candidate and ownership info on success,
+ * or null if no candidate is available or lock is busy.
+ */
+export async function autoAdvanceCandidates(opts?: { db?: LockDbClient }): Promise<{
+  candidateId: string;
+  ownership: TestEnvLockOwnership;
+} | null> {
+  const client = opts?.db ?? prisma;
+  try {
+    const next = await (client as any).requirement.findFirst({
+      where: { currentStep: 'pending_deploy' },
+      orderBy: { updatedAt: 'asc' },
+      select: { id: true, title: true, branch: true, workflowSnapshot: true, workflow: { select: { steps: true } } },
+    });
+    if (!next) return null;
 
-      await prisma.requirement.update({
-        where: { id: next.id },
+    const rawJson = getWorkflowRawJson(next);
+    if (!rawJson) return null;
+    const steps = parseSteps(rawJson);
+    if (!steps.some(s => s.name === 'test_env_deploy')) return null;
+
+    // ── Atomic transaction: lock + CAS advance ──────────────
+    const result = await (client as any).$transaction(async (tx: any) => {
+      // 1. Atomically acquire (or take over) the singleton lock
+      //    Throws HttpError(409) if a valid lock exists → whole tx rolls back.
+      //    Because acquireTestEnvLock uses INSERT ... ON CONFLICT ... WHERE,
+      //    the lock row is locked/created inside this transaction.
+      const ownership = await acquireTestEnvLock(
+        next.id,
+        next.title,
+        next.branch,
+        { db: tx as any, now: new Date() },
+      );
+
+      // 2. CAS-advance: only update if still at pending_deploy
+      const advanced = await tx.requirement.updateMany({
+        where: { id: next.id, currentStep: 'pending_deploy' },
         data: { currentStep: 'test_env_deploy', updatedAt: new Date() },
       });
 
-      const newToken = crypto.randomUUID();
-      await prisma.testEnvLock.upsert({
-        where: { id: 'singleton' },
-        create: { id: 'singleton', requirementId: next.id, requirementTitle: next.title, branch: next.branch, lockToken: newToken, acquiredAt: new Date() },
-        update: { requirementId: next.id, requirementTitle: next.title, branch: next.branch, lockToken: newToken, acquiredAt: new Date() },
-      });
-      console.log(`[test-env-lock] Queue auto-advance: ${next.id.slice(0, 8)} (${next.title?.slice(0, 30)}) → test_env_deploy with token ${newToken.slice(0, 8)}…`);
-    } catch (err) {
-      console.error('[test-env-lock] Auto-advance queue failed:', err);
+      if (advanced.count !== 1) {
+        throw new Error(
+          `auto-advance CAS conflict: requirement ${next.id.slice(0, 8)} no longer at pending_deploy`,
+        );
+      }
+
+      console.log(`[test-env-lock] Queue auto-advance: ${next.id.slice(0, 8)} (${next.title?.slice(0, 30)}) → test_env_deploy with token ${ownership.lockToken.slice(0, 8)}…`);
+      return { candidateId: next.id, ownership };
+    });
+
+    return result;
+  } catch (err) {
+    // HttpError(409) from acquireTestEnvLock = lock busy, not a failure
+    if (err instanceof HttpError && err.statusCode === 409) {
+      console.log(`[test-env-lock] Queue auto-advance skipped: lock busy — ${err.message.slice(0, 60)}`);
+      return null;
     }
-  })();
+    console.error('[test-env-lock] Auto-advance queue failed:', err);
+    throw err;
+  }
 }
