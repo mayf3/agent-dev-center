@@ -24,6 +24,7 @@ import {
   getCurrentStep,
   getPreviousStep,
   mapUserRole,
+  checkWorkflowRoleAuthorization,
   WorkflowStep,
 } from './workflow-helpers.js';
 import {
@@ -63,15 +64,18 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
-      // assigneeId 校验：非 assignee 不能操作（CTO 可以代操作）
-      if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
-        throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法回退非自己名下的任务`);
-      }
-
-      // 角色校验
-      const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-      if (!matchedRole && req.user!.role !== 'cto_agent') {
-        throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色才能回退`);
+      // ── Permission check ──
+      // Instance-level role check (roleUserMap from snapshot)
+      const isAuthorizedByRole = checkWorkflowRoleAuthorization(req.user!, requirement, currentStep.role);
+      if (!isAuthorizedByRole) {
+        // Fall back to legacy platform-role check
+        if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
+          throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法回退非自己名下的任务`);
+        }
+        const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
+        if (!matchedRole && req.user!.role !== 'cto_agent') {
+          throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色才能回退`);
+        }
       }
 
       // 确定回退目标步骤
@@ -84,14 +88,15 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       const isFromProtected = PROTECTED_STEPS.includes(requirement.currentStep ?? '');
 
       if (body.targetStep) {
+        // ── 1. 调用方显式指定 targetStep（最高优先级） ──
         const target = steps.find(s => s.name === body.targetStep);
         if (!target) {
           throw new HttpError(400, `步骤「${body.targetStep}」在工作流中不存在`);
         }
         const currentIndex = steps.findIndex(s => s.name === requirement.currentStep);
         const targetIndex = steps.findIndex(s => s.name === body.targetStep);
-        if (targetIndex >= currentIndex) {
-          throw new HttpError(400, `回退目标步骤「${target.displayName}」必须在当前步骤「${currentStep.displayName}」之前`);
+        if (targetIndex > currentIndex) {
+          throw new HttpError(400, `回退目标步骤「${target.displayName}」必须在当前步骤「${currentStep.displayName}」或之前`);
         }
         // 防御：从保护范围内 reject 时，禁止指定保护范围内的步骤为目标
         if (isFromProtected && PROTECTED_STEPS.includes(target.name)) {
@@ -99,6 +104,31 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
         }
         targetStepName = target.name;
         targetStepDef = target;
+      } else if (currentStep.rejectTo) {
+        // ── 2. 步骤定义中配置了 rejectTo（通用 worklow 级默认） ──
+        const target = steps.find(s => s.name === currentStep.rejectTo);
+        if (!target) {
+          throw new HttpError(400, `步骤「${currentStep.name}」的 rejectTo「${currentStep.rejectTo}」在工作流中不存在`);
+        }
+        // 允许 self-loop（rejectTo === 当前步骤名），仍必须创建 transition 和递增 stateVersion
+        const currentIndex = steps.findIndex(s => s.name === requirement.currentStep);
+        const targetIndex = steps.findIndex(s => s.name === currentStep.rejectTo);
+        if (targetIndex > currentIndex) {
+          throw new HttpError(400, `回退目标步骤「${target.displayName}」必须在当前步骤「${currentStep.displayName}」或之前`);
+        }
+        if (isFromProtected && PROTECTED_STEPS.includes(target.name)) {
+          const pendingDeployStep = steps.find(s => s.name === 'pending_deploy');
+          if (pendingDeployStep) {
+            targetStepName = pendingDeployStep.name;
+            targetStepDef = pendingDeployStep;
+          } else {
+            targetStepName = target.name;
+            targetStepDef = target;
+          }
+        } else {
+          targetStepName = target.name;
+          targetStepDef = target;
+        }
       } else {
         const REJECT_TO_DEV = ['test_env_deploy', 'qa_review', 'security_review', 'cto_review', 'merge_to_main', 'deploying', 'qa_review_deploy', 'done'];
         if (REJECT_TO_DEV.includes(currentStep.name ?? '')) {

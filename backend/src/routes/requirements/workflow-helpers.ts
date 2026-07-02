@@ -19,6 +19,8 @@ export interface WorkflowStep {
   // role-based: 从 roleUserMap 查角色对应用户
   // creator: 固定为需求创建者（requesterId）
   // fixed: 保持当前 assignee 不变
+  next?: string;      // 显式下一步（缺省则按数组顺序）
+  rejectTo?: string;  // 显式拒绝回退目标（缺省则沿用现有引擎默认行为）
 }
 
 // ── Helpers ──────────────────────────────────────────────
@@ -71,6 +73,8 @@ export function parseSteps(stepsJson: unknown): WorkflowStep[] {
     autoAdvance: z.boolean().default(false),
     wipLimit: z.number().int().positive().optional(),
     assigneeMode: z.enum(['role-based', 'creator', 'fixed']).optional(),
+    next: z.string().optional(),
+    rejectTo: z.string().optional(),
   })).parse(rawSteps);
   return steps;
 }
@@ -255,8 +259,19 @@ export function getCurrentStep(steps: WorkflowStep[], stepName: string): Workflo
   return steps.find(s => s.name === stepName);
 }
 
-/** Get next step (or null if at end) */
+/** Get next step (or null if at end).
+ *  If step has explicit `next`, resolve by name; otherwise use array order.
+ */
 export function getNextStep(steps: WorkflowStep[], currentStepName: string): WorkflowStep | null {
+  const currentStep = steps.find(s => s.name === currentStepName);
+  if (!currentStep) return null;
+  // Explicit next (used by agent-todo-v1 and future templates)
+  if (currentStep.next) {
+    const target = steps.find(s => s.name === currentStep.next);
+    if (!target) return null;
+    return target;
+  }
+  // Default: next in array order
   const idx = steps.findIndex(s => s.name === currentStepName);
   if (idx === -1 || idx >= steps.length - 1) return null;
   return steps[idx + 1];
@@ -360,4 +375,85 @@ export async function logTransition(params: {
       metadata: params.metadata ?? undefined,
     },
   });
+}
+
+// ─────────────────────────────────────────────────────────────
+// 通用 Workflow 验证（用于模板初始化和 parse 时校验）
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Validate workflow step routing integrity.
+ * Checks all next/rejectTo targets exist, terminal step has no next.
+ * Returns empty array when valid, error messages otherwise.
+ */
+export function validateWorkflowSteps(steps: WorkflowStep[]): string[] {
+  const errors: string[] = [];
+  const names = new Set(steps.map(s => s.name));
+  const lastStep = steps[steps.length - 1];
+
+  for (const step of steps) {
+    if (step.next) {
+      if (!names.has(step.next)) {
+        errors.push(`step「${step.name}」next「${step.next}」not found in workflow`);
+      }
+    }
+    if (step.rejectTo) {
+      if (!names.has(step.rejectTo)) {
+        errors.push(`step「${step.name}」rejectTo「${step.rejectTo}」not found in workflow`);
+      }
+    }
+  }
+
+  // Terminal step (last in array) must have no next
+  if (lastStep && lastStep.next) {
+    errors.push(`terminal step「${lastStep.name}」should not declare a next step`);
+  }
+
+  return errors;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 实例级 Workflow 角色授权
+// ─────────────────────────────────────────────────────────────
+
+export type AuthCheckable = {
+  workflowSnapshot?: unknown;
+  workflow?: { steps: unknown } | null;
+};
+
+/**
+ * Check if a user is authorized to act on a workflow step based on
+ * the requirement's instance-level roleUserMap.
+ *
+ * Priority:
+ *   1. roleUserMap from workflowSnapshot (instance-level assignment)
+ *      → check actor.id === roleUserMap[stepRole]
+ *   2. No roleUserMap → fall back to legacy platform-role check via
+ *      mapUserRole (handled by caller)
+ *
+ * This is the generic authorization primitive that replaces the
+ * hardcoded mapUserRole gate for instance-assigned workflow roles
+ * (efficiency-manager, lobster-partner, executor, etc.).
+ */
+export function checkWorkflowRoleAuthorization(
+  user: { id: string; internalRole?: string | null; role?: string },
+  requirement: AuthCheckable,
+  stepRole: string,
+): boolean {
+  const rawJson = getWorkflowRawJson(requirement);
+  if (!rawJson) return false;
+
+  const roleUserMap = extractRoleUserMap(rawJson);
+  if (!roleUserMap) {
+    // No instance-level roles → caller should fall back to mapUserRole
+    return false;
+  }
+
+  const mappedId = roleUserMap[stepRole];
+  if (!mappedId) {
+    // Step role not in this requirement's assignments → not authorized
+    return false;
+  }
+
+  return user.id === mappedId;
 }

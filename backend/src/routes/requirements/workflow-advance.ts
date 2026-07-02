@@ -17,6 +17,7 @@ import {
   getCurrentStep,
   getNextStep,
   mapUserRole,
+  checkWorkflowRoleAuthorization,
   checkReportsApproved,
   getStepWipCount,
   logTransition,
@@ -62,12 +63,20 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
           throw new HttpError(403, '只有需求提出者可以提交草稿到 PM 审批');
         }
       } else {
-        if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
-          throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法操作非自己名下的任务`);
-        }
-        const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-        if (!matchedRole && req.user!.role !== 'cto_agent') {
-          throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
+        // Instance-level role check (roleUserMap from snapshot)
+        const isAuthorizedByRole = checkWorkflowRoleAuthorization(req.user!, requirement, currentStep.role);
+        if (isAuthorizedByRole) {
+          // Authorized by instance-level role assignment — no further check needed
+          // (assigneeId will be resolved to the target step role's user)
+        } else {
+          // No instance-level role — fall back to legacy platform-role check
+          if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
+            throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法操作非自己名下的任务`);
+          }
+          const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
+          if (!matchedRole && req.user!.role !== 'cto_agent') {
+            throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
+          }
         }
       }
 
