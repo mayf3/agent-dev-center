@@ -18,7 +18,6 @@ import {
   getNextStep,
   mapUserRole,
   checkReportsApproved,
-  getStepWipCount,
   logTransition,
   extractRoleUserMap,
 } from './workflow-helpers.js';
@@ -155,14 +154,6 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
 
       const { targetStep: resolvedStep } = skipSecurityIfApplicable(targetStep, reqType, steps);
       targetStep = resolvedStep;
-
-      // --- WIP limit check ---
-      if (targetStep.wipLimit && targetStep.wipLimit > 0) {
-        const currentWip = await getStepWipCount(targetStep.name, params.id);
-        if (currentWip >= targetStep.wipLimit) {
-          throw new HttpError(409, `步骤「${targetStep.displayName}」WIP 已达上限（${currentWip}/${targetStep.wipLimit}），请等待现有任务完成后重试`);
-        }
-      }
 
       // --- Test environment lock ---
       let lockOwnership: TestEnvLockOwnership | null = null;
