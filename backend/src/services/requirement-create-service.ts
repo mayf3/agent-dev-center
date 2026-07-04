@@ -43,6 +43,7 @@ export interface CreateRequirementInput {
   projectId?: string | null;
   dueDate?: Date | string | null;
   attachment?: string | null;
+  dependsOnIds?: string[];
 }
 
 export interface CreateRequirementResult {
@@ -210,6 +211,10 @@ export async function createRequirement(
     department: input.department ?? 'engineering',
     assignee: assigneeName,
     assigneeId,
+    dueDate: input.dueDate ?? null,
+    attachment: input.attachment ?? null,
+    projectId: input.projectId ?? null,
+    dependsOnIds: input.dependsOnIds ?? [],
     domainKey: input.domainKey,
     ...(workflowId ? {
       workflowId,

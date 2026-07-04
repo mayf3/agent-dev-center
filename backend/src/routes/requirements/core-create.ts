@@ -115,6 +115,7 @@ router.post(
         projectId: body.projectId ?? null,
         dueDate: body.dueDate ?? null,
         attachment: body.attachment ?? null,
+        dependsOnIds: (body as any).dependsOnIds ?? undefined,
       },
     );
 

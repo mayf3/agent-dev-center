@@ -97,35 +97,21 @@ router.post(
       // resolve domain scope from the database via resolveDomainScope().
     };
 
-    // Query-before-create: check if a requirement already exists for this
-    // goal/month/agent combo.  The title prefix "[目标卡]" + goal text is
-    // a stable marker we check to avoid duplicate re-creation on retry.
-    const existingRequirements = await prisma.requirement.findMany({
-      where: {
-        domainKey: 'agent-todo',
-        title: { startsWith: '[目标卡]' },
-        requesterId: actor.id,
-      },
-      select: { id: true, title: true },
-    });
-
+    // Each goal unconditionally creates one ADC Requirement.
+    // pushedMonths is the only dedup mechanism.  No query-before-create:
+    // title-based dedup would incorrectly merge distinct goals that happen
+    // to share the same text (different month, agent, or GoalCard).
+    //
+    // Known limitation:
+    //   PARTIAL_FAILURE_RETRY_MAY_DUPLICATE
+    //
     const requirementIds: string[] = [];
     const created: string[] = [];
 
     for (const goal of monthGroup.goals) {
-      const expectedTitle = `[目标卡] ${goal.text}`;
-
-      // Check if already created (dedup via title + domainKey + requesterId)
-      const existing = existingRequirements.find(r => r.title === expectedTitle);
-      if (existing) {
-        requirementIds.push(existing.id);
-        created.push(existing.id); // compat alias
-        continue;
-      }
-
       // ── Create ADC Requirement via shared service ──────────
       const result = await createRequirement(createActor, {
-        title: expectedTitle,
+        title: `[目标卡] ${goal.text}`,
         description:
           `Goal Card push for ${month}. Agent: ${agentId}. Pipeline: ${goalCard.pipeline}.`,
         domainKey: 'agent-todo',
