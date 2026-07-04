@@ -169,10 +169,24 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
 
       // --- Target step report check ---
       // 进入目标步骤必须满足该步骤的 requiredReports（防止跳过报告审批）
+      // 但排除目标步骤自身产生的报告（如 DEV_SELF_CHECK 由 dev_self_check 产生）
+      // 这种报告应在步骤内完成，不是进入步骤的前置条件
       // 如果安全步骤被跳过，自动过滤 SECURITY_REVIEW 要求
-      const targetReports = skippedSteps.includes('security_review')
+      const STEP_OWNS_REPORT: Record<string, string[]> = {
+        dev_self_check: ['DEV_SELF_CHECK'],
+        arch_design: ['ARCH_DESIGN'],
+        arch_review: ['ARCH_REVIEW'],
+        testing: ['TEST_REPORT'],
+        security_review: ['SECURITY_REVIEW'],
+        cto_review: ['CTO_REVIEW'],
+        merge_to_main: ['MERGE_REPORT'],
+        deploying: ['DEPLOY_CONFIRM'],
+      };
+      const stepSelfReports = STEP_OWNS_REPORT[targetStep.name] || [];
+      const targetReports = (skippedSteps.includes('security_review')
         ? targetStep.requiredReports.filter(r => r !== 'SECURITY_REVIEW')
-        : targetStep.requiredReports;
+        : [...targetStep.requiredReports]
+      ).filter(r => !stepSelfReports.includes(r));
       if (targetReports.length > 0) {
         const { ok: targetOk, missing: targetMissing } = await checkReportsApproved(params.id, targetReports);
         if (!targetOk) {
