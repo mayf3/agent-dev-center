@@ -630,7 +630,8 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
       assigneeId: QA_USER_ID,
       requesterId: null,
       requester: 'Backfill Requester',
-      workflowSnapshot: SNAPSHOT_OBJECT_WITH_MAP,
+      workflowSnapshot: SNAPSHOT_ARRAY_LEGACY,
+      workflow: { id: 'wf-1', steps: { steps: SAMPLE_STEPS_ARRAY } },
     });
     mockFindUnique.mockResolvedValue(req);
     mockFindFirst.mockResolvedValue({ id: BACKFILL_USER_ID, name: 'Backfill Requester' });
@@ -655,7 +656,8 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
       assigneeId: QA_USER_ID,
       requesterId: null,
       requester: 'Backfill Requester',
-      workflowSnapshot: SNAPSHOT_OBJECT_WITH_MAP,
+      workflow: { id: 'wf-1', steps: { steps: SAMPLE_STEPS_ARRAY } },
+      workflowSnapshot: SNAPSHOT_ARRAY_LEGACY,
     });
     mockFindUnique.mockResolvedValue(req);
     mockFindFirst.mockResolvedValue({ id: BACKFILL_USER_ID, name: 'Backfill Requester' });
@@ -680,8 +682,9 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
       currentStep: 'qa_review',
       assigneeId: QA_USER_ID,
       requesterId: null,
+      workflow: { id: 'wf-1', steps: { steps: SAMPLE_STEPS_ARRAY } },
       requester: null,
-      workflowSnapshot: SNAPSHOT_OBJECT_WITH_MAP,
+      workflowSnapshot: SNAPSHOT_ARRAY_LEGACY,
     });
     mockFindUnique.mockResolvedValue(req);
     const app = createApp(CTO_USER);
@@ -698,9 +701,10 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
     const req = makeReq({
       currentStep: 'qa_review',
       assigneeId: QA_USER_ID,
+      workflow: { id: 'wf-1', steps: { steps: SAMPLE_STEPS_ARRAY } },
       requesterId: UUID,
       requester: '需求提出者',
-      workflowSnapshot: SNAPSHOT_OBJECT_WITH_MAP,
+      workflowSnapshot: SNAPSHOT_ARRAY_LEGACY,
     });
     mockFindUnique.mockResolvedValue(req);
     mockUpdate.mockImplementation(async (args: any) => ({ ...req, ...args.data }));
@@ -728,10 +732,11 @@ describe('POST /:id/workflow/reject — assignee routing', () => {
 
     const req = makeReq({
       currentStep: 'dev_self_check',
+      workflow: { id: 'wf-1', steps: { steps: NON_REQUESTER_DRAFT_STEPS } },
       assigneeId: DEV_USER_ID,
       requesterId: null,                 // 原始 requesterId 为空
       requester: 'Backfill Requester',   // 可解析
-      workflowSnapshot: SNAPSHOT_NON_REQUESTER_DRAFT,
+      workflowSnapshot: NON_REQUESTER_DRAFT_STEPS,
     });
     mockFindUnique.mockResolvedValue(req);
     mockFindFirst.mockResolvedValue({ id: BACKFILL_USER_ID, name: 'Backfill Requester' });

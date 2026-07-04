@@ -22,22 +22,19 @@ VALUES (
 )
 ON CONFLICT ("key") DO NOTHING;
 
--- ── 2. Domain role bindings (minimal) ───────────────────────────────────────
+-- ── 2. Domain role bindings (最小权限) ─────────────────────────────────────
 --   • adc:admin already has is_global=true from Folder migration — no binding needed
---   • adc:pm — PMs create and oversee Agent Todo tasks
---   • adc:developer — Developers may create and view Agent Todos
---   • adc:ops — Operations may need to view Agent Todo context
+--   • adc:pm — PMs create and oversee Agent Todo tasks（唯一明确的角色）
+--   • No adc:developer, adc:ops, adc:viewer, adc:tester, adc:security
+--     without clear caller/product policy justification.
 --
---   Actual workflow step operations (efficiency_review, execution, etc.) are
---   controlled by per-instance roleUserMap stored in workflowSnapshot — NOT
---   by DomainRoleBinding. These bindings only gate create/read access to the
---   agent-todo domain itself.
+--   Actual workflow step operations are controlled by per-instance roleUserMap
+--   stored in workflowSnapshot — NOT by DomainRoleBinding.
+--   These bindings only gate create/read access to the agent-todo domain itself.
 -- ============================================================================
 INSERT INTO "domain_role_bindings" ("id", "role", "domain_key", "is_domain_admin", "is_global", "updated_at")
 VALUES
-  (gen_random_uuid(), 'adc:pm', 'agent-todo', false, false, CURRENT_TIMESTAMP),
-  (gen_random_uuid(), 'adc:developer', 'agent-todo', false, false, CURRENT_TIMESTAMP),
-  (gen_random_uuid(), 'adc:ops', 'agent-todo', false, false, CURRENT_TIMESTAMP)
+  (gen_random_uuid(), 'adc:pm', 'agent-todo', false, false, CURRENT_TIMESTAMP)
 ON CONFLICT ("role", "domain_key") DO NOTHING;
 
 -- ── 3. Agent Todo V1 workflow template ─────────────────────────────────────

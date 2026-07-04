@@ -413,47 +413,83 @@ export function validateWorkflowSteps(steps: WorkflowStep[]): string[] {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 实例级 Workflow 角色授权
+// 统一 Workflow 步骤授权（实例角色 + Legacy 双模式）
 // ─────────────────────────────────────────────────────────────
 
-export type AuthCheckable = {
-  workflowSnapshot?: unknown;
-  workflow?: { steps: unknown } | null;
+export type WorkflowAuthorizationResult = {
+  mode: 'instance' | 'legacy';
+  authorized: boolean;
+  reason:
+    | 'requester-match'
+    | 'requester-mismatch'
+    | 'instance-role-match'
+    | 'instance-role-mismatch'
+    | 'instance-role-missing'
+    | 'legacy';
 };
 
 /**
- * Check if a user is authorized to act on a workflow step based on
- * the requirement's instance-level roleUserMap.
+ * Resolve whether an actor is authorized to act on a workflow step.
  *
- * Priority:
- *   1. roleUserMap from workflowSnapshot (instance-level assignment)
- *      → check actor.id === roleUserMap[stepRole]
- *   2. No roleUserMap → fall back to legacy platform-role check via
- *      mapUserRole (handled by caller)
+ * Two modes:
  *
- * This is the generic authorization primitive that replaces the
- * hardcoded mapUserRole gate for instance-assigned workflow roles
- * (efficiency-manager, lobster-partner, executor, etc.).
+ *   instance — requirement has a valid, non-empty roleUserMap.
+ *   The roleUserMap is the sole authorization source:
+ *     - stepRole=requester → requirement.requesterId === actor.id
+ *     - other roles        → roleUserMap[role] === actor.id
+ *   No mapUserRole, no platform internalRole, no cto_agent bypass.
+ *   role missing from map → unauthorized (fail-closed).
+ *
+ *   legacy — no roleUserMap exists.  Caller must fall back to existing
+ *   assignee + mapUserRole logic.  Result has authorized=false and
+ *   mode='legacy' so caller knows to use old contracts.
+ *
+ * NEVER use template name / step name / workflow key to decide mode.
  */
-export function checkWorkflowRoleAuthorization(
-  user: { id: string; internalRole?: string | null; role?: string },
-  requirement: AuthCheckable,
+export function resolveWorkflowAuthorization(
+  actor: { id: string },
+  requirement: {
+    workflowSnapshot?: unknown;
+    workflow?: { steps: unknown } | null;
+    requesterId?: string | null;
+  },
   stepRole: string,
-): boolean {
+): WorkflowAuthorizationResult {
   const rawJson = getWorkflowRawJson(requirement);
-  if (!rawJson) return false;
+  const roleUserMap = rawJson ? extractRoleUserMap(rawJson) : undefined;
+  const normalized = roleUserMap ? normalizeRoleUserMap(roleUserMap) : undefined;
 
-  const roleUserMap = extractRoleUserMap(rawJson);
-  if (!roleUserMap) {
-    // No instance-level roles → caller should fall back to mapUserRole
-    return false;
+  if (normalized) {
+    // ── 实例模式 ──
+    if (stepRole === 'requester') {
+      const match = actor.id === requirement.requesterId;
+      return {
+        mode: 'instance',
+        authorized: match,
+        reason: match ? 'requester-match' : 'requester-mismatch',
+      };
+    }
+
+    const mappedId = normalized[stepRole];
+    if (!mappedId) {
+      return {
+        mode: 'instance',
+        authorized: false,
+        reason: 'instance-role-missing',
+      };
+    }
+    const match = actor.id === mappedId;
+    return {
+      mode: 'instance',
+      authorized: match,
+      reason: match ? 'instance-role-match' : 'instance-role-mismatch',
+    };
   }
 
-  const mappedId = roleUserMap[stepRole];
-  if (!mappedId) {
-    // Step role not in this requirement's assignments → not authorized
-    return false;
-  }
-
-  return user.id === mappedId;
+  // ── Legacy 模式 ──
+  return {
+    mode: 'legacy',
+    authorized: false,
+    reason: 'legacy',
+  };
 }

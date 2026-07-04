@@ -24,7 +24,7 @@ import {
   getCurrentStep,
   getPreviousStep,
   mapUserRole,
-  checkWorkflowRoleAuthorization,
+  resolveWorkflowAuthorization,
   WorkflowStep,
 } from './workflow-helpers.js';
 import {
@@ -64,11 +64,16 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
       const currentStep = getCurrentStep(steps, requirement.currentStep);
       if (!currentStep) throw new HttpError(400, `当前步骤「${requirement.currentStep}」在工作流中不存在`);
 
-      // ── Permission check ──
-      // Instance-level role check (roleUserMap from snapshot)
-      const isAuthorizedByRole = checkWorkflowRoleAuthorization(req.user!, requirement, currentStep.role);
-      if (!isAuthorizedByRole) {
-        // Fall back to legacy platform-role check
+      // ── Permission check（与 advance 使用完全相同的统一授权） ──
+      const authorization = resolveWorkflowAuthorization(req.user!, requirement, currentStep.role);
+
+      if (authorization.mode === 'instance') {
+        if (!authorization.authorized) {
+          throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要分配给您才能回退`);
+        }
+        // 实例模式下：精确分配才能操作，不允许 cto_agent 绕过
+      } else {
+        // Legacy 模式：保留原有 assignee + mapUserRole + cto_agent 合同
         if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
           throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法回退非自己名下的任务`);
         }

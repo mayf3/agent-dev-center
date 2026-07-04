@@ -13,6 +13,7 @@ import {
   getCurrentStep,
   getNextStep,
   mapUserRole,
+  resolveWorkflowAuthorization,
   checkReportsApproved,
 } from './workflow-helpers.js';
 
@@ -58,9 +59,17 @@ export function registerWorkflowMyStepRoutes(router: import('express').Router): 
         });
       }
 
-      // 检查当前用户是否可以操作
-      const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
-      const canOperate = !!matchedRole || req.user!.role === 'admin' || req.user!.role === 'cto_agent';
+      // 检查当前用户是否可以操作（统一授权：实例优先，回退到 legacy）
+      const authorization = resolveWorkflowAuthorization(req.user!, requirement, currentStep.role);
+      let canOperate: boolean;
+      if (authorization.mode === 'instance') {
+        // 实例角色模式：精确分配才能操作，cto_agent 不能绕过
+        canOperate = authorization.authorized;
+      } else {
+        // Legacy 模式：保留 mapUserRole + admin/cto_agent 合同
+        const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
+        canOperate = !!matchedRole || req.user!.role === 'admin' || req.user!.role === 'cto_agent';
+      }
 
       // 检查报告完成情况
       const { ok: reportsReady, missing } = await checkReportsApproved(params.id, currentStep.requiredReports);

@@ -18,7 +18,7 @@ import {
   validateWorkflowSteps,
   getNextStep,
   getCurrentStep,
-  checkWorkflowRoleAuthorization,
+  resolveWorkflowAuthorization,
   getWorkflowRawJson,
   extractRoleUserMap,
 } from '../routes/requirements/workflow-helpers.js';
@@ -156,7 +156,7 @@ describe('Agent Todo V1 — init & idempotency (no DB)', () => {
   });
 });
 
-// ─── 2. checkWorkflowRoleAuthorization（纯函数，无 DB） ──────
+// ─── 2. resolveWorkflowAuthorization（纯函数，无 DB） ──────
 
 describe('Agent Todo V1 — roleUserMap authorization (no DB)', () => {
   const userA = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', internalRole: 'pm', role: 'developer' };
@@ -172,34 +172,75 @@ describe('Agent Todo V1 — roleUserMap authorization (no DB)', () => {
 
   const reqSnapshot = { steps: AGENT_TODO_V1_STEPS, roleUserMap };
 
-  it('2.1 efficiency-manager authorized for efficiency_review', () => {
-    expect(checkWorkflowRoleAuthorization(userA, { workflowSnapshot: reqSnapshot }, 'efficiency-manager')).toBe(true);
+  it('2.1 instance mode + assignment match → authorized', () => {
+    const result = resolveWorkflowAuthorization(userA, { workflowSnapshot: reqSnapshot }, 'efficiency-manager');
+    expect(result.mode).toBe('instance');
+    expect(result.authorized).toBe(true);
+    expect(result.reason).toBe('instance-role-match');
   });
 
-  it('2.2 efficiency-manager NOT authorized for partner_review (needs lobster-partner)', () => {
-    expect(checkWorkflowRoleAuthorization(userA, { workflowSnapshot: reqSnapshot }, 'lobster-partner')).toBe(false);
+  it('2.2 instance mode + other user role → unauthorized (mismatch)', () => {
+    const result = resolveWorkflowAuthorization(userA, { workflowSnapshot: reqSnapshot }, 'lobster-partner');
+    expect(result.mode).toBe('instance');
+    expect(result.authorized).toBe(false);
+    expect(result.reason).toBe('instance-role-mismatch');
   });
 
-  it('2.3 lobster-partner authorized for partner_review', () => {
-    expect(checkWorkflowRoleAuthorization(userB, { workflowSnapshot: reqSnapshot }, 'lobster-partner')).toBe(true);
+  it('2.3 instance mode + assignment match for lobster-partner → authorized', () => {
+    const result = resolveWorkflowAuthorization(userB, { workflowSnapshot: reqSnapshot }, 'lobster-partner');
+    expect(result.mode).toBe('instance');
+    expect(result.authorized).toBe(true);
+    expect(result.reason).toBe('instance-role-match');
   });
 
-  it('2.4 executor NOT authorized for efficiency_acceptance', () => {
-    expect(checkWorkflowRoleAuthorization(userC, { workflowSnapshot: reqSnapshot }, 'efficiency-manager')).toBe(false);
+  it('2.4 instance mode + executor trying efficiency-manager → unauthorized', () => {
+    const result = resolveWorkflowAuthorization(userC, { workflowSnapshot: reqSnapshot }, 'efficiency-manager');
+    expect(result.mode).toBe('instance');
+    expect(result.authorized).toBe(false);
+    expect(result.reason).toBe('instance-role-mismatch');
   });
 
-  it('2.5 unassigned user NOT authorized', () => {
-    expect(checkWorkflowRoleAuthorization(userX, { workflowSnapshot: reqSnapshot }, 'efficiency-manager')).toBe(false);
+  it('2.5 instance mode + unassigned user → unauthorized', () => {
+    const result = resolveWorkflowAuthorization(userX, { workflowSnapshot: reqSnapshot }, 'efficiency-manager');
+    expect(result.mode).toBe('instance');
+    expect(result.authorized).toBe(false);
+    expect(result.reason).toBe('instance-role-mismatch');
   });
 
-  it('2.6 fallback to false when no roleUserMap (caller uses mapUserRole)', () => {
-    expect(checkWorkflowRoleAuthorization(userA, { workflowSnapshot: AGENT_TODO_V1_STEPS }, 'efficiency-manager')).toBe(false);
+  it('2.6 no roleUserMap → legacy mode', () => {
+    // Legacy snapshot (plain array) — no roleUserMap
+    const result = resolveWorkflowAuthorization(userA, { workflowSnapshot: AGENT_TODO_V1_STEPS }, 'efficiency-manager');
+    expect(result.mode).toBe('legacy');
+    expect(result.authorized).toBe(false);
+    expect(result.reason).toBe('legacy');
   });
 
-  it('2.7 cto_agent bypass not affected by this check (bypass is in route handlers)', () => {
-    // The route handler's cto_agent bypass is a separate guard that runs AFTER this check
-    // This test verifies that checkWorkflowRoleAuthorization itself returns false for non-mapped users
-    expect(checkWorkflowRoleAuthorization(userX, { workflowSnapshot: reqSnapshot }, 'executor')).toBe(false);
+  it('2.7 instance mode + cto_agent not assigned → unauthorized (no bypass)', () => {
+    const result = resolveWorkflowAuthorization(userX, { workflowSnapshot: reqSnapshot }, 'executor');
+    expect(result.mode).toBe('instance');
+    expect(result.authorized).toBe(false);
+    expect(result.reason).toBe('instance-role-mismatch');
+  });
+
+  it('2.8 instance mode + role missing from map → unauthorized (fail-closed)', () => {
+    const result = resolveWorkflowAuthorization(userA, { workflowSnapshot: reqSnapshot }, 'nonexistent-role');
+    expect(result.mode).toBe('instance');
+    expect(result.authorized).toBe(false);
+    expect(result.reason).toBe('instance-role-missing');
+  });
+
+  it('2.9 requester matching → authorized', () => {
+    const result = resolveWorkflowAuthorization(userA, { workflowSnapshot: reqSnapshot, requesterId: userA.id }, 'requester');
+    expect(result.mode).toBe('instance');
+    expect(result.authorized).toBe(true);
+    expect(result.reason).toBe('requester-match');
+  });
+
+  it('2.10 requester NOT matching → unauthorized', () => {
+    const result = resolveWorkflowAuthorization(userA, { workflowSnapshot: reqSnapshot, requesterId: userB.id }, 'requester');
+    expect(result.mode).toBe('instance');
+    expect(result.authorized).toBe(false);
+    expect(result.reason).toBe('requester-mismatch');
   });
 });
 
@@ -218,29 +259,40 @@ describe('Agent Todo V1 — role isolation (no DB)', () => {
   };
   const snapshot = { steps: AGENT_TODO_V1_STEPS, roleUserMap };
 
-  it('3.1 efficiency-manager can act on efficiency_review and efficiency_acceptance', () => {
-    expect(checkWorkflowRoleAuthorization(efMgr, { workflowSnapshot: snapshot }, 'efficiency-manager')).toBe(true);
+  it('3.1 efficiency-manager can act on efficiency_review', () => {
+    const r = resolveWorkflowAuthorization(efMgr, { workflowSnapshot: snapshot }, 'efficiency-manager');
+    expect(r.mode).toBe('instance');
+    expect(r.authorized).toBe(true);
   });
 
-  it('3.2 lobster-partner can act on partner_review and partner_final_review', () => {
-    expect(checkWorkflowRoleAuthorization(lbPart, { workflowSnapshot: snapshot }, 'lobster-partner')).toBe(true);
+  it('3.2 lobster-partner can act on partner_review', () => {
+    const r = resolveWorkflowAuthorization(lbPart, { workflowSnapshot: snapshot }, 'lobster-partner');
+    expect(r.mode).toBe('instance');
+    expect(r.authorized).toBe(true);
   });
 
   it('3.3 executor can act on execution', () => {
-    expect(checkWorkflowRoleAuthorization(exec, { workflowSnapshot: snapshot }, 'executor')).toBe(true);
+    const r = resolveWorkflowAuthorization(exec, { workflowSnapshot: snapshot }, 'executor');
+    expect(r.mode).toBe('instance');
+    expect(r.authorized).toBe(true);
   });
 
-  it('3.4 requester cannot replace efficiency-manager', () => {
-    // requester is not in roleUserMap
-    expect(checkWorkflowRoleAuthorization(req, { workflowSnapshot: snapshot }, 'efficiency-manager')).toBe(false);
+  it('3.4 requester cannot replace efficiency-manager (not in roleUserMap)', () => {
+    const r = resolveWorkflowAuthorization(req, { workflowSnapshot: snapshot }, 'efficiency-manager');
+    expect(r.mode).toBe('instance');
+    expect(r.authorized).toBe(false);
   });
 
   it('3.5 lobster-partner cannot execute (cross-role isolation)', () => {
-    expect(checkWorkflowRoleAuthorization(lbPart, { workflowSnapshot: snapshot }, 'executor')).toBe(false);
+    const r = resolveWorkflowAuthorization(lbPart, { workflowSnapshot: snapshot }, 'executor');
+    expect(r.mode).toBe('instance');
+    expect(r.authorized).toBe(false);
   });
 
   it('3.6 executor cannot accept (cross-role isolation)', () => {
-    expect(checkWorkflowRoleAuthorization(exec, { workflowSnapshot: snapshot }, 'efficiency-manager')).toBe(false);
+    const r = resolveWorkflowAuthorization(exec, { workflowSnapshot: snapshot }, 'efficiency-manager');
+    expect(r.mode).toBe('instance');
+    expect(r.authorized).toBe(false);
   });
 });
 
