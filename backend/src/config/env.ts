@@ -27,6 +27,15 @@ const envSchema = z.object({
   ADC_PUBLIC_URL: z.string().default('http://localhost:4000'),
   // 部署服务器地址（仅部署脚本使用）
   SERVER_HOST: z.string().default('your-server-ip'),
+
+  // Agent Todo V1 — workflow role user IDs
+  // These are ADC User UUIDs for the three workflow roles.
+  // Required when creating requirements with workflowTemplateKey=agent-todo-v1
+  // or any template that uses these role names.
+  // Must be valid UUIDs corresponding to existing users in the database.
+  AGENT_TODO_EFFICIENCY_USER_ID: z.string().uuid().optional(),
+  AGENT_TODO_LOBSTER_USER_ID: z.string().uuid().optional(),
+  AGENT_TODO_EXECUTOR_USER_ID: z.string().uuid().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

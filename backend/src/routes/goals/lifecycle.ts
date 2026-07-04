@@ -4,6 +4,8 @@ import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requireOkrEdit, parseMonthlyGoals, resolveAgentParam, type MonthlyGoal } from './permissions.js';
+import { createRequirement, type CreateRequirementActor } from '../../services/requirement-create-service.js';
+import { env } from '../../config/env.js';
 
 export function registerLifecycleRoutes(router: import('express').Router): void {
 
@@ -46,7 +48,7 @@ router.patch(
   })
 );
 
-// POST /:agentId/push-todos - 推送月度目标到 LLM Todo
+// POST /:agentId/push-todos - 推送月度目标到 ADC Agent Todo
 router.post(
   '/:agentId/push-todos',
   authRequired,
@@ -66,38 +68,96 @@ router.post(
     const monthGroup = goals.find((g) => g.month === month);
     if (!monthGroup) throw new HttpError(404, `月份 ${month} 不存在`);
 
-    const llmTodoUrl = process.env.LLM_TODO_API_URL || 'http://localhost:8720';
-    const llmTodoToken = process.env.LLM_TODO_TOKEN || '';
+    // ── Validate required Agent Todo config ─────────────────────
+    const efficiencyUserId = env.AGENT_TODO_EFFICIENCY_USER_ID;
+    const lobsterUserId = env.AGENT_TODO_LOBSTER_USER_ID;
+    const executorUserId = env.AGENT_TODO_EXECUTOR_USER_ID;
+
+    if (!efficiencyUserId) {
+      throw new HttpError(500, 'Agent Todo 配置缺失: AGENT_TODO_EFFICIENCY_USER_ID');
+    }
+    if (!lobsterUserId) {
+      throw new HttpError(500, 'Agent Todo 配置缺失: AGENT_TODO_LOBSTER_USER_ID');
+    }
+    if (!executorUserId) {
+      throw new HttpError(500, 'Agent Todo 配置缺失: AGENT_TODO_EXECUTOR_USER_ID');
+    }
+
+    // The auth actor is the req.user from authRequired (human user with okr roles).
+    // Domain scope middleware is NOT mounted on goals routes, so we pass the raw
+    // actor fields and let the shared service resolve domain scope from the DB.
+    const actor = req.user!;
+    const createActor: CreateRequirementActor = {
+      id: actor.id,
+      name: actor.name,
+      role: actor.role,
+      internalRole: actor.internalRole,
+      roles: actor.roles,
+      // allowedDomainKeys is intentionally undefined — the shared service will
+      // resolve domain scope from the database via resolveDomainScope().
+    };
+
+    // Query-before-create: check if a requirement already exists for this
+    // goal/month/agent combo.  The title prefix "[目标卡]" + goal text is
+    // a stable marker we check to avoid duplicate re-creation on retry.
+    const existingRequirements = await prisma.requirement.findMany({
+      where: {
+        domainKey: 'agent-todo',
+        title: { startsWith: '[目标卡]' },
+        requesterId: actor.id,
+      },
+      select: { id: true, title: true },
+    });
+
+    const requirementIds: string[] = [];
     const created: string[] = [];
 
     for (const goal of monthGroup.goals) {
-      try {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (llmTodoToken) headers['Authorization'] = `Bearer ${llmTodoToken}`;
+      const expectedTitle = `[目标卡] ${goal.text}`;
 
-        const resp = await fetch(`${llmTodoUrl}/api/tasks`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            title: `[目标卡] ${goal.text}`, status: 'active',
-            priority: 'medium', horizon: 'month', type: 'agent',
-            source: 'goal-card', area: goalCard.pipeline,
-          }),
-        });
-
-        if (resp.ok) {
-          const data = await resp.json() as { task?: { id?: string } };
-          if (data.task?.id) created.push(data.task.id);
-        }
-      } catch {
-        // Continue pushing remaining goals even if one fails
+      // Check if already created (dedup via title + domainKey + requesterId)
+      const existing = existingRequirements.find(r => r.title === expectedTitle);
+      if (existing) {
+        requirementIds.push(existing.id);
+        created.push(existing.id); // compat alias
+        continue;
       }
+
+      // ── Create ADC Requirement via shared service ──────────
+      const result = await createRequirement(createActor, {
+        title: expectedTitle,
+        description:
+          `Goal Card push for ${month}. Agent: ${agentId}. Pipeline: ${goalCard.pipeline}.`,
+        domainKey: 'agent-todo',
+        workflowTemplateKey: 'agent-todo-v1',
+        workflowRoleAssignments: {
+          'efficiency-manager': efficiencyUserId,
+          'lobster-partner': lobsterUserId,
+          'executor': executorUserId,
+        },
+        priority: 'P2',
+        type: 'FEATURE',
+        tags: [
+          'goal-card',
+          `goal-month:${month}`,
+          `goal-agent:${agentId}`,
+          `goal-pipeline:${goalCard.pipeline}`,
+        ],
+      });
+
+      requirementIds.push(result.id);
+      created.push(result.id);
     }
 
     const newPushedMonths = [...goalCard.pushedMonths, month];
     await prisma.agentGoalCard.update({ where: { agentId }, data: { pushedMonths: newPushedMonths } });
 
-    res.json({ created: created.length, taskIds: created, total: monthGroup.goals.length });
+    res.json({
+      created: created.length,
+      requirementIds,
+      taskIds: created, // compat alias for existing callers
+      total: monthGroup.goals.length,
+    });
   })
 );
 
