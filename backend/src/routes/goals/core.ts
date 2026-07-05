@@ -3,7 +3,7 @@ import { agentTokenRequired } from '../../middleware/marketplace-auth.js';
 import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
-import { requireOkrEdit, resolveAgentParam } from './permissions.js';
+import { requireOkrEdit, resolveAgentParam, normalizePipeline } from './permissions.js';
 
 export function registerCoreRoutes(router: import('express').Router): void {
 
@@ -171,15 +171,14 @@ router.post(
   authRequired,
   requireOkrEdit,
   asyncHandler(async (req, res) => {
-    const { agentId, pipeline, longTermDirection, monthlyGoals, selfCheckCriteria, upstreamAgentIds, downstreamAgentIds } = req.body as {
+    const { agentId, pipeline: rawPipeline, longTermDirection, monthlyGoals, selfCheckCriteria, upstreamAgentIds, downstreamAgentIds } = req.body as {
       agentId: string; pipeline: string; longTermDirection: string;
       monthlyGoals?: any[]; selfCheckCriteria?: string; upstreamAgentIds?: string[]; downstreamAgentIds?: string[];
     };
 
-    if (!agentId || !pipeline || !longTermDirection) throw new HttpError(400, '缺少必填字段: agentId, pipeline, longTermDirection');
+    if (!agentId || !rawPipeline || !longTermDirection) throw new HttpError(400, '缺少必填字段: agentId, pipeline, longTermDirection');
 
-    const validPipelines = ['content', 'parenting', 'investment', 'health', 'planning', 'lifestyle', 'devops', 'education', 'business', 'cross-cutting'];
-    if (!validPipelines.includes(pipeline)) throw new HttpError(400, `无效的 pipeline 值: "${pipeline}"。有效值: ${validPipelines.join(', ')}`);
+    const pipeline = normalizePipeline(rawPipeline);
 
     const agent = await prisma.marketplaceAgent.findUnique({ where: { id: agentId } });
     if (!agent) throw new HttpError(404, 'Agent 不存在');
@@ -189,7 +188,7 @@ router.post(
 
     const goalCard = await prisma.agentGoalCard.create({
       data: {
-        agentId, pipeline: pipeline as any, longTermDirection,
+        agentId, pipeline, longTermDirection,
         monthlyGoals: (monthlyGoals || []) as any, selfCheckCriteria: selfCheckCriteria || '',
         upstreamAgentIds: upstreamAgentIds || [], downstreamAgentIds: downstreamAgentIds || [],
         status: 'active',
@@ -200,7 +199,7 @@ router.post(
     await prisma.goalRevision.create({
       data: {
         goalCardId: goalCard.id, longTermDirection, monthlyGoals: (monthlyGoals || []) as any,
-        selfCheckCriteria: selfCheckCriteria || '', pipeline: pipeline as any,
+        selfCheckCriteria: selfCheckCriteria || '', pipeline,
         changeNote: '创建目标卡', changedBy: req.user!.name, changedById: req.user!.id,
       },
     });
@@ -227,13 +226,13 @@ router.put(
     const existing = await prisma.agentGoalCard.findUnique({ where: { agentId } });
     if (!existing) throw new HttpError(404, '目标卡不存在');
 
-    const validPipelines = ['content', 'parenting', 'investment', 'health', 'planning', 'lifestyle', 'devops', 'education', 'business', 'cross-cutting'];
-    if (body.pipeline !== undefined && !validPipelines.includes(body.pipeline)) {
-      throw new HttpError(400, `无效的 pipeline 值: "${body.pipeline}"`);
+    let normalizedPipeline: any = undefined;
+    if (body.pipeline !== undefined) {
+      normalizedPipeline = normalizePipeline(body.pipeline);
     }
 
     const updateData: Record<string, unknown> = {};
-    if (body.pipeline !== undefined) updateData.pipeline = body.pipeline;
+    if (normalizedPipeline !== undefined) updateData.pipeline = normalizedPipeline;
     if (body.longTermDirection !== undefined) updateData.longTermDirection = body.longTermDirection;
     if (body.monthlyGoals !== undefined) updateData.monthlyGoals = body.monthlyGoals;
     if (body.selfCheckCriteria !== undefined) updateData.selfCheckCriteria = body.selfCheckCriteria;

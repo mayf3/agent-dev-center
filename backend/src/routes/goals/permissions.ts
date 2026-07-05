@@ -36,6 +36,52 @@ export function parseMonthlyGoals(val: unknown): MonthlyGoalGroup[] {
 
 export const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// ─── Pipeline normalization ─────────────────────────────────
+
+/**
+ * Acceptable public pipeline values for goal card creation/update.
+ */
+const PUBLIC_PIPELINE_VALUES = [
+  'content', 'parenting', 'investment', 'health', 'planning',
+  'lifestyle', 'devops', 'education', 'business',
+  'cross-cutting', 'cross_cutting',
+] as const;
+
+/**
+ * Normalize a pipeline value from the public API to a Prisma-compatible PipelineName.
+ *
+ * Both "cross-cutting" (hyphen) and "cross_cutting" (underscore)
+ * are mapped to "cross_cutting". All other valid values are passed through
+ * as-is. Invalid values throw 400.
+ *
+ * The return type uses the PipelineName enum string union, which matches
+ * what Prisma expects for the pipeline field on AgentGoalCard.
+ */
+export function normalizePipeline(value: unknown): 'content' | 'parenting' | 'investment' | 'health' | 'planning' | 'lifestyle' | 'devops' | 'education' | 'business' | 'cross_cutting' {
+  if (typeof value !== 'string') {
+    throw new HttpError(400, 'pipeline 必须是字符串');
+  }
+
+  const trimmed = value.trim();
+
+  // Accept both hyphen and underscore variants for cross-cutting
+  if (trimmed === 'cross-cutting' || trimmed === 'cross_cutting') {
+    return 'cross_cutting';
+  }
+
+  // All other valid enum values — direct match to Prisma PipelineName members
+  const directValues = [
+    'content', 'parenting', 'investment', 'health', 'planning',
+    'lifestyle', 'devops', 'education', 'business',
+  ] as const;
+  // TypeScript const assertion preserves literal types for the includes check
+  if ((directValues as readonly string[]).includes(trimmed)) {
+    return trimmed as 'content' | 'parenting' | 'investment' | 'health' | 'planning' | 'lifestyle' | 'devops' | 'education' | 'business' | 'cross_cutting';
+  }
+
+  throw new HttpError(400, `无效的 pipeline 值: "${value}"。有效值: ${PUBLIC_PIPELINE_VALUES.join(', ')}`);
+}
+
 // ─── Helper: resolve agentId (UUID or name) to marketplaceAgent ───
 
 import { prisma } from '../../lib/prisma.js';
