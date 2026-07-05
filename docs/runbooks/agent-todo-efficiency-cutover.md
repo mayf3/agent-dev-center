@@ -107,6 +107,12 @@ echo "✅ Admin API 成功: internalRole=pm, roles 包含 adc:pm"
 jq '{role: .role, okrRole: .okrRole, internalRole: .internalRole, roles: .roles, enabled: .enabled}' /tmp/admin-response.json
 ```
 
+> **注意**: Admin API 设置 internalRole 后，效率管家的平台角色会发生对应变化（如 `adc:pm`）。
+> 工具在执行 dry-run/apply 时会自动验证效率管家用户是否具有 agent-todo Folder 的访问权限：
+> - 拥有 `adc:admin` 全局权限 → 自动通过
+> - 否则要求用户的平台角色命中 `domain_role_bindings` 中 agent-todo 域的绑定角色
+> - 不满足时返回 `BLOCKED_BY_TO_USER_FOLDER_ACCESS`
+
 ### 4.4 回滚命令
 
 ```bash
@@ -346,6 +352,7 @@ npx tsx backend/src/scripts/cutover-agent-todo-efficiency-manager.ts \
 | `BLOCKED_BY_INSTANCE_STATE_CHANGED` | 目标 Requirement 状态已变化 | 确认是否可继续，联系负责人 |
 | `BLOCKED_BY_INVALID_ACTOR` | Actor 无效或权限不足 | 确认正确的管理员身份 |
 | `BLOCKED_BY_ROLLBACK_PRECONDITION` | 工作流已推进，不可回滚 | 手动评估是否需要恢复 |
+| `BLOCKED_BY_TO_USER_FOLDER_ACCESS` | 效率管家无 agent-todo Folder 访问权限 | 确认 Admin API 已设置正确平台角色，或拥有 adc:admin 全局权限 |
 | `BLOCKED_BY_MAIN_ADVANCE` | 基线 commit 已变更 | 重新 fetch 并审计 |
 | `BLOCKED_BY_TEST_FAILURE` | 测试未通过 | 修复后重新执行 |
 | `BLOCKED_BY_STRUCTURE_GUARD` | 目录/文件结构不符合规范 | 修复后重新执行 |

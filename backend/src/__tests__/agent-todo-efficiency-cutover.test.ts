@@ -1218,3 +1218,142 @@ describe('Service rollback', () => {
     expect(summary.requirements).toHaveLength(3);
   });
 });
+
+// ─── 18. Folder Access Validation ──────────────────────────────────────────
+
+describe('Folder access validation', () => {
+  function buildUser(overrides: Record<string, any> = {}): any {
+    return {
+      id: overrides.id || crypto.randomUUID(),
+      name: overrides.name || 'TestUser',
+      email: overrides.email || 'test@test.local',
+      enabled: overrides.enabled ?? true,
+      roles: overrides.roles ?? ['adc:admin'],
+      internalRole: overrides.internalRole ?? null,
+      role: overrides.role ?? 'developer',
+    };
+  }
+
+  it('18.1 global admin passes (isPlatformAdmin shortcut)', async () => {
+    const { validateUserCanAccessDomain } = await import('../scripts/agent-todo-efficiency-cutover/validators.js');
+    const user = buildUser({ roles: ['adc:admin'] });
+    const prisma = { businessDomain: { findUnique: vi.fn() }, domainRoleBinding: { findMany: vi.fn() } } as any;
+    await expect(validateUserCanAccessDomain(prisma, user, 'agent-todo')).resolves.toBeUndefined();
+    expect(prisma.businessDomain.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('18.2 user with hit binding role passes', async () => {
+    const { validateUserCanAccessDomain } = await import('../scripts/agent-todo-efficiency-cutover/validators.js');
+    const user = buildUser({ roles: ['adc:pm'] });
+    const prisma = {
+      businessDomain: { findUnique: vi.fn().mockResolvedValue({ key: 'agent-todo', isActive: true }) },
+      domainRoleBinding: { findMany: vi.fn().mockResolvedValue([{ role: 'adc:pm' }]) },
+    } as any;
+    await expect(validateUserCanAccessDomain(prisma, user, 'agent-todo')).resolves.toBeUndefined();
+  });
+
+  it('18.3 user with no matching role blocks', async () => {
+    const { validateUserCanAccessDomain, FOLDER_ACCESS_ERROR } = await import('../scripts/agent-todo-efficiency-cutover/validators.js');
+    const user = buildUser({ roles: ['adc:viewer'] });
+    const prisma = {
+      businessDomain: { findUnique: vi.fn().mockResolvedValue({ key: 'agent-todo', isActive: true }) },
+      domainRoleBinding: { findMany: vi.fn().mockResolvedValue([{ role: 'adc:pm' }, { role: 'adc:developer' }]) },
+    } as any;
+    await expect(validateUserCanAccessDomain(prisma, user, 'agent-todo')).rejects.toThrow(FOLDER_ACCESS_ERROR);
+  });
+
+  it('18.4 user has role but no binding in DB blocks', async () => {
+    const { validateUserCanAccessDomain, FOLDER_ACCESS_ERROR } = await import('../scripts/agent-todo-efficiency-cutover/validators.js');
+    const user = buildUser({ roles: ['adc:pm'] });
+    const prisma = {
+      businessDomain: { findUnique: vi.fn().mockResolvedValue({ key: 'agent-todo', isActive: true }) },
+      domainRoleBinding: { findMany: vi.fn().mockResolvedValue([{ role: 'adc:developer' }]) },
+    } as any;
+    await expect(validateUserCanAccessDomain(prisma, user, 'agent-todo')).rejects.toThrow(FOLDER_ACCESS_ERROR);
+  });
+
+  it('18.5 domain inactive blocks', async () => {
+    const { validateUserCanAccessDomain, FOLDER_ACCESS_ERROR } = await import('../scripts/agent-todo-efficiency-cutover/validators.js');
+    const user = buildUser({ roles: ['adc:pm'] });
+    const prisma = {
+      businessDomain: { findUnique: vi.fn().mockResolvedValue({ key: 'agent-todo', isActive: false }) },
+      domainRoleBinding: { findMany: vi.fn() },
+    } as any;
+    await expect(validateUserCanAccessDomain(prisma, user, 'agent-todo')).rejects.toThrow(FOLDER_ACCESS_ERROR);
+  });
+
+  it('18.6 dynamic binding role passes', async () => {
+    const { validateUserCanAccessDomain } = await import('../scripts/agent-todo-efficiency-cutover/validators.js');
+    const user = buildUser({ roles: ['adc:operations-specialist'] });
+    const prisma = {
+      businessDomain: { findUnique: vi.fn().mockResolvedValue({ key: 'agent-todo', isActive: true }) },
+      domainRoleBinding: { findMany: vi.fn().mockResolvedValue([{ role: 'adc:operations-specialist' }]) },
+    } as any;
+    await expect(validateUserCanAccessDomain(prisma, user, 'agent-todo')).resolves.toBeUndefined();
+  });
+
+  it('18.7 global admin passes even with no bindings', async () => {
+    const { validateUserCanAccessDomain } = await import('../scripts/agent-todo-efficiency-cutover/validators.js');
+    const user = buildUser({ roles: ['adc:admin'] });
+    const prisma = { businessDomain: { findUnique: vi.fn() }, domainRoleBinding: { findMany: vi.fn() } } as any;
+    await expect(validateUserCanAccessDomain(prisma, user, 'agent-todo')).resolves.toBeUndefined();
+  });
+
+  it('18.8 dry-run blocks when toUser has no folder access', async () => {
+    process.env.DATABASE_URL = 'postgresql://u:p@localhost:5432/agent_dev_center?schema=public';
+    const { executeDryRun } = await import('../scripts/agent-todo-efficiency-cutover/service.js');
+    const fromId = crypto.randomUUID(), toId = crypto.randomUUID(), actorId = crypto.randomUUID();
+    const reqId1 = crypto.randomUUID(), reqId2 = crypto.randomUUID(), reqId3 = crypto.randomUUID();
+    const mockReq = (id: string) => ({ id, title: `R-${id.slice(0, 8)}`, domainKey: 'agent-todo', currentStep: 'efficiency_review', requesterId: crypto.randomUUID(), assigneeId: fromId, assignee: 'MAYF3', workflowId: crypto.randomUUID(), workflowSnapshot: { roleUserMap: { 'efficiency-manager': fromId, 'lobster-partner': fromId, executor: fromId }, steps: [] }, stateVersion: 0, createdAt: new Date(), updatedAt: new Date() });
+    const prisma = {
+      $queryRawUnsafe: vi.fn().mockResolvedValue([{ current_database: 'agent_dev_center', current_schema: 'public', current_user: 'u', inet_server_addr: '127.0.0.1', inet_server_port: 5432 }]),
+      requirement: { findUnique: vi.fn((a: any) => Promise.resolve([reqId1, reqId2, reqId3].includes(a.where.id) ? mockReq(a.where.id) : null)), count: vi.fn().mockResolvedValue(3), updateMany: vi.fn() },
+      workflowTransition: { count: vi.fn().mockResolvedValue(0) }, requirementReport: { count: vi.fn().mockResolvedValue(0) },
+      user: { findUnique: vi.fn((a: any) => {
+        if (a.where.id === fromId) return Promise.resolve({ id: fromId, name: 'MAYF3', email: 'm@t.local', enabled: true, roles: ['adc:admin'], internalRole: 'cto', role: 'admin' });
+        if (a.where.id === toId) return Promise.resolve({ id: toId, name: '效率管家', email: 'e@t.local', enabled: true, roles: ['adc:viewer'], internalRole: null, role: 'developer' });
+        if (a.where.id === actorId) return Promise.resolve({ id: actorId, name: 'Op', email: 'o@t.local', enabled: true, roles: ['adc:admin'], internalRole: 'cto', role: 'admin' });
+        return Promise.resolve(null);
+      })},
+      businessDomain: { findUnique: vi.fn().mockResolvedValue({ key: 'agent-todo', isActive: true }) },
+      workflowTemplate: { findUnique: vi.fn().mockResolvedValue({ name: 'agent-todo-v1', isActive: true }) },
+      domainRoleBinding: { findMany: vi.fn().mockResolvedValue([{ role: 'adc:pm' }]) },
+      auditLog: { findMany: vi.fn(), create: vi.fn() }, $transaction: vi.fn(), $connect: vi.fn(), $disconnect: vi.fn(),
+    } as any;
+    const args = { mode: 'dry-run' as const, requirementIds: [reqId1, reqId2, reqId3] as [string, string, string], fromUserId: fromId, toUserId: toId, actorId, actorName: 'Op', expectedHost: 'localhost', expectedDatabase: 'agent_dev_center', expectedSchema: 'public', expectedAgentTodoCount: 3, expectedToUserEmail: 'e@t.local', expectedFromUserName: 'MAYF3' };
+    await expect(executeDryRun(prisma, args)).rejects.toThrow('BLOCKED_BY_TO_USER_FOLDER_ACCESS');
+    expect(prisma.requirement.updateMany).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    delete process.env.DATABASE_URL;
+  });
+
+  it('18.9 apply blocks when toUser has no folder access (zero writes)', async () => {
+    process.env.DATABASE_URL = 'postgresql://u:p@localhost:5432/agent_dev_center?schema=public';
+    const { executeApply } = await import('../scripts/agent-todo-efficiency-cutover/service.js');
+    const fromId = crypto.randomUUID(), toId = crypto.randomUUID(), actorId = crypto.randomUUID();
+    const reqId1 = crypto.randomUUID(), reqId2 = crypto.randomUUID(), reqId3 = crypto.randomUUID();
+    const mockReq = (id: string) => ({ id, title: `R-${id.slice(0, 8)}`, domainKey: 'agent-todo', currentStep: 'efficiency_review', requesterId: crypto.randomUUID(), assigneeId: fromId, assignee: 'MAYF3', workflowId: crypto.randomUUID(), workflowSnapshot: { roleUserMap: { 'efficiency-manager': fromId, 'lobster-partner': fromId, executor: fromId }, steps: [] }, stateVersion: 0, createdAt: new Date(), updatedAt: new Date() });
+    const prisma = {
+      $queryRawUnsafe: vi.fn().mockResolvedValue([{ current_database: 'agent_dev_center', current_schema: 'public', current_user: 'u', inet_server_addr: '127.0.0.1', inet_server_port: 5432 }]),
+      requirement: { findUnique: vi.fn((a: any) => Promise.resolve([reqId1, reqId2, reqId3].includes(a.where.id) ? mockReq(a.where.id) : null)), count: vi.fn().mockResolvedValue(3), updateMany: vi.fn() },
+      workflowTransition: { count: vi.fn().mockResolvedValue(0) }, requirementReport: { count: vi.fn().mockResolvedValue(0) },
+      user: { findUnique: vi.fn((a: any) => {
+        if (a.where.id === fromId) return Promise.resolve({ id: fromId, name: 'MAYF3', email: 'm@t.local', enabled: true, roles: ['adc:admin'], internalRole: 'cto', role: 'admin' });
+        if (a.where.id === toId) return Promise.resolve({ id: toId, name: '效率管家', email: 'e@t.local', enabled: true, roles: ['adc:viewer'], internalRole: null, role: 'developer' });
+        if (a.where.id === actorId) return Promise.resolve({ id: actorId, name: 'Op', email: 'o@t.local', enabled: true, roles: ['adc:admin'], internalRole: 'cto', role: 'admin' });
+        return Promise.resolve(null);
+      })},
+      businessDomain: { findUnique: vi.fn().mockResolvedValue({ key: 'agent-todo', isActive: true }) },
+      workflowTemplate: { findUnique: vi.fn().mockResolvedValue({ name: 'agent-todo-v1', isActive: true }) },
+      domainRoleBinding: { findMany: vi.fn().mockResolvedValue([{ role: 'adc:pm' }]) },
+      auditLog: { findMany: vi.fn(), create: vi.fn() }, $transaction: vi.fn(), $connect: vi.fn(), $disconnect: vi.fn(),
+    } as any;
+    const args = { mode: 'apply' as const, requirementIds: [reqId1, reqId2, reqId3] as [string, string, string], fromUserId: fromId, toUserId: toId, actorId, actorName: 'Op', expectedHost: 'localhost', expectedDatabase: 'agent_dev_center', expectedSchema: 'public', expectedAgentTodoCount: 3, expectedToUserEmail: 'e@t.local', expectedFromUserName: 'MAYF3' };
+    await expect(executeApply(prisma, args)).rejects.toThrow('BLOCKED_BY_TO_USER_FOLDER_ACCESS');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.requirement.updateMany).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    delete process.env.DATABASE_URL;
+  });
+});

@@ -264,3 +264,69 @@ export async function validateActor(
   }
   return user;
 }
+
+/**
+ * Verify that a user can access the specified BusinessDomain.
+ *
+ * Permission model (matches resolveDomainScope in domain-scope.ts):
+ *   1. Global admin (adc:admin via isPlatformAdmin) — allowed regardless of bindings.
+ *   2. Otherwise, the user must have at least one platform role that is bound
+ *      to the domain in domain_role_bindings.
+ *
+ * @throws BLOCKED_BY_TO_USER_FOLDER_ACCESS if access is denied.
+ */
+export const FOLDER_ACCESS_ERROR = 'BLOCKED_BY_TO_USER_FOLDER_ACCESS';
+
+export async function validateUserCanAccessDomain(
+  prisma: PrismaClient,
+  user: UserInfo,
+  domainKey: string,
+): Promise<void> {
+  // 1. Global admin shortcut
+  if (isPlatformAdmin(user)) {
+    return;
+  }
+
+  // 2. Resolve user's platform roles (using canonical implementation)
+  const userRoles = getPlatformRoles(user);
+  if (!userRoles || userRoles.length === 0) {
+    throw new Error(
+      `${FOLDER_ACCESS_ERROR}: 用户 ${user.id} (${user.name}) 无平台角色，无法访问 domain=${domainKey}`
+    );
+  }
+
+  // 3. Verify the domain exists and is active
+  const domain = await prisma.businessDomain.findUnique({
+    where: { key: domainKey },
+    select: { key: true, isActive: true },
+  });
+  if (!domain) {
+    throw new Error(`${FOLDER_ACCESS_ERROR}: domain=${domainKey} 不存在`);
+  }
+  if (!domain.isActive) {
+    throw new Error(`${FOLDER_ACCESS_ERROR}: domain=${domainKey} 非活跃状态`);
+  }
+
+  // 4. Query domain_role_bindings for this domain
+  const bindings = await prisma.domainRoleBinding.findMany({
+    where: { domainKey },
+    select: { role: true },
+  });
+
+  if (!bindings || bindings.length === 0) {
+    throw new Error(
+      `${FOLDER_ACCESS_ERROR}: domain=${domainKey} 无任何有效角色绑定，用户 ${user.id} (${user.name}) 无法访问`
+    );
+  }
+
+  const allowedRoles = new Set(bindings.map(b => b.role));
+
+  // 5. Check intersection
+  const hasAccess = userRoles.some(r => allowedRoles.has(r));
+  if (!hasAccess) {
+    throw new Error(
+      `${FOLDER_ACCESS_ERROR}: 用户 ${user.id} (${user.name}) 的平台角色 [${userRoles.join(', ')}] ` +
+      `未命中 domain=${domainKey} 的绑定角色 [${[...allowedRoles].join(', ')}]`
+    );
+  }
+}

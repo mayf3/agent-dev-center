@@ -31,6 +31,7 @@ import {
   validateAgentTodoCount,
   validateUser,
   validateActor,
+  validateUserCanAccessDomain,
   countAgentTodoRequirements,
 } from './validators.js';
 import {
@@ -78,6 +79,8 @@ export async function executeDryRun(
   // 4. User validation
   const fromUser = await validateUser(prisma, args.fromUserId);
   const toUser = await validateUser(prisma, args.toUserId, undefined, args.expectedToUserEmail);
+  // Validate to-user folder access to agent-todo
+  await validateUserCanAccessDomain(prisma, toUser, 'agent-todo');
   // Validate expected from user name
   if (args.expectedFromUserName && fromUser.name !== args.expectedFromUserName) {
     throw new Error(`用户名不匹配: 期望 fromUserName="${args.expectedFromUserName}"，实际="${fromUser.name}"`);
@@ -140,6 +143,8 @@ export async function executeApply(
   // User validation
   const fromUser = await validateUser(prisma, args.fromUserId);
   const toUser = await validateUser(prisma, args.toUserId, undefined, args.expectedToUserEmail);
+  // Validate to-user folder access to agent-todo
+  await validateUserCanAccessDomain(prisma, toUser, 'agent-todo');
   // Validate expected from user name
   if (args.expectedFromUserName && fromUser.name !== args.expectedFromUserName) {
     throw new Error(`用户名不匹配: 期望 fromUserName="${args.expectedFromUserName}"，实际="${fromUser.name}"`);
