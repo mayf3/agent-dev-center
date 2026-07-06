@@ -491,7 +491,8 @@ reportsRouter.patch(
 
         // QA 驳回时自动退回工作流（不需要 QA 额外调 workflow/reject）
         let targetStep: string;
-        switch (report.reportType) {
+        const qaRejectReportType = report.reportType as string;
+        switch (qaRejectReportType) {
           case 'DEV_SELF_CHECK':
             targetStep = 'dev_self_check';
             break;
@@ -499,6 +500,12 @@ reportsRouter.patch(
             targetStep = 'testing';
             break;
           case 'SECURITY_REVIEW':
+            targetStep = 'dev_self_check';
+            break;
+          case 'ARCH_DESIGN':
+            targetStep = 'arch_design';
+            break;
+          case 'ARCH_REVIEW':
             targetStep = 'dev_self_check';
             break;
           default:
@@ -656,7 +663,8 @@ reportsRouter.patch(
 
         // 自动退回工作流
         let targetStep: string;
-        switch (report.reportType) {
+        const ctoRejectReportType = report.reportType as string;
+        switch (ctoRejectReportType) {
           case 'DEV_SELF_CHECK':
             targetStep = 'dev_self_check';
             break;
@@ -664,6 +672,12 @@ reportsRouter.patch(
             targetStep = 'testing';
             break;
           case 'SECURITY_REVIEW':
+            targetStep = 'dev_self_check';
+            break;
+          case 'ARCH_DESIGN':
+            targetStep = 'arch_design';
+            break;
+          case 'ARCH_REVIEW':
             targetStep = 'dev_self_check';
             break;
           default:
@@ -859,6 +873,15 @@ reportsRouter.patch(
             targetStep = 'testing';
             break;
           case 'DEPLOY_CONFIRM':
+            targetStep = 'cto_review';
+            break;
+          case 'ARCH_DESIGN':
+            targetStep = 'arch_design';
+            break;
+          case 'ARCH_REVIEW':
+            targetStep = 'dev_self_check';
+            break;
+          case 'MERGE_REPORT':
             targetStep = 'cto_review';
             break;
           default:

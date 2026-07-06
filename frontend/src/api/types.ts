@@ -138,7 +138,7 @@ export interface GitCommit {
 
 // ─── Reports ──────────────────────────────────────────────────────
 
-export type ReportType = 'DEV_SELF_CHECK' | 'SECURITY_REVIEW' | 'TEST_REPORT' | 'CTO_REVIEW' | 'DEPLOY_CONFIRM' | 'POSTMORTEM';
+export type ReportType = 'DEV_SELF_CHECK' | 'SECURITY_REVIEW' | 'TEST_REPORT' | 'CTO_REVIEW' | 'DEPLOY_CONFIRM' | 'POSTMORTEM' | 'TEST_DEPLOY_CONFIRM' | 'MERGE_REPORT' | 'ARCH_DESIGN' | 'ARCH_REVIEW';
 export type ReportStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested';
 
 export interface RequirementReport {

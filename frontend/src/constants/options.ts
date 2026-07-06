@@ -186,6 +186,10 @@ export const reportTypeLabels: Record<ReportType, string> = {
   CTO_REVIEW: 'CTO 验收',
   DEPLOY_CONFIRM: '发布确认',
   POSTMORTEM: '验尸报告',
+  TEST_DEPLOY_CONFIRM: '测试部署确认',
+  MERGE_REPORT: '合并报告',
+  ARCH_DESIGN: '架构设计',
+  ARCH_REVIEW: '架构审查',
 };
 
 export const reportStatusLabels: Record<ReportStatus, string> = {
@@ -209,6 +213,10 @@ export const reportTypeOrder: ReportType[] = [
   'TEST_REPORT',
   'CTO_REVIEW',
   'DEPLOY_CONFIRM',
+  'TEST_DEPLOY_CONFIRM',
+  'MERGE_REPORT',
+  'ARCH_DESIGN',
+  'ARCH_REVIEW',
 ];
 
 // ─── Findings (QA review findings-driven approach) ───────────────

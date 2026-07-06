@@ -234,6 +234,58 @@ function renderDeployConfirm(content: Record<string, unknown>) {
   );
 }
 
+/**
+ * Generic JSON content renderer — fallback for report types without a dedicated renderer
+ * Displays content as key-value descriptions, safe for any JSON shape.
+ */
+function renderGenericReport(content: Record<string, unknown>) {
+  const entries = Object.entries(content);
+  if (entries.length === 0) {
+    return <Typography.Text type="secondary">无内容</Typography.Text>;
+  }
+
+  // Check if content is a simple flat object or has nested structures
+  const hasNested = entries.some(([, v]) => typeof v === 'object' && v !== null);
+
+  if (!hasNested) {
+    return (
+      <Descriptions bordered size="small" column={1}>
+        {entries.map(([key, val]) => (
+          <Descriptions.Item key={key} label={key}>
+            {val != null ? String(val) : '-'}
+          </Descriptions.Item>
+        ))}
+      </Descriptions>
+    );
+  }
+
+  // Mixed / nested content: render top-level keys as sections
+  return (
+    <div>
+      {entries.map(([key, val]) => {
+        if (typeof val === 'object' && val !== null) {
+          return (
+            <div key={key} style={{ marginBottom: 12 }}>
+              <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>
+                {key}
+              </Typography.Text>
+              <pre style={{ margin: 0, padding: 8, background: '#f5f5f5', borderRadius: 4, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {JSON.stringify(val, null, 2)}
+              </pre>
+            </div>
+          );
+        }
+        return (
+          <div key={key} style={{ marginBottom: 4 }}>
+            <Typography.Text strong>{key}: </Typography.Text>
+            <Typography.Text>{val != null ? String(val) : '-'}</Typography.Text>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function renderPostmortem(content: Record<string, unknown>) {
   const rca = (content.rootCauseAnalysis as Array<{why: string; depth: number; finding: string}>) ?? [];
   const principles = (content.principles as Array<{title: string; content: string}>) ?? [];
@@ -359,13 +411,17 @@ function renderFindings(findings: QAReviewFinding[]) {
   );
 }
 
-const renderers: Record<ReportType, (content: Record<string, unknown>) => React.ReactNode> = {
+const renderers: Partial<Record<ReportType, (content: Record<string, unknown>) => React.ReactNode>> = {
   POSTMORTEM: renderPostmortem,
   DEV_SELF_CHECK: renderDevSelfCheck,
   SECURITY_REVIEW: renderSecurityReview,
   TEST_REPORT: renderTestReport,
   CTO_REVIEW: renderCtoReview,
   DEPLOY_CONFIRM: renderDeployConfirm,
+  TEST_DEPLOY_CONFIRM: renderGenericReport,
+  MERGE_REPORT: renderGenericReport,
+  ARCH_DESIGN: renderGenericReport,
+  ARCH_REVIEW: renderGenericReport,
 };
 
 interface ReportDetailModalProps {
@@ -379,11 +435,11 @@ export function ReportDetailModal({ report, open, onClose }: ReportDetailModalPr
     return null;
   }
 
-  const renderer = renderers[report.reportType];
+  const renderer = renderers[report.reportType] ?? renderGenericReport;
 
   return (
     <Modal
-      title={`${reportTypeLabels[report.reportType]} - Details`}
+      title={`${reportTypeLabels[report.reportType] ?? report.reportType} - Details`}
       open={open}
       onCancel={onClose}
       footer={null}

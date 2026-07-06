@@ -115,6 +115,12 @@ async function simulateQaRejectRollback(params: QaRejectParams) {
     case 'SECURITY_REVIEW':
       targetStep = 'dev_self_check';
       break;
+    case 'ARCH_DESIGN':
+      targetStep = 'arch_design';
+      break;
+    case 'ARCH_REVIEW':
+      targetStep = 'dev_self_check';
+      break;
     default:
       targetStep = currentStep;
   }
@@ -190,6 +196,9 @@ async function simulateCtoRejectRollback(params: CtoRejectParams) {
       break;
     case 'ARCH_REVIEW':
       targetStep = 'dev_self_check';
+      break;
+    case 'MERGE_REPORT':
+      targetStep = 'cto_review';
       break;
     default:
       break;
@@ -352,6 +361,50 @@ describe('QA review rejection rollback', () => {
     expect(expectedTargetIndex).toBeLessThan(expectedStepIndex);
   });
 
+  it('QA rejects ARCH_DESIGN → rollback to arch_design with architect assigned', async () => {
+    const architectUserId = 'architect-user-1';
+
+    mockWfFindUnique.mockResolvedValue({ steps: WORKFLOW_STEPS_V4 });
+    mockResolveAssignee.mockResolvedValue(architectUserId);
+    mockReqUpdate.mockResolvedValue({});
+    mockWfTransitionCreate.mockResolvedValue({});
+
+    const result = await simulateQaRejectRollback({
+      requirementId: 'req-arch-design',
+      reportId: 'report-arch-design',
+      reportType: 'ARCH_DESIGN',
+      currentStep: 'arch_review',
+      workflowId: 'wf-v4',
+      assigneeId: 'architect-user-1',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.actualTarget).toBe('arch_design');
+    expect(mockResolveAssignee).toHaveBeenCalledWith('architect', 'architect-user-1');
+  });
+
+  it('QA rejects ARCH_REVIEW → rollback to dev_self_check with developer assigned', async () => {
+    const devUserId = 'dev-user-5';
+
+    mockWfFindUnique.mockResolvedValue({ steps: WORKFLOW_STEPS_V4 });
+    mockResolveAssignee.mockResolvedValue(devUserId);
+    mockReqUpdate.mockResolvedValue({});
+    mockWfTransitionCreate.mockResolvedValue({});
+
+    const result = await simulateQaRejectRollback({
+      requirementId: 'req-arch-review',
+      reportId: 'report-arch-review',
+      reportType: 'ARCH_REVIEW',
+      currentStep: 'qa_review',
+      workflowId: 'wf-v4',
+      assigneeId: 'architect-user-2',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.actualTarget).toBe('dev_self_check');
+    expect(mockResolveAssignee).toHaveBeenCalledWith('backend_developer', 'architect-user-2');
+  });
+
   it('Multiple rejections: same requirement rejected twice rolls back correctly', async () => {
     mockWfFindUnique.mockResolvedValue({ steps: WORKFLOW_STEPS_V4 });
     mockResolveAssignee.mockResolvedValue('dev-user-3');
@@ -461,6 +514,46 @@ describe('CTO review rejection rollback (workflow enabled)', () => {
 
     expect(result).not.toBeNull();
     expect(result!.actualTarget).toBe('cto_review');
+  });
+
+  it('CTO rejects ARCH_DESIGN → rollback to arch_design', async () => {
+    mockWfFindUnique.mockResolvedValue({ steps: WORKFLOW_STEPS_V4 });
+    mockResolveAssignee.mockResolvedValue('architect-user');
+    mockReqUpdate.mockResolvedValue({});
+    mockWfTransitionCreate.mockResolvedValue({});
+
+    const result = await simulateCtoRejectRollback({
+      requirementId: 'req-arch-design-cto',
+      reportId: 'report-arch-design-cto',
+      reportType: 'ARCH_DESIGN',
+      currentStep: 'arch_review',
+      workflowId: 'wf-v4',
+      assigneeId: 'architect-2',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.actualTarget).toBe('arch_design');
+    expect(mockResolveAssignee).toHaveBeenCalledWith('architect', 'architect-2');
+  });
+
+  it('CTO rejects MERGE_REPORT → rollback to cto_review', async () => {
+    mockWfFindUnique.mockResolvedValue({ steps: WORKFLOW_STEPS_V4 });
+    mockResolveAssignee.mockResolvedValue('cto-user-2');
+    mockReqUpdate.mockResolvedValue({});
+    mockWfTransitionCreate.mockResolvedValue({});
+
+    const result = await simulateCtoRejectRollback({
+      requirementId: 'req-merge',
+      reportId: 'report-merge',
+      reportType: 'MERGE_REPORT',
+      currentStep: 'merge_to_main',
+      workflowId: 'wf-v4',
+      assigneeId: 'ops-user',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.actualTarget).toBe('cto_review');
+    expect(mockResolveAssignee).toHaveBeenCalledWith('cto', 'ops-user');
   });
 });
 
