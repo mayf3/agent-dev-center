@@ -9,9 +9,10 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 async function main() {
-  const password = await bcrypt.hash('agent2026', 10);
-  const requesterPassword = await bcrypt.hash('requester123', 10);
-  const developerPassword = await bcrypt.hash('developer123', 10);
+  const defaultPassword = process.env.SEED_PASSWORD || 'dev-seed-password-change-in-production';
+  const password = await bcrypt.hash(defaultPassword, 10);
+  const requesterPassword = await bcrypt.hash(process.env.SEED_REQUESTER_PASSWORD || defaultPassword, 10);
+  const developerPassword = await bcrypt.hash(process.env.SEED_DEVELOPER_PASSWORD || defaultPassword, 10);
 
   await prisma.user.upsert({
     where: { email: 'admin@agent.dev' },
