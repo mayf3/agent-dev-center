@@ -24,7 +24,7 @@ const INTEGRATION_TIMEOUT = 30000;
 // ── Configuration ─────────────────────────────────────────────────
 const PSQL = 'psql -h localhost -p 5432 -d postgres -t -A';
 const TEST_TABLE = 'test_env_lock_conc_test';
-const WORKTREE = '/Users/yanfenma/workspace/project/agent-dev-center-worktrees/adc-locktoken-v2';
+const WORKTREE = process.env.ADC_WORKTREE || '../../agent-dev-center-worktrees/adc-locktoken-v2';
 
 /**
  * Run a psql command and return the first non-empty output line.
