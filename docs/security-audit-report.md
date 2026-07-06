@@ -181,7 +181,7 @@ npm audit fix
 ### M4. Seed 脚本硬编码弱密码
 
 - **文件：** `backend/prisma/seed.ts`
-- **描述：** `PASSWORD_REMOVED_BY_SECURITY_CLEANUP`, `requester123`, `developer123` — 若在生产环境执行会创建弱密码账户。
+- **描述：** 硬编码种子密码 — 若在生产环境执行会创建弱密码账户（已修复：改为 SEED_PASSWORD 环境变量）。
 - **修复建议：**
   ```typescript
   if (process.env.NODE_ENV === 'production') {

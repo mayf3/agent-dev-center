@@ -221,9 +221,9 @@ async function main() {
   }
 
   console.log('Seed completed.');
-  console.log('Admin: admin@agent.dev / agent2026');
-  console.log('Requester: requester@agent.dev / requester123');
-  console.log('Developer: frontend@agent.dev / developer123');
+  console.log(`Admin: admin@agent.dev / ${process.env.SEED_PASSWORD || 'default-seed-password'}`);
+  console.log(`Requester: requester@agent.dev / ${process.env.SEED_REQUESTER_PASSWORD || process.env.SEED_PASSWORD || 'default-seed-password'}`);
+  console.log(`Developer: frontend@agent.dev / ${process.env.SEED_DEVELOPER_PASSWORD || process.env.SEED_PASSWORD || 'default-seed-password'}`);
 }
 
 main()

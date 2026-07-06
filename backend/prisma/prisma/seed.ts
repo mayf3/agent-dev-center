@@ -9,9 +9,10 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 async function main() {
-  const password = await bcrypt.hash('agent2026', 10);
-  const requesterPassword = await bcrypt.hash('requester123', 10);
-  const developerPassword = await bcrypt.hash('developer123', 10);
+  const defaultPassword = process.env.SEED_PASSWORD || 'dev-seed-password-change-in-production';
+  const password = await bcrypt.hash(defaultPassword, 10);
+  const requesterPassword = await bcrypt.hash(process.env.SEED_REQUESTER_PASSWORD || defaultPassword, 10);
+  const developerPassword = await bcrypt.hash(process.env.SEED_DEVELOPER_PASSWORD || defaultPassword, 10);
 
   await prisma.user.upsert({
     where: { email: 'admin@agent.dev' },
@@ -220,9 +221,9 @@ async function main() {
   }
 
   console.log('Seed completed.');
-  console.log('Admin: admin@agent.dev / agent2026');
-  console.log('Requester: requester@agent.dev / requester123');
-  console.log('Developer: frontend@agent.dev / developer123');
+  console.log(`Admin: admin@agent.dev / ${process.env.SEED_PASSWORD || 'default-seed-password'}`);
+  console.log(`Requester: requester@agent.dev / ${process.env.SEED_REQUESTER_PASSWORD || process.env.SEED_PASSWORD || 'default-seed-password'}`);
+  console.log(`Developer: frontend@agent.dev / ${process.env.SEED_DEVELOPER_PASSWORD || process.env.SEED_PASSWORD || 'default-seed-password'}`);
 }
 
 main()
