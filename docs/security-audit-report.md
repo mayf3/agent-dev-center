@@ -83,7 +83,7 @@ npm audit fix
 - **描述：** 生产环境密钥文件包含明文的 JWT_SECRET、数据库密码，且文件未被 `.gitignore` 排除（`.dockerignore` 已排除但 `.gitignore` 未排除 `.env.production`）。
 - **暴露信息：**
   ```
-  JWT_SECRET=***REDACTED***
+  JWT_SECRET=<redacted-production-secret>
   POSTGRES_PASSWORD={your-db-password}
   DATABASE_URL=postgresql://agent_dev:{your-db-password}@postgres:5432/agent_dev_center
   ```
