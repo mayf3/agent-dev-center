@@ -83,11 +83,20 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
       }
 
       // --- Report check ---
+      // 严格校验当前步骤的 requiredReports：离开前必须全部满足
+      // 1) 模板定义的 currentStep.requiredReports 逐一检查
+      // 2) 安全类型过滤：非 SECURITY 需求跳过 SECURITY_REVIEW 检查
+      // 3) 补充硬约束：dev_self_check 步骤始终要求 DEV_SELF_CHECK 报告（模板备份）
       const reqType = (requirement as any).type;
       const isNonSecurityType = reqType !== 'SECURITY';
       const currentReports = isNonSecurityType
         ? currentStep.requiredReports.filter(r => r !== 'SECURITY_REVIEW')
         : currentStep.requiredReports;
+      // 补充防护：dev_self_check 始终需要 DEV_SELF_CHECK 报告
+      // 即使 workflow 模板的 requiredReports 中未包含也不放过
+      if (currentStep.name === 'dev_self_check' && !currentReports.includes('DEV_SELF_CHECK')) {
+        currentReports.push('DEV_SELF_CHECK');
+      }
       if (currentReports.length > 0) {
         const { ok, missing } = await checkReportsApproved(params.id, currentReports);
         if (!ok) {
@@ -169,9 +178,11 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
 
       // --- Target step report check ---
       // 进入目标步骤必须满足该步骤的 requiredReports（防止跳过报告审批）
-      // 但排除目标步骤自身产生的报告（如 DEV_SELF_CHECK 由 dev_self_check 产生）
-      // 这种报告应在步骤内完成，不是进入步骤的前置条件
-      // 如果安全步骤被跳过，自动过滤 SECURITY_REVIEW 要求
+      // 排除目标步骤自身产生的报告（如 DEV_SELF_CHECK 由 dev_self_check 产生），
+      // 这种报告应在步骤内完成，不是进入步骤的前置条件。
+      // 如果安全步骤被跳过，自动过滤 SECURITY_REVIEW 要求。
+      // 注意：当前步骤的 requiredReports 已在前面单独检查（Report check 段），
+      // 确保离开任何步骤前其必填报告已提交。
       const STEP_OWNS_REPORT: Record<string, string[]> = {
         dev_self_check: ['DEV_SELF_CHECK'],
         arch_design: ['ARCH_DESIGN'],
@@ -182,12 +193,14 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         merge_to_main: ['MERGE_REPORT'],
         deploying: ['DEPLOY_CONFIRM'],
       };
+      // 补充防护：永远不因空报告列表而跳过校验
+      // 如果 targetReports 为空但仍需检查当前步骤的报告，由 Report check 段保障
       const stepSelfReports = STEP_OWNS_REPORT[targetStep.name] || [];
       const targetReports = (skippedSteps.includes('security_review')
         ? targetStep.requiredReports.filter(r => r !== 'SECURITY_REVIEW')
         : [...targetStep.requiredReports]
       ).filter(r => !stepSelfReports.includes(r));
-      if (targetReports.length > 0) {
+      if (targetReports.length > 0 && currentStep.name !== targetStep.name) {
         const { ok: targetOk, missing: targetMissing } = await checkReportsApproved(params.id, targetReports);
         if (!targetOk) {
           const reportLabels: Record<string, string> = {
