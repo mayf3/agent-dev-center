@@ -17,6 +17,8 @@ import {
 } from './workflow-helpers.js';
 import { recordRequirementEvent, buildWorkflowEvent } from '../../services/requirement-event-ledger-service.js';
 import { RequirementEventType } from '../../lib/requirement-event-types.js';
+import { RequirementReasonCode } from '../../lib/requirement-reason-codes.js';
+import { recordGuardrailBlocked } from '../../lib/record-guardrail-event.js';
 import { txReadRequirement, txCreateTransition, REQUIREMENT_TRANSITION_SELECT } from './workflow-cas-helper.js';
 
 export function registerWorkflowSubmitRoutes(router: import('express').Router): void {
@@ -56,6 +58,14 @@ export function registerWorkflowSubmitRoutes(router: import('express').Router): 
 
       // 必须有 gitHash
       if (!requirement.gitHash) {
+        recordGuardrailBlocked({
+          requirementId: params.id, actorId: req.user!.id, actorName: req.user!.name,
+          reasonCode: RequirementReasonCode.DEPLOY_FIELD_MISSING,
+          reasonText: '缺少 gitHash',
+          fromStep: requirement.currentStep,
+          source: 'workflow-submit.githash-check',
+          metadata: { missingFields: ['gitHash'] },
+        });
         throw new HttpError(400, '提交失败：请先提交代码并填写 gitHash');
       }
 
