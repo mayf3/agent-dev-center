@@ -131,6 +131,7 @@ model Requirement {
   tasks               Task[]
   workflowTransitions WorkflowTransition[]
   requirementAuditLogs RequirementAuditLog[]
+  eventLedgerEntries    RequirementEventLedger[]
 
   @@index([currentStep])
   @@index([priority])
@@ -855,4 +856,42 @@ model FeedbackEvent {
   @@index([requirementId])
   @@index([createdAt])
   @@map("feedback_events")
+}
+
+// ─── Requirement Event Ledger ──────────────────────────
+
+model RequirementEventLedger {
+  id                  String      @id @default(uuid()) @db.Uuid
+  requirementId       String      @db.Uuid
+  eventType           String
+  actorId             String?     @db.Uuid
+  actorName           String?
+  actorType           String      @default("system")
+  fromStatus          String?
+  toStatus            String?
+  fromStep            String?
+  toStep              String?
+  fromAssigneeId      String?     @db.Uuid
+  toAssigneeId        String?     @db.Uuid
+  reasonCode          String?
+  reasonText          String?
+  evidence            Json?
+  metadata            Json?
+  stateVersionBefore  Int?
+  stateVersionAfter   Int?
+  correlationId       String?
+  source              String?
+  sourceVersion       String?
+  relatedTransitionId String?     @db.Uuid
+  relatedReportId     String?     @db.Uuid
+  relatedAuditLogId   String?     @db.Uuid
+  createdAt           DateTime    @default(now())
+
+  requirement         Requirement @relation(fields: [requirementId], references: [id])
+
+  @@index([requirementId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([reasonCode, createdAt])
+  @@index([correlationId])
+  @@map("requirement_event_ledger")
 }

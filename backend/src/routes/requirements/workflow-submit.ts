@@ -14,8 +14,10 @@ import {
   parseSteps,
   getCurrentStep,
   mapUserRole,
-  logTransition,
 } from './workflow-helpers.js';
+import { recordRequirementEvent, buildWorkflowEvent } from '../../services/requirement-event-ledger-service.js';
+import { RequirementEventType } from '../../lib/requirement-event-types.js';
+import { txReadRequirement, txCreateTransition, REQUIREMENT_TRANSITION_SELECT } from './workflow-cas-helper.js';
 
 export function registerWorkflowSubmitRoutes(router: import('express').Router): void {
 
@@ -66,26 +68,45 @@ export function registerWorkflowSubmitRoutes(router: import('express').Router): 
       // 自动解析 assigneeId（PM 角色）
       const newAssigneeId = await resolveAssigneeForStep(targetStep.role, requirement.assigneeId);
 
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: {
-          currentStep: targetStep.name,
-          assigneeId: newAssigneeId,
-        },
+      // ── 事务：业务更新 + Transition + Ledger 一同写入 ──
+      const { updated, transition } = await prisma.$transaction(async (tx: any) => {
+        const beforeReq = await txReadRequirement(tx, params.id);
+
+        const updated = await tx.requirement.update({
+          where: { id: params.id },
+          data: {
+            currentStep: targetStep.name,
+            assigneeId: newAssigneeId,
+          },
+          select: REQUIREMENT_TRANSITION_SELECT,
+        });
+
+        const transition = await txCreateTransition(tx, {
+          requirement: { connect: { id: params.id } },
+          fromStep: requirement.currentStep,
+          toStep: targetStep.name,
+          action: 'advance',
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          actorRole: req.user!.internalRole ?? req.user!.role,
+          comment: body.comment,
+        });
+
+        await recordRequirementEvent(tx, buildWorkflowEvent(RequirementEventType.DRAFT_SUBMITTED, {
+          requirementId: params.id,
+          fromStep: requirement.currentStep, toStep: targetStep.name,
+          fromAssigneeId: requirement.assigneeId, toAssigneeId: newAssigneeId,
+          actorId: req.user!.id, actorName: req.user!.name,
+          reasonText: body.comment,
+          stateVersionBefore: beforeReq.stateVersion ?? 0,
+          stateVersionAfter: updated.stateVersion ?? 0,
+          relatedTransitionId: transition.id,
+        }));
+
+        return { updated, transition };
       });
 
       const newAssigneeName = await getAssigneeName(newAssigneeId);
-
-      await logTransition({
-        requirementId: params.id,
-        fromStep: requirement.currentStep,
-        toStep: targetStep.name,
-        action: 'advance',
-        actorId: req.user!.id,
-        actorName: req.user!.name,
-        actorRole: req.user!.internalRole ?? req.user!.role,
-        comment: body.comment,
-      });
 
       res.json({
         success: true,

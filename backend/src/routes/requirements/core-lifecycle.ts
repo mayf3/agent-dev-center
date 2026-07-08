@@ -16,6 +16,9 @@ import { listRevisionsSchema } from '../../schemas/revision.js';
 import { serializeRequirement } from '../../utils/status.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { canReadRequirement } from './utils.js';
+import { recordRequirementEvent } from '../../services/requirement-event-ledger-service.js';
+import { RequirementEventType } from '../../lib/requirement-event-types.js';
+import { txReadRequirement, REQUIREMENT_TRANSITION_SELECT } from './workflow-cas-helper.js';
 
 // ── 校验 schema ──
 
@@ -84,23 +87,25 @@ router.post(
     if (existing.requesterId !== req.user.id && req.user.role !== 'admin') {
       throw new HttpError(403, '只有需求提交者或管理员可以放弃需求');
     }
-    const updated = await prisma.requirement.update({
-      where: { id: params.id },
-      data: { currentStep: 'abandoned' },
+    // ── 事务：业务更新 + Ledger 一同写入 ──
+    const _user = req.user;
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const beforeReq = await txReadRequirement(tx, params.id);
+      const u = await tx.requirement.update({
+        where: { id: params.id },
+        data: { currentStep: 'abandoned' },
+        select: REQUIREMENT_TRANSITION_SELECT,
+      });
+      await recordRequirementEvent(tx, {
+        requirementId: params.id, eventType: RequirementEventType.LIFECYCLE_ABANDONED,
+        actorId: _user.id, actorName: _user.name, actorType: 'human',
+        fromStep: existing.currentStep, toStep: 'abandoned',
+        stateVersionBefore: beforeReq.stateVersion ?? 0,
+        stateVersionAfter: u.stateVersion ?? 0,
+      });
+      return u;
     });
-    void notifyEvent('requirement.updated', { id: updated.id, title: updated.title, actor: req.user.name });
-
-    // 审计日志
-    await prisma.requirementAuditLog.create({
-      data: {
-        requirementId: params.id,
-        action: 'abandon',
-        operatorId: req.user!.id,
-        operatorName: req.user!.name,
-        detail: { fromStep: existing.currentStep, toStep: 'abandoned' },
-      },
-    }).catch(() => {}); // 非阻塞
-
+    void notifyEvent('requirement.updated', { id: updated.id, title: updated.title, actor: _user.name });
     res.json(serializeRequirement(updated));
   })
 );
@@ -119,23 +124,25 @@ router.post(
     if (existing.requesterId !== req.user.id && req.user.role !== 'admin') {
       throw new HttpError(403, '只有需求提交者或管理员可以重新激活需求');
     }
-    const updated = await prisma.requirement.update({
-      where: { id: params.id },
-      data: { currentStep: 'draft' },
+    // ── 事务：业务更新 + Ledger 一同写入 ──
+    const _user2 = req.user;
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const beforeReq = await txReadRequirement(tx, params.id);
+      const u = await tx.requirement.update({
+        where: { id: params.id },
+        data: { currentStep: 'draft' },
+        select: REQUIREMENT_TRANSITION_SELECT,
+      });
+      await recordRequirementEvent(tx, {
+        requirementId: params.id, eventType: RequirementEventType.LIFECYCLE_REACTIVATED,
+        actorId: _user2.id, actorName: _user2.name, actorType: 'human',
+        fromStep: 'abandoned', toStep: 'draft',
+        stateVersionBefore: beforeReq.stateVersion ?? 0,
+        stateVersionAfter: u.stateVersion ?? 0,
+      });
+      return u;
     });
-    void notifyEvent('requirement.updated', { id: updated.id, title: updated.title, actor: req.user.name });
-
-    // 审计日志
-    await prisma.requirementAuditLog.create({
-      data: {
-        requirementId: params.id,
-        action: 'reactivate',
-        operatorId: req.user!.id,
-        operatorName: req.user!.name,
-        detail: { fromStep: 'abandoned', toStep: 'draft' },
-      },
-    }).catch(() => {});
-
+    void notifyEvent('requirement.updated', { id: updated.id, title: updated.title, actor: _user2.name });
     res.json(serializeRequirement(updated));
   })
 );

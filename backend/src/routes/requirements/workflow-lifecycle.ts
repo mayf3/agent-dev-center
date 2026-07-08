@@ -8,7 +8,9 @@ import { prisma } from '../../lib/prisma.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
-import { logTransition } from './workflow-helpers.js';
+import { recordRequirementEvent, buildWorkflowEvent } from '../../services/requirement-event-ledger-service.js';
+import { RequirementEventType } from '../../lib/requirement-event-types.js';
+import { txReadRequirement, txCreateTransition, REQUIREMENT_TRANSITION_SELECT } from './workflow-cas-helper.js';
 
 export function registerWorkflowLifecycleRoutes(router: import('express').Router): void {
 
@@ -36,23 +38,42 @@ export function registerWorkflowLifecycleRoutes(router: import('express').Router
         throw new HttpError(400, `current step「${requirement.currentStep}」cannot be abandoned, allowed: ${abandonableSteps.join('/')}`);
       }
 
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: {
-          currentStep: 'abandoned',
-          assigneeId: null,
-        },
-      });
+      // ── 事务：业务更新 + Transition + Ledger 一同写入 ──
+      const updated = await prisma.$transaction(async (tx: any) => {
+        const beforeReq = await txReadRequirement(tx, params.id);
 
-      await logTransition({
-        requirementId: params.id,
-        fromStep: requirement.currentStep ?? '',
-        toStep: 'abandoned',
-        action: 'abandon',
-        actorId: user.id,
-        actorName: user.name,
-        actorRole: user.internalRole ?? user.role,
-        comment: req.body?.comment,
+        const updated = await tx.requirement.update({
+          where: { id: params.id },
+          data: {
+            currentStep: 'abandoned',
+            assigneeId: null,
+          },
+          select: REQUIREMENT_TRANSITION_SELECT,
+        });
+
+        const transition = await txCreateTransition(tx, {
+          requirement: { connect: { id: params.id } },
+          fromStep: requirement.currentStep ?? '',
+          toStep: 'abandoned',
+          action: 'abandon',
+          actorId: user.id,
+          actorName: user.name,
+          actorRole: user.internalRole ?? user.role,
+          comment: req.body?.comment,
+        });
+
+        await recordRequirementEvent(tx, buildWorkflowEvent(RequirementEventType.LIFECYCLE_ABANDONED, {
+          requirementId: params.id,
+          fromStep: requirement.currentStep ?? '', toStep: 'abandoned',
+          fromAssigneeId: requirement.assigneeId, toAssigneeId: null,
+          actorId: user.id, actorName: user.name,
+          reasonText: req.body?.comment,
+          stateVersionBefore: beforeReq.stateVersion ?? 0,
+          stateVersionAfter: updated.stateVersion ?? 0,
+          relatedTransitionId: transition.id,
+        }));
+
+        return updated;
       });
 
       res.json({
@@ -88,23 +109,42 @@ export function registerWorkflowLifecycleRoutes(router: import('express').Router
         throw new HttpError(403, 'only requester, assignee or admin can reactivate');
       }
 
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: {
-          currentStep: 'draft',
-          assigneeId: null,
-        },
-      });
+      // ── 事务：业务更新 + Transition + Ledger 一同写入 ──
+      const updated = await prisma.$transaction(async (tx: any) => {
+        const beforeReq = await txReadRequirement(tx, params.id);
 
-      await logTransition({
-        requirementId: params.id,
-        fromStep: 'abandoned',
-        toStep: 'draft',
-        action: 'reactivate',
-        actorId: user.id,
-        actorName: user.name,
-        actorRole: user.internalRole ?? user.role,
-        comment: req.body?.comment,
+        const updated = await tx.requirement.update({
+          where: { id: params.id },
+          data: {
+            currentStep: 'draft',
+            assigneeId: null,
+          },
+          select: REQUIREMENT_TRANSITION_SELECT,
+        });
+
+        const transition = await txCreateTransition(tx, {
+          requirement: { connect: { id: params.id } },
+          fromStep: 'abandoned',
+          toStep: 'draft',
+          action: 'reactivate',
+          actorId: user.id,
+          actorName: user.name,
+          actorRole: user.internalRole ?? user.role,
+          comment: req.body?.comment,
+        });
+
+        await recordRequirementEvent(tx, buildWorkflowEvent(RequirementEventType.LIFECYCLE_REACTIVATED, {
+          requirementId: params.id,
+          fromStep: 'abandoned', toStep: 'draft',
+          fromAssigneeId: null, toAssigneeId: null,
+          actorId: user.id, actorName: user.name,
+          reasonText: req.body?.comment,
+          stateVersionBefore: beforeReq.stateVersion ?? 0,
+          stateVersionAfter: updated.stateVersion ?? 0,
+          relatedTransitionId: transition.id,
+        }));
+
+        return updated;
       });
 
       res.json({

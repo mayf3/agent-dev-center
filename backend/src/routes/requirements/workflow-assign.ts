@@ -9,8 +9,11 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { assignWorkflowSchema } from '../../schemas/workflow.js';
-import { parseSteps, logTransition, extractRoleUserMap } from './workflow-helpers.js';
+import { parseSteps, extractRoleUserMap } from './workflow-helpers.js';
 import { resolveAssigneeForStep } from '../../lib/assignee-resolver.js';
+import { recordRequirementEvent, buildWorkflowEvent } from '../../services/requirement-event-ledger-service.js';
+import { RequirementEventType } from '../../lib/requirement-event-types.js';
+import { txReadRequirement, txCreateTransition, REQUIREMENT_TRANSITION_SELECT } from './workflow-cas-helper.js';
 
 export function registerWorkflowAssignRoutes(router: import('express').Router): void {
 
@@ -83,20 +86,40 @@ export function registerWorkflowAssignRoutes(router: import('express').Router): 
         }
       }
 
-      const updated = await prisma.requirement.update({
-        where: { id: params.id },
-        data: updateData,
-      });
+      // ── 事务：业务更新 + Transition + Ledger 一同写入 ──
+      const updated = await prisma.$transaction(async (tx: any) => {
+        const beforeReq = await txReadRequirement(tx, params.id);
+        const updated = await tx.requirement.update({
+          where: { id: params.id },
+          data: updateData,
+          select: REQUIREMENT_TRANSITION_SELECT,
+        });
 
-      await logTransition({
-        requirementId: params.id,
-        fromStep: 'approved',
-        toStep: targetStep.name,
-        action: 'assign-workflow',
-        actorId: req.user!.id,
-        actorName: req.user!.name,
-        actorRole: req.user!.role,
-        metadata: { workflowName: template.name, templateId: template.id, startStep: body.startStep },
+        const transition = await txCreateTransition(tx, {
+          requirement: { connect: { id: params.id } },
+          fromStep: 'approved',
+          toStep: targetStep.name,
+          action: 'assign-workflow',
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          actorRole: req.user!.role,
+          metadata: { workflowName: template.name, templateId: template.id, startStep: body.startStep },
+        });
+
+        await recordRequirementEvent(tx, buildWorkflowEvent(RequirementEventType.WORKFLOW_ASSIGNED, {
+          requirementId: params.id,
+          toStep: targetStep.name,
+          toAssigneeId: updateData.assigneeId || requirement.assigneeId,
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          reasonText: `Assigned workflow: ${template.name}`,
+          relatedTransitionId: transition.id,
+          stateVersionBefore: beforeReq.stateVersion ?? 0,
+          stateVersionAfter: updated.stateVersion ?? 0,
+          metadata: { workflowId: template.id, templateName: template.name },
+        }));
+
+        return updated;
       });
 
       res.json({

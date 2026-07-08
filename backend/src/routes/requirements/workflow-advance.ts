@@ -10,6 +10,9 @@ import { HttpError } from '../../utils/http-error.js';
 import { requirementIdSchema } from '../../schemas/requirements.js';
 import { advanceStepSchema } from '../../schemas/workflow.js';
 import { resolveAssigneeForStep, getAssigneeName } from '../../lib/assignee-resolver.js';
+import { recordRequirementEvent, buildWorkflowEvent } from '../../services/requirement-event-ledger-service.js';
+import { RequirementEventType } from '../../lib/requirement-event-types.js';
+import { RequirementReasonCode } from '../../lib/requirement-reason-codes.js';
 import {
   getWorkflowSteps,
   getWorkflowRawJson,
@@ -220,14 +223,25 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
 	          const updatedReq = await casUpdateRequirement(tx, params.id, currentReq.stateVersion ?? 0, {
 	            currentStep: targetStep.name, assigneeId: newAssigneeId, rejectReason: null,
 	          });
-	          await txCreateTransition(tx, {
-	            requirement: { connect: { id: params.id } },
-	            fromStep: requirement.currentStep, toStep: targetStep.name,
-	            action: 'advance', actorId: req.user!.id, actorName: req.user!.name,
-	            actorRole: req.user!.internalRole ?? req.user!.role, comment: body.comment,
-	            metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
-	          });
-	          return { updatedReq, newAssigneeName };
+          const transition = await txCreateTransition(tx, {
+            requirement: { connect: { id: params.id } },
+            fromStep: requirement.currentStep, toStep: targetStep.name,
+            action: 'advance', actorId: req.user!.id, actorName: req.user!.name,
+            actorRole: req.user!.internalRole ?? req.user!.role, comment: body.comment,
+            metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+          });
+          await recordRequirementEvent(tx, buildWorkflowEvent(RequirementEventType.WORKFLOW_ADVANCED, {
+            requirementId: params.id,
+            fromStep: requirement.currentStep, toStep: targetStep.name,
+            fromAssigneeId: requirement.assigneeId, toAssigneeId: newAssigneeId,
+            actorId: req.user!.id, actorName: req.user!.name,
+            reasonCode: RequirementReasonCode.UNKNOWN, reasonText: body.comment,
+            stateVersionBefore: currentReq.stateVersion ?? 0,
+            stateVersionAfter: updatedReq.stateVersion ?? 0,
+            relatedTransitionId: transition.id,
+            metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+          }));
+          return { updatedReq, newAssigneeName };
 	        });
 	      } catch (err) {
 	        if (lockOwnership) {

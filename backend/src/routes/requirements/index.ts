@@ -24,6 +24,7 @@ import { registerWorkflowStepConfigRoutes } from './workflow-step-config.js';
 import { registerWorkflowMyStepRoutes } from './workflow-mystep.js';
 import { registerDependencyGraphRoutes } from './dependency-graph.js';
 import { registerTransitionRoutes } from './transitions.js';
+import { registerEventRoutes } from './events.js';
 import { registerFeedbackEventRoutes } from './feedback-events.js';
 import { reportsRouter } from '../reports.js';
 
@@ -61,6 +62,7 @@ registerPipelineRoutes(requirementsRouter);
 registerDecomposeRoutes(requirementsRouter);
 registerDependencyGraphRoutes(requirementsRouter);
 registerFeedbackEventRoutes(requirementsRouter);
+registerEventRoutes(requirementsRouter);
 registerTransitionRoutes(requirementsRouter);
 
 // Mount reports router

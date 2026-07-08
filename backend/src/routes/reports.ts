@@ -11,6 +11,9 @@ import { ReportType } from '@prisma/client';
 import { requireInternalRole } from '../middleware/internal-workflow.js';
 import { getPlatformRoles, hasPlatformRole, isPlatformAdmin } from '../lib/platform-roles.js';
 import { getWorkflowRawJson, parseSteps } from './requirements/workflow-helpers.js';
+import { recordRequirementEvent } from '../services/requirement-event-ledger-service.js';
+import { RequirementEventType } from '../lib/requirement-event-types.js';
+import { RequirementReasonCode } from '../lib/requirement-reason-codes.js';
 import { casUpdateRequirement, txCreateTransition, txReadRequirement } from './requirements/workflow-cas-helper.js';
 import type { PrismaTransactionClient } from './requirements/types.js';
 import {
@@ -249,48 +252,48 @@ reportsRouter.post(
       orderBy: { createdAt: 'desc' },
     });
 
+    // ── 事务：Report + Ledger 一同写入 ──
     let report;
-
-    if (existingReport) {
-      // 如果已存在且为 approved，拒绝提交（已通过的报告不能覆盖）
-      if (existingReport.status === 'approved') {
-        throw new HttpError(409, `该需求当前步骤已存在 ${body.reportType} 报告（状态：approved），无法重复提交`);
+    report = await prisma.$transaction(async (tx: any) => {
+      let r;
+      if (existingReport) {
+        if (existingReport.status === 'approved') {
+          throw new HttpError(409, `该需求当前步骤已存在 ${body.reportType} 报告（状态：approved），无法重复提交`);
+        }
+        r = await tx.requirementReport.update({
+          where: { id: existingReport.id },
+          data: {
+            content: body.content as Prisma.InputJsonValue,
+            submittedBy: body.submittedBy ?? req.user!.name,
+            submittedById: req.user!.id,
+            status: 'pending',
+            qaReviewedAt: null, qaReviewedBy: null,
+            reviewComment: null, reviewedAt: null,
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        r = await tx.requirementReport.create({
+          data: {
+            requirementId: params.id, reportType: body.reportType,
+            workflowStep, content: body.content as Prisma.InputJsonValue,
+            submittedBy: body.submittedBy ?? req.user!.name,
+            submittedById: req.user!.id,
+          },
+        });
       }
-
-      // pending / changes_requested / rejected → 更新内容重新提交（upsert）
-      report = await prisma.requirementReport.update({
-        where: { id: existingReport.id },
-        data: {
-          content: body.content as Prisma.InputJsonValue,
-          submittedBy: body.submittedBy ?? req.user!.name,
-          submittedById: req.user!.id,
-          status: 'pending',  // rejected 报告重新提交时重置为 pending
-          qaReviewedAt: null,  // 清除 QA 审查记录
-          qaReviewedBy: null,
-          reviewComment: null,
-          reviewedAt: null,
-          updatedAt: new Date(),
-        },
+      await recordRequirementEvent(tx, {
+        requirementId: params.id!, eventType: RequirementEventType.REPORT_SUBMITTED,
+        actorId: req.user!.id, actorName: req.user!.name, actorType: 'human',
+        relatedReportId: r.id,
+        metadata: { reportType: body.reportType, workflowStep, status: r.status },
       });
-    } else {
-      // 不存在则创建
-      report = await prisma.requirementReport.create({
-        data: {
-          requirementId: params.id,
-          reportType: body.reportType,
-          workflowStep,
-          content: body.content as Prisma.InputJsonValue,
-          submittedBy: body.submittedBy ?? req.user!.name,
-          submittedById: req.user!.id,
-        },
-      });
-    }
+      return r;
+    });
 
     void notifyEvent('report.submitted', {
-      id: params.id,
-      title: requirement.title,
-      reportType: body.reportType,
-      actor: req.user!.name,
+      id: params.id, title: requirement.title,
+      reportType: body.reportType, actor: req.user!.name,
     });
 
     res.status(201).json({ success: true, data: report });
@@ -414,16 +417,31 @@ reportsRouter.patch(
 
     const reviewedAt = new Date();
 
-    const updated = await prisma.requirementReport.update({
-      where: { id: params.reportId },
-      data: {
-        qaReviewedAt: reviewedAt,
-        qaReviewedBy: req.user!.name,
-        reviewComment: body.reviewComment,
-        // QA 审查直接改变报告状态（2026-06-05 改进：QA 是 qa_review 步骤的 assignee，应直接审批）
-        status: body.status,
-        reviewedAt,
-      },
+    // ── 事务：Report 更新 + Ledger 一同写入 ──
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const u = await tx.requirementReport.update({
+        where: { id: params.reportId },
+        data: {
+          qaReviewedAt: reviewedAt, qaReviewedBy: req.user!.name,
+          reviewComment: body.reviewComment,
+          status: body.status, reviewedAt,
+        },
+      });
+
+      const qaEventType = body.status === 'approved'
+        ? RequirementEventType.REPORT_APPROVED
+        : RequirementEventType.REPORT_REJECTED;
+      await recordRequirementEvent(tx, {
+        requirementId: report.requirementId, eventType: qaEventType,
+        actorId: req.user!.id, actorName: req.user!.name, actorType: 'human',
+        relatedReportId: report.id,
+        reasonCode: RequirementReasonCode.UNKNOWN, reasonText: body.reviewComment,
+        metadata: {
+          reportType: report.reportType, workflowStep: report.workflowStep,
+          oldStatus: report.status, newStatus: body.status,
+        },
+      });
+      return u;
     });
 
     const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
@@ -487,26 +505,39 @@ reportsRouter.patch(
 	              }
 	            }
 
-		            // CAS transaction: requirement update + transition atomic
-		            await prisma.$transaction(async (tx) => {
-		              const currentReq = await txReadRequirement(tx as any, report.requirementId);
-		              await executeQaRejectTransaction(
-		                tx as any,
-		                report.requirementId,
-		                currentReq.stateVersion ?? 0,
-		                { currentStep: actualTarget, assigneeId: targetAssigneeId, assignee: targetAssigneeName },
-		                {
-		                  requirement: { connect: { id: report.requirementId } },
-		                  fromStep: reqInfo.currentStep ?? actualTarget,
-		                  toStep: actualTarget,
-		                  action: 'reject',
-		                  actorId: req.user!.id,
-		                  actorName: req.user!.name,
-		                  actorRole: 'qa',
-		                  comment: body.reviewComment || `QA 驳回 ${report.reportType} 报告，自动退回`,
-		                } as Prisma.WorkflowTransitionCreateInput,
-		              );
-		            });
+			            // CAS transaction: requirement update + transition + ledger atomic
+			            await prisma.$transaction(async (tx) => {
+			              const currentReq = await txReadRequirement(tx as any, report.requirementId);
+			              const svBefore = currentReq.stateVersion ?? 0;
+			              await executeQaRejectTransaction(
+			                tx as any,
+			                report.requirementId,
+			                svBefore,
+			                { currentStep: actualTarget, assigneeId: targetAssigneeId, assignee: targetAssigneeName },
+			                {
+			                  requirement: { connect: { id: report.requirementId } },
+			                  fromStep: reqInfo.currentStep ?? actualTarget,
+			                  toStep: actualTarget,
+			                  action: 'reject',
+			                  actorId: req.user!.id,
+			                  actorName: req.user!.name,
+			                  actorRole: 'qa',
+			                  comment: body.reviewComment || `QA 驳回 ${report.reportType} 报告，自动退回`,
+			                } as Prisma.WorkflowTransitionCreateInput,
+			              );
+			              await recordRequirementEvent(tx as any, {
+			                requirementId: report.requirementId, eventType: RequirementEventType.REPORT_REJECTED,
+			                actorId: req.user!.id, actorName: req.user!.name, actorType: 'human',
+			                relatedReportId: report.id,
+			                reasonCode: RequirementReasonCode.UNKNOWN, reasonText: body.reviewComment,
+			                fromStep: reqInfo.currentStep ?? '', toStep: actualTarget,
+			                stateVersionBefore: svBefore, stateVersionAfter: svBefore + 1,
+			                metadata: {
+			                  reportType: report.reportType, workflowStep: report.workflowStep,
+			                  oldStatus: report.status, newStatus: body.status,
+			                },
+			              });
+			            });
 	          }
         }
       }
@@ -771,19 +802,34 @@ reportsRouter.patch(
 
     if (report.status !== 'pending') throw new HttpError(400, '该报告已审核');
 
-    const updated = await prisma.requirementReport.update({
-      where: { id: params.reportId },
-      data: {
-        status: body.status,
-        reviewComment: body.reviewComment,
-        reviewedAt,
-        ...(shouldBypassQa ? {
-          qaBypass: true,
-          qaBypassReason: body.qa_bypass_reason,
-          qaBypassAt: reviewedAt,
-          qaBypassBy: req.user!.name,
-        } : {}),
-      },
+    // ── 事务：Report 更新 + Ledger 一同写入 ──
+    const ctoEventType = body.status === 'approved'
+      ? RequirementEventType.REPORT_APPROVED
+      : RequirementEventType.REPORT_REJECTED;
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const u = await tx.requirementReport.update({
+        where: { id: params.reportId },
+        data: {
+          status: body.status, reviewComment: body.reviewComment, reviewedAt,
+          ...(shouldBypassQa ? {
+            qaBypass: true, qaBypassReason: body.qa_bypass_reason,
+            qaBypassAt: reviewedAt, qaBypassBy: req.user!.name,
+          } : {}),
+        },
+      });
+      await recordRequirementEvent(tx, {
+        requirementId: params.id!, eventType: ctoEventType,
+        actorId: req.user!.id, actorName: req.user!.name, actorType: 'human',
+        relatedReportId: report.id,
+        reasonCode: RequirementReasonCode.UNKNOWN,
+        reasonText: body.reviewComment ?? body.qa_bypass_reason,
+        metadata: {
+          reportType: report.reportType, workflowStep: report.workflowStep,
+          oldStatus: report.status, newStatus: body.status,
+          qaBypass: shouldBypassQa || undefined,
+        },
+      });
+      return u;
     });
 
     // 通知相关方
@@ -867,37 +913,51 @@ reportsRouter.patch(
             }
           }
 
-		          await prisma.$transaction(async (tx) => {
-		            const currentReq = await txReadRequirement(tx as any, params.id!);
-		            await executeCtoRejectTransaction(
-		              tx as any,
-		              params.id!,
-		              currentReq.stateVersion ?? 0,
-		              { currentStep: targetStep, assigneeId: rollbackAssigneeId, assignee: rollbackAssigneeName },
-		              {
-		                requirement: { connect: { id: params.id! } },
-		                fromStep: reqInfo.currentStep ?? targetStep,
-		                toStep: targetStep,
-		                action: 'reject',
-		                actorId: req.user!.id,
-		                actorName: req.user!.name,
-		                actorRole: 'cto',
-		                comment: `${reportType} 报告被打回，步骤回退至 ${targetStep}`,
-		              } as Prisma.WorkflowTransitionCreateInput,
-		              {
-		                requirementId: params.id!,
-		                title: reqInfo.title ?? '',
-		                description: '',
-		                priority: 'P2',
-		                status: 'in_progress',
-		                requester: '',
-		                department: '',
-		                assignee: rollbackAssigneeName,
-		                revisionNote: `${reportType} 报告被打回，步骤回退至 ${targetStep}，assignee 回退为 ${rollbackAssigneeName ?? '原开发者'}`,
-		                operatorId: req.user!.id,
-		              },
-		            );
-		          });
+			          await prisma.$transaction(async (tx) => {
+			            const currentReq = await txReadRequirement(tx as any, params.id!);
+			            const svBefore = currentReq.stateVersion ?? 0;
+			            await executeCtoRejectTransaction(
+			              tx as any,
+			              params.id!,
+			              svBefore,
+			              { currentStep: targetStep, assigneeId: rollbackAssigneeId, assignee: rollbackAssigneeName },
+			              {
+			                requirement: { connect: { id: params.id! } },
+			                fromStep: reqInfo.currentStep ?? targetStep,
+			                toStep: targetStep,
+			                action: 'reject',
+			                actorId: req.user!.id,
+			                actorName: req.user!.name,
+			                actorRole: 'cto',
+			                comment: `${reportType} 报告被打回，步骤回退至 ${targetStep}`,
+			              } as Prisma.WorkflowTransitionCreateInput,
+			              {
+			                requirementId: params.id!,
+			                title: reqInfo.title ?? '',
+			                description: '',
+			                priority: 'P2',
+			                status: 'in_progress',
+			                requester: '',
+			                department: '',
+			                assignee: rollbackAssigneeName,
+			                revisionNote: `${reportType} 报告被打回，步骤回退至 ${targetStep}，assignee 回退为 ${rollbackAssigneeName ?? '原开发者'}`,
+			                operatorId: req.user!.id,
+			              },
+			            );
+			            await recordRequirementEvent(tx as any, {
+			              requirementId: params.id!, eventType: RequirementEventType.REPORT_REJECTED,
+			              actorId: req.user!.id, actorName: req.user!.name, actorType: 'human',
+			              relatedReportId: report.id,
+			              reasonCode: RequirementReasonCode.UNKNOWN,
+			              reasonText: `${reportType} 报告被打回`,
+			              fromStep: reqInfo.currentStep ?? '', toStep: targetStep ?? '',
+			              stateVersionBefore: svBefore, stateVersionAfter: svBefore + 1,
+			              metadata: {
+			                reportType, workflowStep: report.workflowStep,
+			                oldStatus: report.status, newStatus: body.status,
+			              },
+			            });
+			          });
 
           void notifyEvent('requirement.step_changed' as any, {
             id: params.id,
