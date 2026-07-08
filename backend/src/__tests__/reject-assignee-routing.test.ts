@@ -59,6 +59,7 @@ vi.mock('../lib/prisma.js', () => {
       testEnvLock: { findUnique: mockLockFindUnique, deleteMany: mockLockDeleteMany },
       notification: { create: vi.fn().mockResolvedValue({}) },
       requirementRevision: { create: vi.fn().mockResolvedValue({}) },
+      requirementEventLedger: { create: vi.fn().mockResolvedValue({ id: 'ledger-entry-1' }) },
     };
   };
 
