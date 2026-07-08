@@ -13,6 +13,8 @@ import { HttpError } from '../../utils/http-error.js';
 import { serializeRequirement } from '../../utils/status.js';
 import { notifyEvent } from '../../utils/notifications.js';
 import { similarity, normalizeTitle, DEFAULT_SIMILARITY_THRESHOLD } from '../../utils/similarity.js';
+import { recordRequirementEvent } from '../../services/requirement-event-ledger-service.js';
+import { RequirementEventType } from '../../lib/requirement-event-types.js';
 
 const requirementInclude = {
   tasks: true,
@@ -78,18 +80,42 @@ router.post(
       }
     }
 
-    const requirement = await prisma.requirement.create({
-      data: {
-        title: body.title, description: body.description, priority: body.priority,
-        type: body.type, tags: body.tags,
-        requester: requesterName, requesterId: actor.id,
-        department: body.department,
-        assignee: createAssigneeName, assigneeId: createAssigneeId,
-        dueDate: body.dueDate, attachment: body.attachment,
-        projectId: body.projectId ?? null,
-        dependsOnIds: (body as any).dependsOnIds ?? []
-      },
-      include: requirementInclude
+    // ── 事务：Requirement 创建 + Ledger 一同写入 ──
+    const requirement = await prisma.$transaction(async (tx: any) => {
+      const created = await tx.requirement.create({
+        data: {
+          title: body.title, description: body.description, priority: body.priority,
+          type: body.type, tags: body.tags,
+          requester: requesterName, requesterId: actor.id,
+          department: body.department,
+          assignee: createAssigneeName, assigneeId: createAssigneeId,
+          dueDate: body.dueDate, attachment: body.attachment,
+          projectId: body.projectId ?? null,
+          dependsOnIds: (body as any).dependsOnIds ?? [],
+        },
+        include: requirementInclude,
+      });
+
+      await recordRequirementEvent(tx, {
+        requirementId: created.id,
+        eventType: RequirementEventType.REQUIREMENT_CREATED,
+        actorId: actor.id, actorName: actor.name, actorType: 'human',
+        toStatus: created.status ?? null,
+        toStep: created.currentStep ?? null,
+        toAssigneeId: created.assigneeId ?? null,
+        stateVersionBefore: null,
+        stateVersionAfter: created.stateVersion ?? 0,
+        metadata: {
+          type: created.type, priority: created.priority,
+          department: created.department,
+          hasAssignee: !!created.assigneeId,
+          hasDueDate: !!created.dueDate,
+          hasProject: !!created.projectId,
+        },
+        source: 'api.requirements.create',
+      });
+
+      return created;
     });
 
     // reverse-update blockedBy for dependencies

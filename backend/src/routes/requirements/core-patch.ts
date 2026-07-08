@@ -15,6 +15,8 @@ import { validateAssigneeRoleMatch, resolveAssigneeForStep, getAssigneeName } fr
 import { notifyEvent } from '../../utils/notifications.js';
 import { canEditRequirement } from './utils.js';
 import { getWorkflowSteps, getCurrentStep } from './workflow-helpers.js';
+import { recordRequirementEvent } from '../../services/requirement-event-ledger-service.js';
+import { RequirementEventType } from '../../lib/requirement-event-types.js';
 
 const requirementInclude = {
   tasks: true,
@@ -140,10 +142,56 @@ router.patch(
     if (body.branch !== undefined) patchData.branch = body.branch;
     if (body.repoPath !== undefined) patchData.repoPath = body.repoPath;
 
-    const updated = await prisma.requirement.update({
-      where: { id: params.id },
-      data: patchData,
-      include: requirementInclude
+    // ── Compute changed fields (metadata only, no values) ──
+    const changedFields: string[] = [];
+    if (body.title !== undefined) changedFields.push('title');
+    if (body.description !== undefined) changedFields.push('description');
+    if (body.assignee !== undefined) changedFields.push('assignee');
+    if (body.currentStep !== undefined || body.status !== undefined) changedFields.push('currentStep');
+    if (body.gitHash !== undefined) changedFields.push('gitHash');
+    if (body.deployVersion !== undefined) changedFields.push('deployVersion');
+    if (body.branch !== undefined) changedFields.push('branch');
+    if (body.repoPath !== undefined) changedFields.push('repoPath');
+    if (body.rejectReason !== undefined) changedFields.push('rejectReason');
+
+    const hasAssigneeChange = body.assignee !== undefined;
+    const hasStepChange = stepChanged;
+
+    // ── 事务：业务更新 + Ledger 一同写入 ──
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const before = await tx.requirement.findUniqueOrThrow({
+        where: { id: params.id },
+        select: {
+          id: true, currentStep: true, assigneeId: true,
+          stateVersion: true, status: true,
+        },
+      });
+
+      const updated = await tx.requirement.update({
+        where: { id: params.id },
+        data: patchData,
+        include: requirementInclude,
+      });
+
+      await recordRequirementEvent(tx, {
+        requirementId: params.id,
+        eventType: RequirementEventType.PATCH_UPDATED,
+        actorId: req.user!.id, actorName: req.user!.name, actorType: 'human',
+        fromStep: before.currentStep ?? null,
+        toStep: updated.currentStep ?? null,
+        fromAssigneeId: before.assigneeId ?? null,
+        toAssigneeId: updated.assigneeId ?? null,
+        stateVersionBefore: before.stateVersion ?? 0,
+        stateVersionAfter: updated.stateVersion ?? before.stateVersion ?? 0,
+        metadata: {
+          changedFields,
+          hasAssigneeChange,
+          hasStepChange,
+        },
+        source: 'api.requirements.patch',
+      });
+
+      return updated;
     });
 
     void notifyEvent('requirement.updated', {

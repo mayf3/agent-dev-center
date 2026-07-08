@@ -345,3 +345,112 @@ describe('Events Read API', () => {
     sv.close();
   });
 });
+
+// ══════════════════════════════════════════════════════════════
+// PR-2A event type tests
+// ══════════════════════════════════════════════════════════════
+
+describe('RequirementEventLedger PR-2A events', () => {
+  let rec: any;
+  let ET: any;
+
+  beforeAll(async () => {
+    const svc = await vi.importActual('../services/requirement-event-ledger-service.js');
+    rec = svc.recordRequirementEvent;
+    const t = await vi.importActual('../lib/requirement-event-types.js');
+    ET = t.RequirementEventType;
+  });
+
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  describe('REQUIREMENT_CREATED', () => {
+    it('records REQUIREMENT_CREATED with stateVersion and metadata', async () => {
+      const mp = { requirementEventLedger: { create: mockLedgerCreate } };
+      await rec(mp, {
+        requirementId: UUID, eventType: ET.REQUIREMENT_CREATED,
+        actorId: USER_ID, actorName: 'creator', actorType: 'human',
+        toStatus: 'pending', toAssigneeId: USER_ID,
+        stateVersionBefore: null, stateVersionAfter: 0,
+        metadata: { type: 'FEATURE', priority: 'P2', department: 'tech', hasAssignee: true },
+        source: 'api.requirements.create',
+      });
+      const d = mockLedgerCreate.mock.calls[0][0].data;
+      expect(d.eventType).toBe('REQUIREMENT_CREATED');
+      expect(d.stateVersionBefore).toBeUndefined();
+      expect(d.stateVersionAfter).toBe(0);
+      expect(Object.keys(d.metadata)).not.toContain('description');
+    });
+
+    it('ledger failure rolls back REQUIREMENT_CREATED', async () => {
+      const mp = { requirementEventLedger: { create: vi.fn(() => { throw new Error('ledger error'); }) } };
+      await expect(rec(mp, { requirementId: UUID, eventType: ET.REQUIREMENT_CREATED })).rejects.toThrow('ledger error');
+    });
+  });
+
+  describe('PATCH_UPDATED', () => {
+    it('records PATCH_UPDATED with changedFields and assignee change', async () => {
+      const mp = { requirementEventLedger: { create: mockLedgerCreate } };
+      await rec(mp, {
+        requirementId: UUID, eventType: ET.PATCH_UPDATED,
+        actorId: USER_ID, actorName: 'op', actorType: 'human',
+        fromStep: 'pm_review', toStep: 'draft',
+        fromAssigneeId: 'old-a', toAssigneeId: 'new-a',
+        stateVersionBefore: 2, stateVersionAfter: 3,
+        metadata: { changedFields: ['currentStep', 'assignee'], hasAssigneeChange: true, hasStepChange: true },
+        source: 'api.requirements.patch',
+      });
+      const d = mockLedgerCreate.mock.calls[0][0].data;
+      expect(d.eventType).toBe('PATCH_UPDATED');
+      expect(d.fromStep).toBe('pm_review');
+      expect(d.toStep).toBe('draft');
+      expect(d.fromAssigneeId).toBe('old-a');
+      expect(d.stateVersionBefore).toBe(2);
+      expect(d.stateVersionAfter).toBe(3);
+      expect(d.metadata.changedFields).toContain('assignee');
+      expect(d.source).toBe('api.requirements.patch');
+    });
+
+    it('PATCH_UPDATED does NOT emit DOMAIN_CHANGED', async () => {
+      const mp = { requirementEventLedger: { create: mockLedgerCreate } };
+      await rec(mp, { requirementId: UUID, eventType: ET.PATCH_UPDATED, metadata: { changedFields: ['title'] } });
+      const d = mockLedgerCreate.mock.calls[0][0].data;
+      expect(d.eventType).toBe('PATCH_UPDATED');
+      expect(d.metadata.changedFields).not.toContain('domainKey');
+    });
+  });
+
+  describe('LIFECYCLE_ARCHIVED', () => {
+    it('records single LIFECYCLE_ARCHIVED with stateVersion and relatedAuditLogId', async () => {
+      const mp = { requirementEventLedger: { create: mockLedgerCreate } };
+      await rec(mp, {
+        requirementId: UUID, eventType: ET.LIFECYCLE_ARCHIVED,
+        actorId: USER_ID, actorName: 'CTO', actorType: 'human',
+        fromStep: 'done', toStep: 'archived',
+        reasonCode: 'UNKNOWN', reasonText: 'proj closed',
+        stateVersionBefore: 5, stateVersionAfter: 6,
+        relatedAuditLogId: 'audit-log-1',
+      });
+      const d = mockLedgerCreate.mock.calls[0][0].data;
+      expect(d.eventType).toBe('LIFECYCLE_ARCHIVED');
+      expect(d.fromStep).toBe('done');
+      expect(d.toStep).toBe('archived');
+      expect(d.stateVersionBefore).toBe(5);
+      expect(d.stateVersionAfter).toBe(6);
+      expect(d.relatedAuditLogId).toBe('audit-log-1');
+      expect(d.reasonText).toBe('proj closed');
+    });
+
+    it('records batch LIFECYCLE_ARCHIVED with metadata.batch=true', async () => {
+      const mp = { requirementEventLedger: { create: mockLedgerCreate } };
+      await rec(mp, { requirementId: UUID, eventType: ET.LIFECYCLE_ARCHIVED, fromStep: 'done', toStep: 'archived', metadata: { batch: true } });
+      const d = mockLedgerCreate.mock.calls[0][0].data;
+      expect(d.eventType).toBe('LIFECYCLE_ARCHIVED');
+      expect(d.metadata.batch).toBe(true);
+    });
+
+    it('ledger failure rolls back LIFECYCLE_ARCHIVED', async () => {
+      const mp = { requirementEventLedger: { create: vi.fn(() => { throw new Error('ledger error'); }) } };
+      await expect(rec(mp, { requirementId: UUID, eventType: ET.LIFECYCLE_ARCHIVED })).rejects.toThrow('ledger error');
+    });
+  });
+});

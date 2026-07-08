@@ -18,6 +18,7 @@ import { notifyEvent } from '../../utils/notifications.js';
 import { canReadRequirement } from './utils.js';
 import { recordRequirementEvent } from '../../services/requirement-event-ledger-service.js';
 import { RequirementEventType } from '../../lib/requirement-event-types.js';
+import { RequirementReasonCode } from '../../lib/requirement-reason-codes.js';
 import { txReadRequirement, REQUIREMENT_TRANSITION_SELECT } from './workflow-cas-helper.js';
 
 // ── 校验 schema ──
@@ -166,53 +167,53 @@ router.post(
       throw new HttpError(400, '该需求已为归档状态');
     }
 
-    // stateVersion CAS 乐观锁
-    const updated = await prisma.requirement.update({
-      where: {
-        id: params.id,
-        stateVersion: body.stateVersion,
-      },
-      data: {
-        currentStep: 'archived',
-        stateVersion: { increment: 1 },
-      },
-    }).catch((err: any) => {
-      if (err?.code === 'P2025') {
-        throw new HttpError(409, 'stateVersion 不匹配，请在查看最新版本后重试');
-      }
-      throw err;
-    });
+    // ── 事务：CAS 更新 + 审计日志 + Ledger 一同写入 ──
+    const _user = req.user;
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const beforeReq = await txReadRequirement(tx, params.id);
+      const svBefore = beforeReq.stateVersion ?? 0;
 
-    // 审计日志
-    await prisma.requirementAuditLog.create({
-      data: {
-        requirementId: params.id,
-        action: 'archive',
-        operatorId: req.user!.id,
-        operatorName: req.user!.name,
-        stateVersion: updated.stateVersion,
-        detail: {
-          fromStep: existing.currentStep,
-          toStep: 'archived',
-          reason: body.reason,
-          title: existing.title,
+      const updated = await tx.requirement.update({
+        where: { id: params.id, stateVersion: body.stateVersion },
+        data: { currentStep: 'archived', stateVersion: { increment: 1 } },
+      }).catch((err: any) => {
+        if (err?.code === 'P2025') {
+          throw new HttpError(409, 'stateVersion 不匹配，请在查看最新版本后重试');
+        }
+        throw err;
+      });
+
+      const auditLog = await tx.requirementAuditLog.create({
+        data: {
+          requirementId: params.id, action: 'archive',
+          operatorId: _user.id, operatorName: _user.name,
+          stateVersion: updated.stateVersion,
+          detail: { fromStep: existing.currentStep, toStep: 'archived', reason: body.reason, title: existing.title },
         },
-      },
-    }).catch(() => {});
+      });
+
+      await recordRequirementEvent(tx, {
+        requirementId: params.id, eventType: RequirementEventType.LIFECYCLE_ARCHIVED,
+        actorId: _user.id, actorName: _user.name, actorType: 'human',
+        fromStep: existing.currentStep, toStep: 'archived',
+        reasonCode: RequirementReasonCode.UNKNOWN, reasonText: body.reason,
+        stateVersionBefore: svBefore, stateVersionAfter: updated.stateVersion,
+        relatedAuditLogId: auditLog.id,
+      });
+
+      return updated;
+    });
 
     void notifyEvent('requirement.updated', {
       id: updated.id, title: updated.title,
-      actor: req.user.name,
-      action: 'archive',
+      actor: _user.name, action: 'archive',
     });
 
     res.json({
       success: true,
       data: {
-        id: updated.id,
-        title: updated.title,
-        currentStep: 'archived',
-        stateVersion: updated.stateVersion,
+        id: updated.id, title: updated.title,
+        currentStep: 'archived', stateVersion: updated.stateVersion,
       },
     });
   })
@@ -258,16 +259,38 @@ router.post(
           continue;
         }
 
-        const updated = await prisma.requirement.update({
-          where: {
-            id: item.id,
-            stateVersion: item.stateVersion,
-          },
-          data: {
-            currentStep: 'archived',
-            stateVersion: { increment: 1 },
-          },
-          select: { id: true, currentStep: true, stateVersion: true },
+        // ── 逐条事务：更新 + 审计日志 + Ledger ──
+        const _userBatch = req.user;
+        const updated = await prisma.$transaction(async (tx: any) => {
+          const beforeReq = await txReadRequirement(tx, item.id);
+          const svBefore = beforeReq.stateVersion ?? 0;
+
+          const u = await tx.requirement.update({
+            where: { id: item.id, stateVersion: item.stateVersion },
+            data: { currentStep: 'archived', stateVersion: { increment: 1 } },
+            select: { id: true, currentStep: true, stateVersion: true },
+          });
+
+          const auditLog = await tx.requirementAuditLog.create({
+            data: {
+              requirementId: item.id, action: 'archive',
+              operatorId: _userBatch.id, operatorName: _userBatch.name,
+              stateVersion: u.stateVersion,
+              detail: { toStep: 'archived', reason: body.reason, batch: true },
+            },
+          });
+
+          await recordRequirementEvent(tx, {
+            requirementId: item.id, eventType: RequirementEventType.LIFECYCLE_ARCHIVED,
+            actorId: _userBatch.id, actorName: _userBatch.name, actorType: 'human',
+            fromStep: existing.currentStep, toStep: 'archived',
+            reasonCode: RequirementReasonCode.UNKNOWN, reasonText: body.reason,
+            stateVersionBefore: svBefore, stateVersionAfter: u.stateVersion,
+            relatedAuditLogId: auditLog.id,
+            metadata: { batch: true },
+          });
+
+          return u;
         });
 
         results.push({
@@ -278,21 +301,6 @@ router.post(
         });
         archivedCount++;
 
-        // 非阻塞审计日志
-        prisma.requirementAuditLog.create({
-          data: {
-            requirementId: item.id,
-            action: 'archive',
-            operatorId: req.user!.id,
-            operatorName: req.user!.name,
-            stateVersion: updated.stateVersion,
-            detail: {
-              toStep: 'archived',
-              reason: body.reason,
-              batch: true,
-            },
-          },
-        }).catch(() => {});
       } catch (err: any) {
         const msg = err instanceof HttpError
           ? err.message
