@@ -895,3 +895,35 @@ model RequirementEventLedger {
   @@index([correlationId])
   @@map("requirement_event_ledger")
 }
+
+// ─── Root Cause Candidate ────────────────────────────
+
+model RootCauseCandidate {
+  id                       String   @id @default(uuid()) @db.Uuid
+  workflowId               String?  @map("workflow_id")
+  workflowName             String?  @map("workflow_name")
+  rootCauseType            String   @map("root_cause_type")
+  title                    String
+  description              String?  @db.Text
+  severity                 String
+  status                   String   @default("open")
+  reasonCode               String?  @map("reason_code")
+  eventType                String?  @map("event_type")
+  affectedRequirementCount Int      @default(0) @map("affected_requirement_count")
+  sampleRequirementIds     Json     @map("sample_requirement_ids")
+  evidenceEventIds         Json     @map("evidence_event_ids")
+  firstSeenAt              DateTime @map("first_seen_at")
+  lastSeenAt               DateTime @map("last_seen_at")
+  fingerprint              String   @unique
+  metadata                 Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([workflowId])
+  @@index([rootCauseType])
+  @@index([reasonCode])
+  @@index([status])
+  @@index([lastSeenAt])
+  @@map("root_cause_candidates")
+}
