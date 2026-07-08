@@ -12,10 +12,11 @@ import type { AddressInfo } from 'net';
 const UUID = '00000000-0000-0000-0000-000000000001';
 const OTHR = '00000000-0000-0000-0000-000000000099';
 
-const { mockFindUnique, mockUpdate, mockFindFirst, mockUserFindUnique } = vi.hoisted(() => ({
+const { mockFindUnique, mockUpdate, mockFindFirst, mockUserFindUnique, mockLedgerCreate } = vi.hoisted(() => ({
   mockFindUnique: vi.fn(),
   mockUpdate: vi.fn(),
   mockFindFirst: vi.fn(),
+  mockLedgerCreate: vi.fn(),
   mockUserFindUnique: vi.fn(),
 }));
 
@@ -26,6 +27,20 @@ vi.mock('../lib/prisma.js', () => ({
     workflowTemplate: { findFirst: mockFindFirst },
     notification: { create: vi.fn().mockResolvedValue({}) },
     workflowTransition: { create: vi.fn().mockResolvedValue({}) },
+    requirementEventLedger: { create: mockLedgerCreate },
+    $transaction: vi.fn(async (cb: any) => {
+      const tx = {
+        requirement: {
+          findUniqueOrThrow: vi.fn().mockResolvedValue(DEFAULT_REQUIREMENT),
+          update: vi.fn(async (args: any) => {
+            // Forward to original mockUpdate for assertion compatibility
+            return mockUpdate(args);
+          }),
+        },
+        requirementEventLedger: { create: mockLedgerCreate },
+      };
+      return cb(tx);
+    }),
   },
 }));
 
