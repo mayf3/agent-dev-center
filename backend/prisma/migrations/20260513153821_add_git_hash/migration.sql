@@ -26,12 +26,6 @@ ADD COLUMN     "gitHash" TEXT,
 ALTER COLUMN "id" DROP DEFAULT;
 
 -- AlterTable
-ALTER TABLE "service_requirements" ALTER COLUMN "id" DROP DEFAULT;
-
--- AlterTable
-ALTER TABLE "services" ALTER COLUMN "id" DROP DEFAULT;
-
--- AlterTable
 ALTER TABLE "tasks" ALTER COLUMN "id" DROP DEFAULT;
 
 -- AlterTable

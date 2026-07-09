@@ -7,7 +7,12 @@
 -- ═══════════════════════════════════════════════════
 
 -- 先迁移现有 developer 数据到 backend_developer
-UPDATE "users" SET "internal_role" = 'backend_developer' WHERE "internal_role" = 'developer';
+-- Note: on fresh DB there are no users so this is a no-op;
+-- wrapped in DO block because 'backend_developer' is not yet a valid InternalRole value
+DO $$ BEGIN
+  UPDATE "users" SET "internal_role" = 'backend_developer' WHERE "internal_role" = 'developer';
+EXCEPTION WHEN others THEN NULL;
+END $$;
 
 -- 安全替换 enum（PostgreSQL 不支持 ALTER TYPE ADD VALUE 后直接用，需要重建类型）
 BEGIN;
@@ -187,12 +192,14 @@ ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "must_change_password" BOOLEAN NOT 
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "enabled" BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "password_changed_at" TIMESTAMPTZ(3);
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "last_login_at" TIMESTAMPTZ(3);
-CREATE INDEX IF NOT EXISTS "users_lastLoginAt_idx" ON "users"("lastLoginAt");
+CREATE INDEX IF NOT EXISTS "users_lastLoginAt_idx" ON "users"("last_login_at");
 
 -- ═══════════════════════════════════════════════════
 -- 12. requirements 表其他缺失列
 -- ═══════════════════════════════════════════════════
 
+ALTER TABLE "requirements" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE "requirements" ADD COLUMN IF NOT EXISTS "state_version" INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE "requirements" ADD COLUMN IF NOT EXISTS "type" TEXT NOT NULL DEFAULT 'FEATURE';
 ALTER TABLE "requirements" ADD COLUMN IF NOT EXISTS "tags" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
 ALTER TABLE "requirements" ADD COLUMN IF NOT EXISTS "gitHash" TEXT;

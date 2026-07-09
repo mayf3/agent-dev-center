@@ -44,15 +44,16 @@ CREATE INDEX "workflow_transitions_createdAt_idx" ON "workflow_transitions"("cre
 ALTER TABLE "requirements" ADD CONSTRAINT "requirements_workflowId_fkey" FOREIGN KEY ("workflowId") REFERENCES "workflow_templates"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "workflow_transitions" ADD CONSTRAINT "workflow_transitions_requirementId_fkey" FOREIGN KEY ("requirementId") REFERENCES "requirements"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- Seed workflow templates
-INSERT INTO "workflow_templates" ("id", "name", "displayName", "description", "steps", "isActive") VALUES
+-- Seed workflow templates (updatedAt added because it's NOT NULL and Prisma @updatedAt has no DB default)
+INSERT INTO "workflow_templates" ("id", "name", "displayName", "description", "steps", "isActive", "updatedAt") VALUES
 (
   gen_random_uuid(),
   'backend-dev',
   '后端开发',
   '标准后端开发流程：开发自检 → 测试 → CTO审核 → 部署 → 完成',
   '[{"name":"dev_self_check","displayName":"开发自检","role":"developer","requiredReports":["DEV_SELF_CHECK"],"autoAdvance":false},{"name":"test","displayName":"测试验证","role":"tester","requiredReports":["TEST_REPORT"],"autoAdvance":false},{"name":"cto_review","displayName":"CTO审核","role":"cto","requiredReports":["CTO_REVIEW"],"autoAdvance":false},{"name":"deploy","displayName":"部署上线","role":"ops","requiredReports":["DEPLOY_CONFIRM"],"autoAdvance":false},{"name":"done","displayName":"完成","role":"auto","requiredReports":[],"autoAdvance":true}]'::jsonb,
-  true
+  true,
+  CURRENT_TIMESTAMP
 ),
 (
   gen_random_uuid(),
@@ -60,7 +61,8 @@ INSERT INTO "workflow_templates" ("id", "name", "displayName", "description", "s
   '前端开发',
   '标准前端开发流程：开发自检 → 测试 → CTO审核 → 部署 → 完成',
   '[{"name":"dev_self_check","displayName":"开发自检","role":"developer","requiredReports":["DEV_SELF_CHECK"],"autoAdvance":false},{"name":"test","displayName":"测试验证","role":"tester","requiredReports":["TEST_REPORT"],"autoAdvance":false},{"name":"cto_review","displayName":"CTO审核","role":"cto","requiredReports":["CTO_REVIEW"],"autoAdvance":false},{"name":"deploy","displayName":"部署上线","role":"ops","requiredReports":["DEPLOY_CONFIRM"],"autoAdvance":false},{"name":"done","displayName":"完成","role":"auto","requiredReports":[],"autoAdvance":true}]'::jsonb,
-  true
+  true,
+  CURRENT_TIMESTAMP
 ),
 (
   gen_random_uuid(),
@@ -68,7 +70,8 @@ INSERT INTO "workflow_templates" ("id", "name", "displayName", "description", "s
   '运维部署',
   '运维部署流程：部署 → 验证 → 完成',
   '[{"name":"deploy","displayName":"部署执行","role":"ops","requiredReports":["DEPLOY_CONFIRM"],"autoAdvance":false},{"name":"verify","displayName":"部署验证","role":"tester","requiredReports":["TEST_REPORT"],"autoAdvance":false},{"name":"done","displayName":"完成","role":"auto","requiredReports":[],"autoAdvance":true}]'::jsonb,
-  true
+  true,
+  CURRENT_TIMESTAMP
 ),
 (
   gen_random_uuid(),
@@ -76,5 +79,6 @@ INSERT INTO "workflow_templates" ("id", "name", "displayName", "description", "s
   '紧急修复',
   '紧急修复流程：开发自检 → 部署 → 完成（跳过测试和CTO审核）',
   '[{"name":"dev_self_check","displayName":"开发自检","role":"developer","requiredReports":["DEV_SELF_CHECK"],"autoAdvance":false},{"name":"deploy","displayName":"紧急部署","role":"ops","requiredReports":["DEPLOY_CONFIRM"],"autoAdvance":false},{"name":"done","displayName":"完成","role":"auto","requiredReports":[],"autoAdvance":true}]'::jsonb,
-  true
+  true,
+  CURRENT_TIMESTAMP
 );

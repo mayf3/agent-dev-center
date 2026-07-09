@@ -1,5 +1,8 @@
 ALTER TABLE "users" ADD COLUMN "roles" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
 
+-- cto_agent was added to UserRole in migration 20260603000002_add_cto_agent_enum
+-- (separate transaction required by PG16) so it is safe to reference here
+
 UPDATE "users" SET "roles" = ARRAY['adc:admin'] WHERE "internal_role" = 'cto';
 UPDATE "users" SET "roles" = ARRAY['adc:pm'] WHERE "internal_role" = 'pm';
 UPDATE "users" SET "roles" = ARRAY['adc:developer'] WHERE "internal_role" = 'developer';

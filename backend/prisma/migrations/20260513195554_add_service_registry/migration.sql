@@ -49,3 +49,7 @@ ALTER TABLE "service_requirements" ADD CONSTRAINT "service_requirements_serviceI
 
 -- AddForeignKey
 ALTER TABLE "service_requirements" ADD CONSTRAINT "service_requirements_requirementId_fkey" FOREIGN KEY ("requirementId") REFERENCES "requirements"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- DropDefault (moved from add_git_hash migration which ran before these tables existed)
+ALTER TABLE "services" ALTER COLUMN "id" DROP DEFAULT;
+ALTER TABLE "service_requirements" ALTER COLUMN "id" DROP DEFAULT;
