@@ -862,30 +862,30 @@ model FeedbackEvent {
 
 model RequirementEventLedger {
   id                  String      @id @default(uuid()) @db.Uuid
-  requirementId       String      @db.Uuid
-  eventType           String
-  actorId             String?     @db.Uuid
-  actorName           String?
-  actorType           String      @default("system")
-  fromStatus          String?
-  toStatus            String?
-  fromStep            String?
-  toStep              String?
-  fromAssigneeId      String?     @db.Uuid
-  toAssigneeId        String?     @db.Uuid
-  reasonCode          String?
-  reasonText          String?
+  requirementId       String      @map("requirement_id") @db.Uuid
+  eventType           String      @map("event_type")
+  actorId             String?     @map("actor_id") @db.Uuid
+  actorName           String?     @map("actor_name")
+  actorType           String      @default("system") @map("actor_type")
+  fromStatus          String?     @map("from_status")
+  toStatus            String?     @map("to_status")
+  fromStep            String?     @map("from_step")
+  toStep              String?     @map("to_step")
+  fromAssigneeId      String?     @map("from_assignee_id") @db.Uuid
+  toAssigneeId        String?     @map("to_assignee_id") @db.Uuid
+  reasonCode          String?     @map("reason_code")
+  reasonText          String?     @map("reason_text")
   evidence            Json?
   metadata            Json?
-  stateVersionBefore  Int?
-  stateVersionAfter   Int?
-  correlationId       String?
+  stateVersionBefore  Int?        @map("state_version_before")
+  stateVersionAfter   Int?        @map("state_version_after")
+  correlationId       String?     @map("correlation_id")
   source              String?
-  sourceVersion       String?
-  relatedTransitionId String?     @db.Uuid
-  relatedReportId     String?     @db.Uuid
-  relatedAuditLogId   String?     @db.Uuid
-  createdAt           DateTime    @default(now())
+  sourceVersion       String?     @map("source_version")
+  relatedTransitionId String?     @map("related_transition_id") @db.Uuid
+  relatedReportId     String?     @map("related_report_id") @db.Uuid
+  relatedAuditLogId   String?     @map("related_audit_log_id") @db.Uuid
+  createdAt           DateTime    @default(now()) @map("created_at")
 
   requirement         Requirement @relation(fields: [requirementId], references: [id])
 
