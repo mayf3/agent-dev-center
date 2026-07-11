@@ -31,9 +31,12 @@ export function registerEventRoutes(router: Router): void {
       const { params } = requirementIdSchema.parse({ params: req.params });
       const requirement = await prisma.requirement.findUnique({
         where: { id: params.id },
-        select: { id: true, requesterId: true, requester: true, assigneeId: true, assignee: true },
+        select: { id: true, requesterId: true, requester: true, assigneeId: true, assignee: true, domainKey: true },
       });
       if (!requirement) throw new HttpError(404, '需求不存在');
+      // canReadRequirement() applies the domain-scope gate via tryDomainCheck();
+      // domainKey MUST be selected so the real domainKey (not undefined) is
+      // evaluated — otherwise legitimate domain users are wrongly rejected 403.
       if (!canReadRequirement(req.user!, requirement)) throw new HttpError(403, '无权查看该需求的事件流');
 
       const limit = Math.min(Math.max(1, Number(req.query.limit) || 100), 500);
