@@ -476,78 +476,36 @@ reportsRouter.patch(
     }
 
     const reviewedAt = new Date();
+    const isRejected = body.status === 'rejected' || body.status === 'changes_requested';
 
-    const updated = await prisma.requirementReport.update({
-      where: { id: params.reportId },
-      data: {
-        qaReviewedAt: reviewedAt,
-        qaReviewedBy: req.user!.name,
-        reviewComment: body.reviewComment,
-        // QA 审查直接改变报告状态（2026-06-05 改进：QA 是 qa_review 步骤的 assignee，应直接审批）
-        status: body.status,
-        reviewedAt,
-      },
-    });
-
-    // Record Ledger event based on QA decision
-    const qaEventType = body.status === 'approved' ? RequirementEventType.REPORT_APPROVED : RequirementEventType.REPORT_REJECTED;
-    await recordRequirementEvent(prisma, {
-      requirementId: report.requirementId,
-      eventType: qaEventType,
-      actorId: req.user!.id,
-      actorName: req.user!.name,
-      actorType: 'human',
-      relatedReportId: params.reportId,
-    });
-
-    const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
-    void notifyEvent(reportEvent as any, {
-      id: report.requirementId,
-      title: report.reportType,
-      actor: req.user!.name,
-    });
-
-    // 如果是 rejected/changes_requested，触发报告打回逻辑
-    if (body.status === 'rejected' || body.status === 'changes_requested') {
+    // ── Pre-compute rollback data (read-only, outside transaction) ──
+    let rollbackTransactionData: {
+      currentStep: string;
+      assigneeId: string | null;
+      assignee: string | null;
+      fromStep: string | null;
+      comment: string;
+    } | null = null;
+    if (isRejected) {
       const reqInfo = await prisma.requirement.findUnique({
         where: { id: report.requirementId },
         select: { title: true, currentStep: true, workflowId: true, workflowSnapshot: true, assigneeId: true, assignee: true, domainKey: true, workflow: { select: { steps: true } } },
       });
-
       if (reqInfo) assertDomainReadAccess(req.user!, reqInfo);
 
       if (reqInfo?.workflowId && reqInfo.currentStep) {
-        void notifyEvent('report.rejected' as any, {
-          id: report.requirementId,
-          title: reqInfo.title,
-          reportType: report.reportType,
-          actor: req.user!.name,
-        });
-
-        // QA 驳回时自动退回工作流（不需要 QA 额外调 workflow/reject）
+        // Determine target step
         let targetStep: string;
         const qaRejectReportType = report.reportType as string;
         switch (qaRejectReportType) {
-          case 'DEV_SELF_CHECK':
-            targetStep = 'dev_self_check';
-            break;
-          case 'TEST_REPORT':
-            targetStep = 'testing';
-            break;
-          case 'SECURITY_REVIEW':
-            targetStep = 'dev_self_check';
-            break;
-          case 'ARCH_DESIGN':
-            targetStep = 'arch_design';
-            break;
-          case 'ARCH_REVIEW':
-            targetStep = 'dev_self_check';
-            break;
-          default:
-            targetStep = reqInfo.currentStep;
+          case 'DEV_SELF_CHECK': targetStep = 'dev_self_check'; break;
+          case 'TEST_REPORT': targetStep = 'testing'; break;
+          case 'SECURITY_REVIEW': targetStep = 'dev_self_check'; break;
+          case 'ARCH_DESIGN': targetStep = 'arch_design'; break;
+          case 'ARCH_REVIEW': targetStep = 'dev_self_check'; break;
+          default: targetStep = reqInfo.currentStep;
         }
 
-        // Get workflow steps (snapshot-first, legacy fallback)
         const rawJson = getWorkflowRawJson(reqInfo);
         if (rawJson) {
           const steps = parseSteps(rawJson);
@@ -557,42 +515,91 @@ reportsRouter.patch(
             ? targetStep
             : currentIdx > 0 ? steps[currentIdx - 1].name : targetStep;
 
-	          if (actualTarget !== reqInfo.currentStep) {
-	            // Resolve target step assignee for consistent rollback
-	            // If resolution fails, the whole CAS transaction rolls back (no stale assignee leak)
-	            let targetAssigneeId: string | null = null;
-	            let targetAssigneeName: string | null = null;
-	            const targetStepDef = steps.find((s: any) => s.name === actualTarget);
-	            if (targetStepDef?.role) {
-	              targetAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
-	              if (targetAssigneeId) {
-	                targetAssigneeName = await getAssigneeName(targetAssigneeId);
-	              }
-	            }
+          if (actualTarget !== reqInfo.currentStep) {
+            let targetAssigneeId: string | null = null;
+            let targetAssigneeName: string | null = null;
+            const targetStepDef = steps.find((s: any) => s.name === actualTarget);
+            if (targetStepDef?.role) {
+              targetAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
+              if (targetAssigneeId) {
+                targetAssigneeName = await getAssigneeName(targetAssigneeId);
+              }
+            }
 
-		            // CAS transaction: requirement update + transition atomic
-		            await prisma.$transaction(async (tx) => {
-		              const currentReq = await txReadRequirement(tx as any, report.requirementId);
-		              await executeQaRejectTransaction(
-		                tx as any,
-		                report.requirementId,
-		                currentReq.stateVersion ?? 0,
-		                { currentStep: actualTarget, assigneeId: targetAssigneeId, assignee: targetAssigneeName },
-		                {
-		                  requirement: { connect: { id: report.requirementId } },
-		                  fromStep: reqInfo.currentStep ?? actualTarget,
-		                  toStep: actualTarget,
-		                  action: 'reject',
-		                  actorId: req.user!.id,
-		                  actorName: req.user!.name,
-		                  actorRole: 'qa',
-		                  comment: body.reviewComment || `QA 驳回 ${report.reportType} 报告，自动退回`,
-		                } as Prisma.WorkflowTransitionCreateInput,
-		              );
-		            });
-	          }
+            rollbackTransactionData = {
+              currentStep: actualTarget,
+              assigneeId: targetAssigneeId,
+              assignee: targetAssigneeName,
+              fromStep: reqInfo.currentStep,
+              comment: body.reviewComment || `QA 驳回 ${report.reportType} 报告，自动退回`,
+            };
+          }
         }
       }
+    }
+
+    // ── Single transaction: report update + ledger + rollback ──
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const updatedReport = await tx.requirementReport.update({
+        where: { id: params.reportId },
+        data: {
+          qaReviewedAt: reviewedAt,
+          qaReviewedBy: req.user!.name,
+          reviewComment: body.reviewComment,
+          status: body.status,
+          reviewedAt,
+        },
+      });
+
+      const qaEventType = body.status === 'approved' ? RequirementEventType.REPORT_APPROVED : RequirementEventType.REPORT_REJECTED;
+      await recordRequirementEvent(tx, {
+        requirementId: report.requirementId,
+        eventType: qaEventType,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorType: 'human',
+        relatedReportId: params.reportId,
+      });
+
+      // Rollback (same transaction)
+      if (rollbackTransactionData) {
+        const currentReq = await txReadRequirement(tx, report.requirementId);
+        await executeQaRejectTransaction(
+          tx,
+          report.requirementId,
+          currentReq.stateVersion ?? 0,
+          { currentStep: rollbackTransactionData.currentStep, assigneeId: rollbackTransactionData.assigneeId, assignee: rollbackTransactionData.assignee },
+          {
+            requirement: { connect: { id: report.requirementId } },
+            fromStep: rollbackTransactionData.fromStep,
+            toStep: rollbackTransactionData.currentStep,
+            action: 'reject',
+            actorId: req.user!.id,
+            actorName: req.user!.name,
+            actorRole: 'qa',
+            comment: rollbackTransactionData.comment,
+          } as Prisma.WorkflowTransitionCreateInput,
+        );
+      }
+
+      return updatedReport;
+    });
+
+    // ── Notifications (outside transaction, best-effort) ──
+    const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
+    void notifyEvent(reportEvent as any, {
+      id: report.requirementId,
+      title: report.reportType,
+      actor: req.user!.name,
+    });
+
+    if (rollbackTransactionData) {
+      void notifyEvent('report.rejected' as any, {
+        id: report.requirementId,
+        title: report.reportType,
+        reportType: report.reportType,
+        actor: req.user!.name,
+      });
     }
 
     res.json({ success: true, data: updated, message: `QA 审查完成，报告已${body.status === 'approved' ? '通过' : '驳回'}` });
@@ -661,37 +668,14 @@ reportsRouter.patch(
 
     const reviewedAt = new Date();
 
-    const updated = await prisma.requirementReport.update({
-      where: { id: params.reportId },
-      data: {
-        qaReviewedAt: reviewedAt,
-        qaReviewedBy: req.user!.name,
-        reviewComment: body.reviewComment || autoReason,
-        qaFindings: findings,
-        status: autoStatus,
-        reviewedAt,
-      },
-    });
-
-    // Record Ledger event based on auto-decision
-    const findingsEventType = autoStatus === 'approved' ? RequirementEventType.REPORT_APPROVED : RequirementEventType.REPORT_REJECTED;
-    await recordRequirementEvent(prisma, {
-      requirementId: report.requirementId,
-      eventType: findingsEventType,
-      actorId: req.user!.id,
-      actorName: req.user!.name,
-      actorType: 'human',
-      relatedReportId: params.reportId,
-    });
-
-    const reportEvent = autoStatus === 'approved' ? 'report.approved' : 'report.rejected';
-    void notifyEvent(reportEvent as any, {
-      id: report.requirementId,
-      title: report.reportType,
-      actor: req.user!.name,
-    });
-
-    // 如果驳回，触发报告打回逻辑
+    // ── Pre-compute rollback data (read-only, outside transaction) ──
+    let findingsRollbackData: {
+      currentStep: string;
+      assigneeId: string | null;
+      assignee: string | null;
+      fromStep: string | null;
+      comment: string;
+    } | null = null;
     if (autoStatus === 'rejected') {
       const reqInfo = await prisma.requirement.findUnique({
         where: { id: report.requirementId },
@@ -700,34 +684,15 @@ reportsRouter.patch(
       if (reqInfo) assertDomainReadAccess(req.user!, reqInfo);
 
       if (reqInfo?.workflowId && reqInfo.currentStep) {
-        void notifyEvent('report.rejected' as any, {
-          id: report.requirementId,
-          title: reqInfo.title,
-          reportType: report.reportType,
-          actor: req.user!.name,
-        });
-
-        // 自动退回工作流
         let targetStep: string;
         const ctoRejectReportType = report.reportType as string;
         switch (ctoRejectReportType) {
-          case 'DEV_SELF_CHECK':
-            targetStep = 'dev_self_check';
-            break;
-          case 'TEST_REPORT':
-            targetStep = 'testing';
-            break;
-          case 'SECURITY_REVIEW':
-            targetStep = 'dev_self_check';
-            break;
-          case 'ARCH_DESIGN':
-            targetStep = 'arch_design';
-            break;
-          case 'ARCH_REVIEW':
-            targetStep = 'dev_self_check';
-            break;
-          default:
-            targetStep = reqInfo.currentStep;
+          case 'DEV_SELF_CHECK': targetStep = 'dev_self_check'; break;
+          case 'TEST_REPORT': targetStep = 'testing'; break;
+          case 'SECURITY_REVIEW': targetStep = 'dev_self_check'; break;
+          case 'ARCH_DESIGN': targetStep = 'arch_design'; break;
+          case 'ARCH_REVIEW': targetStep = 'dev_self_check'; break;
+          default: targetStep = reqInfo.currentStep;
         }
 
         const wf = await prisma.workflowTemplate.findUnique({
@@ -742,41 +707,92 @@ reportsRouter.patch(
             ? targetStep
             : currentIdx > 0 ? steps[currentIdx - 1]?.name ?? targetStep : targetStep;
 
-	          if (actualTarget !== reqInfo.currentStep) {
-	            // Resolve target step assignee
-	            let targetAssigneeId: string | null = null;
-	            let targetAssigneeName: string | null = null;
-	            const targetStepDef = steps.find((s: any) => s.name === actualTarget);
-	            if (targetStepDef?.role) {
-	              targetAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
-	              if (targetAssigneeId) {
-	                targetAssigneeName = await getAssigneeName(targetAssigneeId);
-	              }
-	            }
+          if (actualTarget !== reqInfo.currentStep) {
+            let targetAssigneeId: string | null = null;
+            let targetAssigneeName: string | null = null;
+            const targetStepDef = steps.find((s: any) => s.name === actualTarget);
+            if (targetStepDef?.role) {
+              targetAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
+              if (targetAssigneeId) {
+                targetAssigneeName = await getAssigneeName(targetAssigneeId);
+              }
+            }
 
-		            // CAS transaction: requirement update + transition atomic
-		            await prisma.$transaction(async (tx) => {
-		              const currentReq = await txReadRequirement(tx as any, params.id!);
-		              await executeQaRejectTransaction(
-		                tx as any,
-		                params.id!,
-		                currentReq.stateVersion ?? 0,
-		                { currentStep: actualTarget, assigneeId: targetAssigneeId, assignee: targetAssigneeName },
-		                {
-		                  requirement: { connect: { id: params.id } },
-		                  fromStep: reqInfo.currentStep ?? actualTarget,
-		                  toStep: actualTarget,
-		                  action: 'reject',
-		                  actorId: req.user!.id,
-		                  actorName: req.user!.name,
-		                  actorRole: 'qa',
-		                  comment: autoReason,
-		                } as Prisma.WorkflowTransitionCreateInput,
-		              );
-		            });
+            findingsRollbackData = {
+              currentStep: actualTarget,
+              assigneeId: targetAssigneeId,
+              assignee: targetAssigneeName,
+              fromStep: reqInfo.currentStep,
+              comment: autoReason,
+            };
           }
         }
       }
+    }
+
+    // ── Single transaction: report update + ledger + rollback ──
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const updatedReport = await tx.requirementReport.update({
+        where: { id: params.reportId },
+        data: {
+          qaReviewedAt: reviewedAt,
+          qaReviewedBy: req.user!.name,
+          reviewComment: body.reviewComment || autoReason,
+          qaFindings: findings,
+          status: autoStatus,
+          reviewedAt,
+        },
+      });
+
+      const findingsEventType = autoStatus === 'approved' ? RequirementEventType.REPORT_APPROVED : RequirementEventType.REPORT_REJECTED;
+      await recordRequirementEvent(tx, {
+        requirementId: report.requirementId,
+        eventType: findingsEventType,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorType: 'human',
+        relatedReportId: params.reportId,
+      });
+
+      // Rollback (same transaction)
+      if (findingsRollbackData) {
+        const currentReq = await txReadRequirement(tx as any, params.id!);
+        await executeQaRejectTransaction(
+          tx as any,
+          params.id!,
+          currentReq.stateVersion ?? 0,
+          { currentStep: findingsRollbackData.currentStep, assigneeId: findingsRollbackData.assigneeId, assignee: findingsRollbackData.assignee },
+          {
+            requirement: { connect: { id: params.id } },
+            fromStep: findingsRollbackData.fromStep,
+            toStep: findingsRollbackData.currentStep,
+            action: 'reject',
+            actorId: req.user!.id,
+            actorName: req.user!.name,
+            actorRole: 'qa',
+            comment: findingsRollbackData.comment,
+          } as Prisma.WorkflowTransitionCreateInput,
+        );
+      }
+
+      return updatedReport;
+    });
+
+    // ── Notifications (outside transaction, best-effort) ──
+    const reportEvent = autoStatus === 'approved' ? 'report.approved' : 'report.rejected';
+    void notifyEvent(reportEvent as any, {
+      id: report.requirementId,
+      title: report.reportType,
+      actor: req.user!.name,
+    });
+
+    if (findingsRollbackData) {
+      void notifyEvent('report.rejected' as any, {
+        id: report.requirementId,
+        title: report.reportType,
+        reportType: report.reportType,
+        actor: req.user!.name,
+      });
     }
 
     res.json({
@@ -874,163 +890,184 @@ reportsRouter.patch(
 
     if (report.status !== 'pending') throw new HttpError(400, '该报告已审核');
 
-    const updated = await prisma.requirementReport.update({
-      where: { id: params.reportId },
-      data: {
-        status: body.status,
-        reviewComment: body.reviewComment,
-        reviewedAt,
-        ...(shouldBypassQa ? {
-          qaBypass: true,
-          qaBypassReason: body.qa_bypass_reason,
-          qaBypassAt: reviewedAt,
-          qaBypassBy: req.user!.name,
-        } : {}),
-      },
-    });
-
-    // Record Ledger event based on CTO decision
-    const ctoEventType = body.status === 'approved' ? RequirementEventType.REPORT_APPROVED : RequirementEventType.REPORT_REJECTED;
-    await recordRequirementEvent(prisma, {
-      requirementId: report.requirementId,
-      eventType: ctoEventType,
-      actorId: req.user!.id,
-      actorName: req.user!.name,
-      actorType: 'human',
-      relatedReportId: params.reportId,
-    });
-
-    // 通知相关方
-    const reqInfo = await prisma.requirement.findUnique({
+    // ── Pre-compute rollback data (read-only, outside transaction) ──
+    const ctoReqInfo = await prisma.requirement.findUnique({
       where: { id: params.id },
       select: { title: true, requesterId: true, assigneeId: true, assignee: true, currentStep: true, workflowId: true, workflowSnapshot: true, domainKey: true, workflow: { select: { steps: true } } },
     });
-    if (reqInfo) assertDomainReadAccess(req.user!, reqInfo);
+    if (ctoReqInfo) assertDomainReadAccess(req.user!, ctoReqInfo);
+
+    let ctoRollbackData: {
+      targetStep: string;
+      assigneeId: string | null;
+      assignee: string | null;
+      fromStep: string | null;
+      reportType: string;
+      title: string;
+    } | null = null;
+    if (body.status === 'rejected' && ctoReqInfo) {
+      const ctoReportType = report.reportType as string;
+      let targetStep: string | null = null;
+
+      switch (ctoReportType) {
+        case 'DEV_SELF_CHECK':
+        case 'TEST_REPORT':
+        case 'SECURITY_REVIEW':
+          targetStep = 'dev_self_check';
+          break;
+        case 'CTO_REVIEW':
+          targetStep = 'testing';
+          break;
+        case 'DEPLOY_CONFIRM':
+          targetStep = 'cto_review';
+          break;
+        case 'ARCH_DESIGN':
+          targetStep = 'arch_design';
+          break;
+        case 'ARCH_REVIEW':
+          targetStep = 'dev_self_check';
+          break;
+        case 'MERGE_REPORT':
+          targetStep = 'cto_review';
+          break;
+        default:
+          break;
+      }
+
+      if (targetStep) {
+        let rollbackAssigneeId: string | null = null;
+        let rollbackAssigneeName: string | null = null;
+
+        if (ctoReqInfo.workflowId) {
+          const rawJson = getWorkflowRawJson(ctoReqInfo);
+          if (rawJson) {
+            const steps = parseSteps(rawJson);
+            const targetStepDef = steps.find(s => s.name === targetStep);
+            if (targetStepDef?.role) {
+              try {
+                rollbackAssigneeId = await resolveAssigneeForStep(targetStepDef.role, ctoReqInfo.assigneeId);
+                if (rollbackAssigneeId) {
+                  rollbackAssigneeName = await getAssigneeName(rollbackAssigneeId);
+                }
+              } catch (e) {
+                rollbackAssigneeId = null;
+              }
+            }
+          }
+        }
+
+        // fallback: use historical assignee
+        if (!rollbackAssigneeId) {
+          const lastRevision = await prisma.requirementRevision.findFirst({
+            where: {
+              requirementId: params.id,
+              assignee: { not: null },
+              status: { in: ['in_progress', 'testing'] },
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { assignee: true },
+          });
+          rollbackAssigneeName = lastRevision?.assignee ?? ctoReqInfo.assignee;
+          if (rollbackAssigneeName) {
+            const assigneeUser = await prisma.user.findFirst({
+              where: { OR: [{ name: rollbackAssigneeName }, { email: rollbackAssigneeName }] },
+              select: { id: true },
+            });
+            rollbackAssigneeId = assigneeUser?.id ?? ctoReqInfo.assigneeId;
+          }
+        }
+
+        ctoRollbackData = {
+          targetStep,
+          assigneeId: rollbackAssigneeId,
+          assignee: rollbackAssigneeName,
+          fromStep: ctoReqInfo.currentStep,
+          reportType: ctoReportType,
+          title: ctoReqInfo.title ?? '',
+        };
+      }
+    }
+
+    // ── Single transaction: report update + ledger + rollback ──
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const updatedReport = await tx.requirementReport.update({
+        where: { id: params.reportId },
+        data: {
+          status: body.status,
+          reviewComment: body.reviewComment,
+          reviewedAt,
+          ...(shouldBypassQa ? {
+            qaBypass: true,
+            qaBypassReason: body.qa_bypass_reason,
+            qaBypassAt: reviewedAt,
+            qaBypassBy: req.user!.name,
+          } : {}),
+        },
+      });
+
+      const ctoEventType = body.status === 'approved' ? RequirementEventType.REPORT_APPROVED : RequirementEventType.REPORT_REJECTED;
+      await recordRequirementEvent(tx, {
+        requirementId: report.requirementId,
+        eventType: ctoEventType,
+        actorId: req.user!.id,
+        actorName: req.user!.name,
+        actorType: 'human',
+        relatedReportId: params.reportId,
+      });
+
+      // Rollback (same transaction)
+      if (ctoRollbackData) {
+        const currentReq = await txReadRequirement(tx, params.id!);
+        await executeCtoRejectTransaction(
+          tx,
+          params.id!,
+          currentReq.stateVersion ?? 0,
+          { currentStep: ctoRollbackData.targetStep, assigneeId: ctoRollbackData.assigneeId, assignee: ctoRollbackData.assignee },
+          {
+            requirement: { connect: { id: params.id! } },
+            fromStep: ctoReqInfo?.currentStep ?? ctoRollbackData.targetStep,
+            toStep: ctoRollbackData.targetStep,
+            action: 'reject',
+            actorId: req.user!.id,
+            actorName: req.user!.name,
+            actorRole: 'cto',
+            comment: `${ctoRollbackData.reportType} 报告被打回，步骤回退至 ${ctoRollbackData.targetStep}`,
+          } as Prisma.WorkflowTransitionCreateInput,
+          {
+            requirementId: params.id!,
+            title: ctoRollbackData.title ?? '',
+            description: '',
+            priority: 'P2',
+            status: 'in_progress',
+            requester: '',
+            department: '',
+            assignee: ctoRollbackData.assignee,
+            revisionNote: `${ctoRollbackData.reportType} 报告被打回，步骤回退至 ${ctoRollbackData.targetStep}，assignee 回退为 ${ctoRollbackData.assignee ?? '原开发者'}`,
+            operatorId: req.user!.id,
+          },
+        );
+      }
+
+      return updatedReport;
+    });
+
+    // ── Notifications (outside transaction, best-effort) ──
     const reportEvent = body.status === 'approved' ? 'report.approved' : 'report.rejected';
     void notifyEvent(reportEvent as any, {
       id: params.id,
-      title: reqInfo?.title ?? '',
+      title: ctoReqInfo?.title ?? '',
       reportType: report.reportType,
       actor: req.user!.name,
     });
 
-    // ─── 报告打回自动回退需求状态 + assignee ───
-    // 所有需求（有/无工作流）都会自动回退到上一步，给提交者修改机会
-    if (body.status === 'rejected' && reqInfo) {
-      const reportType = report.reportType as string;
-      let targetStep: string | null = null;
-
-      switch (reportType) {
-          case 'DEV_SELF_CHECK':
-          case 'TEST_REPORT':
-          case 'SECURITY_REVIEW':
-            targetStep = 'dev_self_check';
-            break;
-          case 'CTO_REVIEW':
-            targetStep = 'testing';
-            break;
-          case 'DEPLOY_CONFIRM':
-            targetStep = 'cto_review';
-            break;
-          case 'ARCH_DESIGN':
-            targetStep = 'arch_design';
-            break;
-          case 'ARCH_REVIEW':
-            targetStep = 'dev_self_check';
-            break;
-          case 'MERGE_REPORT':
-            targetStep = 'cto_review';
-            break;
-          default:
-            break;
-        }
-
-        if (targetStep) {
-          // 用 resolveAssigneeForStep 确保回退步骤的 assignee 角色正确（防止漂移）
-          let rollbackAssigneeId: string | null = null;
-          let rollbackAssigneeName: string | null = null;
-
-          if (reqInfo.workflowId) {
-            const rawJson = getWorkflowRawJson(reqInfo);
-            if (rawJson) {
-              const steps = parseSteps(rawJson);
-              const targetStepDef = steps.find(s => s.name === targetStep);
-              if (targetStepDef?.role) {
-                try {
-                  rollbackAssigneeId = await resolveAssigneeForStep(targetStepDef.role, reqInfo.assigneeId);
-                  if (rollbackAssigneeId) {
-                    rollbackAssigneeName = await getAssigneeName(rollbackAssigneeId);
-                  }
-                } catch (e) {
-                  // resolveAssigneeForStep 可能因 roleUserMap 缺失抛出异常，
-                  // 此时不清除 assignee（保留 null），防止漂移
-                  rollbackAssigneeId = null;
-                }
-              }
-            }
-          }
-
-          // fallback: 如果 resolveAssigneeForStep 没找到（无工作流），用历史 assignee
-          if (!rollbackAssigneeId) {
-            const lastRevision = await prisma.requirementRevision.findFirst({
-              where: {
-                requirementId: params.id,
-                assignee: { not: null },
-                status: { in: ['in_progress', 'testing'] },
-              },
-              orderBy: { createdAt: 'desc' },
-              select: { assignee: true },
-            });
-            rollbackAssigneeName = lastRevision?.assignee ?? reqInfo.assignee;
-            if (rollbackAssigneeName) {
-              const assigneeUser = await prisma.user.findFirst({
-                where: { OR: [{ name: rollbackAssigneeName }, { email: rollbackAssigneeName }] },
-                select: { id: true },
-              });
-              rollbackAssigneeId = assigneeUser?.id ?? reqInfo.assigneeId;
-            }
-          }
-
-		          await prisma.$transaction(async (tx) => {
-		            const currentReq = await txReadRequirement(tx as any, params.id!);
-		            await executeCtoRejectTransaction(
-		              tx as any,
-		              params.id!,
-		              currentReq.stateVersion ?? 0,
-		              { currentStep: targetStep, assigneeId: rollbackAssigneeId, assignee: rollbackAssigneeName },
-		              {
-		                requirement: { connect: { id: params.id! } },
-		                fromStep: reqInfo.currentStep ?? targetStep,
-		                toStep: targetStep,
-		                action: 'reject',
-		                actorId: req.user!.id,
-		                actorName: req.user!.name,
-		                actorRole: 'cto',
-		                comment: `${reportType} 报告被打回，步骤回退至 ${targetStep}`,
-		              } as Prisma.WorkflowTransitionCreateInput,
-		              {
-		                requirementId: params.id!,
-		                title: reqInfo.title ?? '',
-		                description: '',
-		                priority: 'P2',
-		                status: 'in_progress',
-		                requester: '',
-		                department: '',
-		                assignee: rollbackAssigneeName,
-		                revisionNote: `${reportType} 报告被打回，步骤回退至 ${targetStep}，assignee 回退为 ${rollbackAssigneeName ?? '原开发者'}`,
-		                operatorId: req.user!.id,
-		              },
-		            );
-		          });
-
-          void notifyEvent('requirement.step_changed' as any, {
-            id: params.id,
-            title: reqInfo.title ?? '',
-            currentStep: targetStep,
-            actor: req.user!.name,
-            assignee: rollbackAssigneeName,
-          });
-      }
+    if (ctoRollbackData) {
+      void notifyEvent('requirement.step_changed' as any, {
+        id: params.id,
+        title: ctoReqInfo?.title ?? '',
+        currentStep: ctoRollbackData.targetStep,
+        actor: req.user!.name,
+        assignee: ctoRollbackData.assignee,
+      });
     }
 
     res.json({ success: true, data: updated });
