@@ -23,6 +23,8 @@ import { TypeTag } from '../../components/TypeTag';
 import { Tag as AntTag } from 'antd';
 import { TaskTableSection } from '../../components/requirements/TaskTableSection';
 import { RevisionHistoryTab, RevisionHistoryTabLabel } from '../../components/requirements/RevisionHistoryTab';
+import { ApprovalLedgerTab } from '../../components/requirements/ApprovalLedgerTab';
+import { AuditSummaryTab } from '../../components/requirements/AuditSummaryTab';
 import { RequirementModals } from '../../components/requirements/RequirementModals';
 import type { ModalHandles } from '../../components/requirements/RequirementModals';
 import { useAuth } from '../../contexts/AuthContext';
@@ -195,6 +197,14 @@ export function RequirementDetailPage() {
     {
       key: 'history', label: <RevisionHistoryTabLabel />,
       children: <RevisionHistoryTab requirementId={requirement.id} />
+    },
+    {
+      key: 'ledger', label: '审批流水账',
+      children: <ApprovalLedgerTab requirementId={requirement.id} />
+    },
+    {
+      key: 'audit', label: '审计摘要',
+      children: <AuditSummaryTab requirementId={requirement.id} />
     },
     {
       key: 'attachments', label: <><PaperClipOutlined /> 附件</>,

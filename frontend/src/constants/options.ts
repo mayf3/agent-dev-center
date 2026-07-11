@@ -219,6 +219,46 @@ export const reportTypeOrder: ReportType[] = [
   'ARCH_REVIEW',
 ];
 
+// ─── Event / Audit Ledger ────────────────────────────────────────
+
+export const eventTypeLabels: Record<string, string> = {
+  REQUIREMENT_CREATED: '创建需求',
+  DRAFT_SUBMITTED: '提交草稿',
+  WORKFLOW_ASSIGNED: '分配工作流',
+  WORKFLOW_ADVANCED: '推进工作流',
+  WORKFLOW_REJECTED: '驳回工作流',
+  REPORT_SUBMITTED: '提交报告',
+  REPORT_APPROVED: '批准报告',
+  REPORT_REJECTED: '驳回报告',
+  LIFECYCLE_ABANDONED: '废弃需求',
+  LIFECYCLE_REACTIVATED: '重新激活',
+  LIFECYCLE_ARCHIVED: '归档需求',
+  ADMIN_CLEANUP: '管理员清理',
+  GUARDRAIL_BLOCKED: '系统门禁拦截',
+  PATCH_UPDATED: '更新需求',
+  DOMAIN_CHANGED: '变更领域',
+  ASSIGNEE_CHANGED: '变更负责人',
+};
+
+export const eventTypeColors: Record<string, string> = {
+  REQUIREMENT_CREATED: 'default',
+  DRAFT_SUBMITTED: 'default',
+  WORKFLOW_ASSIGNED: 'blue',
+  WORKFLOW_ADVANCED: 'green',
+  WORKFLOW_REJECTED: 'red',
+  REPORT_SUBMITTED: 'blue',
+  REPORT_APPROVED: 'green',
+  REPORT_REJECTED: 'red',
+  LIFECYCLE_ABANDONED: 'default',
+  LIFECYCLE_REACTIVATED: 'purple',
+  LIFECYCLE_ARCHIVED: 'default',
+  ADMIN_CLEANUP: 'orange',
+  GUARDRAIL_BLOCKED: 'volcano',
+  PATCH_UPDATED: 'cyan',
+  DOMAIN_CHANGED: 'geekblue',
+  ASSIGNEE_CHANGED: 'purple',
+};
+
 // ─── Findings (QA review findings-driven approach) ───────────────
 
 export const findingSeverityColors: Record<string, string> = {
