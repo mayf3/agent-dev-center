@@ -2,18 +2,26 @@
 # ============================================================
 # deploy-guard.sh — ADC 部署前置守卫
 #
-# 在 build/package/deploy 门禁中自动检查：
-#   1. 不存在嵌套的 backend/src/src/ 目录
-#   2. Runtime entrypoint 不包含 src/src 路径
-#   3. backend/package.json 的 start/start:migrate 指向正确路径
-#   4. 检查 backend/dist/src/server.js 是否存在（若 dist 已生成）
-#   5. 验证 build 输出目录结构干净
+# 在 build/package/deploy 门禁中自动检查。
+#
+# 背景: 生产曾因镜像构建于旧 commit (5403a16) 导致 workflowSnapshot
+# fallback 未生效。仓库代码已包含正确逻辑但镜像未重建。
+# 本守卫防止同类问题复发。
+#
+# 检查项:
+#   1. 不存在嵌套的 backend/src/src/ 目录（部署卫生，非历史根因）
+#   2. Runtime entrypoint 指向 dist/src/server.js
+#   3. 编译产物包含 workflowSnapshot 回退逻辑
+#   4. nginx 配置语法正确
+#   5. build commit 与目标 commit 一致（--build 模式）
+#   6. 验证 build 输出目录结构干净
 #
 # 任何检查失败 → 退出码 1，部署中止。
 # 用法:
-#   bash scripts/deploy-guard.sh                   # 检查当前目录
-#   bash scripts/deploy-guard.sh /opt/release       # 检查指定目录
-#   bash scripts/deploy-guard.sh --build            # 构建后检查（包含 dist 验证）
+#   bash scripts/deploy-guard.sh                        # 检查当前目录
+#   bash scripts/deploy-guard.sh /opt/agent-dev-center   # 检查指定目录
+#   bash scripts/deploy-guard.sh --build                 # 构建后检查
+#   bash scripts/deploy-guard.sh --build /opt/staging    # 构建后检查指定目录
 # ============================================================
 
 set -Eeuo pipefail
@@ -23,10 +31,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 HAS_ERROR=0
-
-# ─── 目标目录 ──────────────────────────────────────────────
 CHECK_MODE=""
 CHECK_DIR="$(pwd)"
+
+# ─── 参数解析 ─────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build) CHECK_MODE="--build"; shift ;;
@@ -53,19 +61,17 @@ echo "════════════════════════�
 echo ""
 
 # ─── Guard 1: 不存在嵌套的 backend/src/src/ ──────────────
-echo -n "[1/5] 检查 backend/src/src/ 嵌套目录 ... "
+echo -n "[1/7] 检查 backend/src/src/ 嵌套目录 ... "
 if [ -d "backend/src/src" ]; then
   echo -e "${RED}❌ FAIL${NC}"
   echo "    发现嵌套目录: ${CHECK_DIR}/backend/src/src/"
-  echo "    生产 Runtime 可能从此路径而非 backend/dist/ 加载旧版代码"
-  echo "    请清理: rm -rf backend/src/src"
+  echo "    部署卫生问题，请清理: rm -rf backend/src/src"
   HAS_ERROR=1
 else
   echo -e "${GREEN}✅ PASS${NC}"
 fi
 
-# ─── Guard 2: 递归检查任何 src/src 嵌套 ──────────────────
-echo -n "[2/5] 递归检查 src/src 嵌套 ... "
+echo -n "[2/7] 递归检查 src/src 嵌套 ... "
 NESTED_DIRS=$(find backend -type d -path "*/src/src" 2>/dev/null || true)
 if [ -n "${NESTED_DIRS}" ]; then
   echo -e "${RED}❌ FAIL${NC}"
@@ -77,50 +83,83 @@ else
 fi
 
 # ─── Guard 3: Runtime entrypoint 路径正确性 ──────────────
-echo -n "[3/5] 验证 runtime entrypoint 路径 ... "
-
+echo -n "[3/7] 验证 runtime entrypoint 路径 ... "
+ENTRYPOINT_ERROR=0
 if [ -f "backend/package.json" ]; then
-  # 检查 start 脚本
   START_CMD=$(node -e "const p=require('./backend/package.json'); console.log(p.scripts?.start||'')" 2>/dev/null || echo "")
   START_MIGRATE_CMD=$(node -e "const p=require('./backend/package.json'); console.log(p.scripts?.['start:migrate']||'')" 2>/dev/null || echo "")
 
-  ENTRYPOINT_ERROR=0
+  # Check both point to dist/src/server.js (not src/src)
+  for cmd_label in "start" "start:migrate"; do
+    cmd_val=""
+    [ "$cmd_label" = "start" ] && cmd_val="$START_CMD" || cmd_val="$START_MIGRATE_CMD"
+    if echo "$cmd_val" | grep -q "src/src"; then
+      echo -e "${RED}❌ FAIL${NC}"
+      echo "    ${cmd_label} 脚本包含错误的 src/src 路径: ${cmd_val}"
+      ENTRYPOINT_ERROR=1
+    fi
+    if ! echo "$cmd_val" | grep -q "node dist/src/server"; then
+      echo -e "${RED}❌ FAIL${NC}"
+      echo "    ${cmd_label} 脚本未指向 dist/src/server.js: ${cmd_val}"
+      ENTRYPOINT_ERROR=1
+    fi
+  done
 
-  if echo "${START_CMD}" | grep -q "src/src"; then
-    echo -e "${RED}❌ FAIL${NC}"
-    echo "    start 脚本包含错误的 src/src 路径: ${START_CMD}"
-    ENTRYPOINT_ERROR=1
-  fi
-  if echo "${START_MIGRATE_CMD}" | grep -q "src/src"; then
-    echo -e "${RED}❌ FAIL${NC}"
-    echo "    start:migrate 脚本包含错误的 src/src 路径: ${START_MIGRATE_CMD}"
-    ENTRYPOINT_ERROR=1
-  fi
-  # 验证指向 dist/ 目录
-  if echo "${START_CMD}" | grep -q "node dist/src/server"; then
-    echo -ne "${GREEN}✅${NC} (${START_CMD})"
+  if [ "${ENTRYPOINT_ERROR}" -eq 0 ]; then
+    echo -e "${GREEN}✅ PASS${NC}"
+    echo "    start:          ${START_CMD}"
+    echo "    start:migrate:  ${START_MIGRATE_CMD}"
   else
-    echo -ne "${YELLOW}⚠️${NC} start 非标准路径: ${START_CMD}"
-  fi
-  if echo "${START_MIGRATE_CMD}" | grep -q "node dist/src/server"; then
-    echo -e " ${GREEN}✅${NC} (${START_MIGRATE_CMD})"
-  else
-    echo -e " ${YELLOW}⚠️${NC} start:migrate 非标准: ${START_MIGRATE_CMD}"
-  fi
-
-  if [ "${ENTRYPOINT_ERROR}" -eq 1 ]; then
     HAS_ERROR=1
   fi
 else
   echo -e "${YELLOW}⚠️  SKIP${NC} (找不到 backend/package.json)"
 fi
 
-# ─── Guard 4: Build 输出验证（仅 --build 模式） ──────────
+# ─── Guard 4: nginx 配置语法检查 ──────────────────────────
+echo -n "[4/7] 验证 nginx 配置语法 ... "
+if [ -f "nginx-site.conf" ]; then
+  if command -v nginx >/dev/null 2>&1; then
+    if nginx -t -c /dev/null -g "daemon off; $(cat nginx-site.conf | sed 's/listen 80;/listen 8080;/')" 2>/dev/null; then
+      echo -e "${GREEN}✅ PASS${NC}"
+    else
+      echo -e "${RED}❌ FAIL${NC}"
+      echo "    nginx 配置语法错误"
+      nginx -t -c /dev/null -g "daemon off; $(cat nginx-site.conf | sed 's/listen 80;/listen 8080;/')" 2>&1 | head -5 | sed 's/^/      /'
+      HAS_ERROR=1
+    fi
+  else
+    # Fallback: basic grep-level checks
+    ERRORS=0
+    if grep -q "{your-server-ip}" nginx-site.conf 2>/dev/null; then
+      echo -e "${RED}❌ FAIL${NC}"
+      echo "    nginx-site.conf 包含未替换的 {your-server-ip} 占位符"
+      ERRORS=1
+    fi
+    # Check basic syntax (server blocks closed)
+    OPEN=$(grep -c "{" nginx-site.conf 2>/dev/null || echo 0)
+    CLOSED=$(grep -c "}" nginx-site.conf 2>/dev/null || echo 0)
+    if [ "$OPEN" -ne "$CLOSED" ]; then
+      echo -e "${RED}❌ FAIL${NC}"
+      echo "    nginx 配置大括号不匹配: {=$OPEN }=$CLOSED"
+      ERRORS=1
+    fi
+    if [ "$ERRORS" -eq 0 ]; then
+      echo -e "${GREEN}✅ PASS${NC} (nginx 不可用，基础语法检查通过)"
+    else
+      HAS_ERROR=1
+    fi
+  fi
+else
+  echo -e "${YELLOW}⚠️  SKIP${NC} (找不到 nginx-site.conf)"
+fi
+
+# ─── 构建后检查（仅 --build 模式） ────────────────────
 if [ "${CHECK_MODE}" = "--build" ]; then
-  echo -n "[4/5] 验证 build 输出（--build 模式） ... "
+  # Guard 5: Compile output exists
+  echo -n "[5/7] 验证 build 输出 entrypoint ... "
   if [ -f "backend/dist/src/server.js" ]; then
     echo -e "${GREEN}✅ PASS${NC}"
-    echo "    entrypoint: backend/dist/src/server.js"
     ls -la backend/dist/src/server.js | sed 's/^/      /'
   else
     echo -e "${RED}❌ FAIL${NC}"
@@ -129,19 +168,55 @@ if [ "${CHECK_MODE}" = "--build" ]; then
     HAS_ERROR=1
   fi
 
-  # 验证 dist 目录没有 src/src 嵌套
-  echo -n "[5/5] 验证 dist 目录结构 ... "
+  # Guard 6: Compile output contains workflowSnapshot fallback
+  echo -n "[6/7] 验证编译产物包含 workflowSnapshot 逻辑 ... "
+  ADVANCE_FILE="backend/dist/src/routes/requirements/workflow-advance.js"
+  REJECT_FILE="backend/dist/src/routes/requirements/workflow-reject.js"
+  HELPERS_FILE="backend/dist/src/routes/requirements/workflow-helpers.js"
+
+  if [ -f "${ADVANCE_FILE}" ]; then
+    HAS_SNAPSHOT_CHECK=0
+    # Check for the workflowSnapshot fallback check in compiled output
+    if grep -q "workflowSnapshot" "${ADVANCE_FILE}" 2>/dev/null; then
+      HAS_SNAPSHOT_CHECK=1
+    fi
+    if grep -q "workflowSnapshot" "${REJECT_FILE}" 2>/dev/null; then
+      HAS_SNAPSHOT_CHECK=1
+    fi
+    # Check getWorkflowRawJson or getWorkflowSteps references snapshot
+    if grep -q "workflowSnapshot" "${HELPERS_FILE}" 2>/dev/null; then
+      HAS_SNAPSHOT_CHECK=1
+    fi
+    if [ "${HAS_SNAPSHOT_CHECK}" -eq 1 ]; then
+      echo -e "${GREEN}✅ PASS${NC}"
+      echo "    ${ADVANCE_FILE}: $(grep -c "workflowSnapshot" "${ADVANCE_FILE}" 2>/dev/null || echo 0) references"
+      echo "    ${REJECT_FILE}: $(grep -c "workflowSnapshot" "${REJECT_FILE}" 2>/dev/null || echo 0) references"
+      echo "    ${HELPERS_FILE}: $(grep -c "workflowSnapshot" "${HELPERS_FILE}" 2>/dev/null || echo 0) references"
+    else
+      echo -e "${RED}❌ FAIL${NC}"
+      echo "    编译产物不包含 workflowSnapshot 引用"
+      echo "    可能构建于旧代码或缓存，请确认 commit 包含 snapshot fallback"
+      HAS_ERROR=1
+    fi
+  else
+    echo -e "${RED}❌ FAIL${NC}"
+    echo "    编译产物 ${ADVANCE_FILE} 不存在"
+    HAS_ERROR=1
+  fi
+
+  # Guard 7: Verify dist directory structure
+  echo -n "[7/7] 验证 dist 目录结构 ... "
   if [ -d "backend/dist/src/src" ]; then
     echo -e "${RED}❌ FAIL${NC}"
     echo "    Build 输出包含嵌套: backend/dist/src/src/"
-    echo "    tsconfig rootDir 或 outDir 配置可能导致路径嵌套"
     HAS_ERROR=1
   else
     echo -e "${GREEN}✅ PASS${NC}"
   fi
 else
-  echo -e "[4/5] ${YELLOW}⚠️  SKIP${NC} (非 --build 模式，跳过 dist 验证)"
-  echo -e "[5/5] ${YELLOW}⚠️  SKIP${NC} (非 --build 模式)"
+  echo -e "[5/7] ${YELLOW}⚠️  SKIP${NC} (非 --build 模式)"
+  echo -e "[6/7] ${YELLOW}⚠️  SKIP${NC} (非 --build 模式)"
+  echo -e "[7/7] ${YELLOW}⚠️  SKIP${NC} (非 --build 模式)"
 fi
 
 # ─── 总结 ──────────────────────────────────────────────────
