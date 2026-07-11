@@ -22,3 +22,6 @@ baby-daily-print/
 .adc-token
 .adc-token-cache*
 .adc-token-cache.d/
+
+# ZCode tool session artifacts (not part of the codebase)
+.zcode/

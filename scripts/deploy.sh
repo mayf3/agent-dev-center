@@ -1,33 +1,41 @@
 #!/bin/bash
-# deploy.sh — ADC 一键部署脚本
-# 用法: bash deploy.sh [service] [--skip-migrate] [--skip-verify] [--rollback]
+# deploy.sh — ADC 一键部署脚本（已废弃）
 #
-# 功能：
-# 1. 备份当前镜像（previous 标签）
-# 2. Git pull 最新代码
-# 3. Docker build
-# 4. Prisma migrate
-# 5. Docker compose up
-# 6. 健康检查
-# 7. 失败自动回滚
+# 此入口已废弃。所有 ADC 生产发布请使用仓库根目录的 deploy.sh。
 #
-# 设计原则：
-# - 每一步都有错误检查，失败立即停止
-# - 自动备份，自动回滚
-# - 日志记录所有操作
-# - 不依赖人工记忆
+# 区别：
+#   根目录 deploy.sh: archive → scp → staging → build → guard → compose up → health
+#   本脚本:         git pull → build → compose up（无 staging，无 buildCommit 守卫）
+#   infra/rollback/: git pull → build → up（同样缺少 staging 和守卫）
+#
+# 三个入口中只有根目录 deploy.sh 支持:
+#   - 失败安全 release staging
+#   - 运行容器 image ID 保存 (docker inspect)
+#   - 自动回滚 (previous → prod, --no-build)
+#   - buildCommit 精确验证
+#   - 编译产物 workflowSnapshot 守卫
+#   - 部署锁 (acquire_lock)
+#
+# 本脚本保留仅用于回滚辅助参考，不可用于正式发布。
 
 set -euo pipefail
 
-# ── 配置 ──
-SERVICE="${1:-agent-dev-center-backend}"
-SKIP_MIGRATE="${2:-}"
-SKIP_VERIFY="${3:-}"
-ROLLBACK="${4:-}"
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-LOG_FILE="/tmp/deploy-$(date +%Y%m%d-%H%M%S).log"
-HEALTH_URL="http://localhost:4000/api/health"
-HEALTH_TIMEOUT=30
+echo ""
+echo "═══════════════════════════════════════════════════════"
+echo "  ❌ 此部署入口已废弃"
+echo ""
+echo "  请使用仓库根目录 deploy.sh 进行生产发布。"
+echo "  用法: bash deploy.sh"
+echo ""
+echo "  唯一正式发布入口："
+echo "    /opt/agent-dev-center/releases/<sha>/  (staging)"
+echo "    agent-dev-center-backend:prod          (运行镜像)"
+echo "    agent-dev-center-backend:previous       (回滚镜像)"
+echo ""
+echo "  本脚本保留仅用于回滚辅助参考。"
+echo "═══════════════════════════════════════════════════════"
+echo ""
+exit 1
 
 # ── 日志函数 ──
 log() {

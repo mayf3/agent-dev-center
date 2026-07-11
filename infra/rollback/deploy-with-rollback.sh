@@ -1,31 +1,41 @@
 #!/bin/bash
-# deploy-with-rollback.sh — 带自动回滚的 Docker 部署脚本
-# 用法: deploy-with-rollback.sh <service-name> [compose-service] [--skip-migrate]
+# deploy-with-rollback.sh — 带自动回滚的 Docker 部署脚本（已废弃）
 #
-# 功能：
-#   1. 部署前自动备份当前镜像为 previous
-#   2. 构建新镜像并部署
-#   3. 健康检查验证
-#   4. 失败自动回滚到 previous 版本
+# 此入口已废弃。所有 ADC 生产发布请使用仓库根目录的 deploy.sh。
 #
-# 与原 deploy.sh 的区别：
-#   - 支持任意服务（不限于 agent-dev-center-backend）
-#   - 回滚逻辑更健壮（验证回滚后健康状态）
-#   - 部署日志记录到 /var/log/deploy/ 便于审计
-#   - 支持 compose-service 名映射（镜像名 vs compose 服务名）
+# 区别：
+#   根目录 deploy.sh: archive → scp → staging → build → guard → compose up → health
+#   本脚本:         git pull → build → up（无 staging，无 buildCommit 守卫）
+#   scripts/deploy.sh: git pull → build → up（同样缺少 staging 和守卫）
+#
+# 三个入口中只有根目录 deploy.sh 支持:
+#   - 失败安全 release staging
+#   - 运行容器 image ID 保存 (docker inspect)
+#   - 自动回滚 (previous → prod, --no-build)
+#   - buildCommit 精确验证
+#   - 编译产物 workflowSnapshot 守卫
+#   - 部署锁 (acquire_lock)
+#
+# 本脚本保留仅用于回滚辅助参考，不可用于正式发布。
 
 set -euo pipefail
 
-# ── 参数解析 ──
-SERVICE="${1:-agent-dev-center-backend}"
-COMPOSE_SERVICE="${2:-$SERVICE}"
-SKIP_MIGRATE=false
-
-for arg in "$@"; do
-  case "$arg" in
-    --skip-migrate) SKIP_MIGRATE=true ;;
-  esac
-done
+echo ""
+echo "═══════════════════════════════════════════════════════"
+echo "  ❌ 此部署入口已废弃"
+echo ""
+echo "  请使用仓库根目录 deploy.sh 进行生产发布。"
+echo "  用法: bash deploy.sh"
+echo ""
+echo "  唯一正式发布入口："
+echo "    /opt/agent-dev-center/releases/<sha>/  (staging)"
+echo "    agent-dev-center-backend:prod          (运行镜像)"
+echo "    agent-dev-center-backend:previous       (回滚镜像)"
+echo ""
+echo "  本脚本保留仅用于回滚辅助参考。"
+echo "═══════════════════════════════════════════════════════"
+echo ""
+exit 1
 
 # ── 配置 ──
 PROJECT_DIR="/opt/services/agent-dev-center"
