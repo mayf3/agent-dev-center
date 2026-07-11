@@ -7,6 +7,10 @@ healthRouter.get('/', (_req, res) => {
     ok: true,
     service: 'agent-dev-center-backend',
     timestamp: new Date().toISOString(),
+    buildCommit: process.env.BUILD_COMMIT || 'development',
+    buildTimestamp: process.env.BUILD_TIMESTAMP || 'development',
+    runtimeEntry: 'dist/src/server.js',
+    nodeVersion: process.version,
   });
 });
 

@@ -89,13 +89,25 @@ git pull origin main 2>&1 | tee -a "$LOG_FILE" || {
 }
 success "代码已更新"
 
-# ── Step 3: Docker build ──
-log "Step 3: 构建 Docker 镜像"
-docker compose build "$SERVICE" 2>&1 | tee -a "$LOG_FILE" || {
+# ── Git pull 后守卫 — 检查嵌套 src/src ──
+if [ -d "backend/src/src" ]; then
+  error "检测到嵌套 backend/src/src/ 目录 — 部署中止"
+  rollback
+fi
+log "✅ 嵌套目录检查通过"
+
+# ── Step 3: Docker build（带 build metadata）──
+BUILD_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "unknown")
+log "Step 3: 构建 Docker 镜像 (commit=${BUILD_COMMIT})"
+docker compose build \
+  --build-arg "BUILD_COMMIT=${BUILD_COMMIT}" \
+  --build-arg "BUILD_TIMESTAMP=${BUILD_TIMESTAMP}" \
+  "$SERVICE" 2>&1 | tee -a "$LOG_FILE" || {
   error "Docker build 失败"
   rollback
 }
-success "镜像构建完成"
+success "镜像构建完成 (commit=${BUILD_COMMIT})"
 
 # ── Step 4: Prisma migrate ──
 if [ "$SKIP_MIGRATE" != "--skip-migrate" ]; then

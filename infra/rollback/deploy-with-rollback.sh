@@ -120,10 +120,22 @@ git checkout main 2>&1 | tee -a "$LOG_FILE"
 git pull server main 2>&1 | tee -a "$LOG_FILE" || do_rollback "git pull 失败"
 success "代码已同步"
 
-# ── Step 3: 构建新镜像 ──
-log "Step 3/6: 构建 Docker 镜像"
-docker compose -f "$COMPOSE_FILE" build "$COMPOSE_SERVICE" 2>&1 | tee -a "$LOG_FILE" || do_rollback "Docker build 失败"
-success "镜像构建完成"
+# ── Git pull 后守卫 — 检查嵌套 src/src ──
+if [ -d "backend/src/src" ]; then
+  error "检测到嵌套 backend/src/src/ 目录 — 部署中止"
+  do_rollback "嵌套 src/src 目录"
+fi
+log "✅ 嵌套目录检查通过"
+
+# ── Step 3: 构建新镜像（带 build metadata）──
+BUILD_COMMIT=$(cd "$PROJECT_DIR" && git rev-parse HEAD 2>/dev/null || echo "unknown")
+BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "unknown")
+log "Step 3/6: 构建 Docker 镜像 (commit=${BUILD_COMMIT})"
+docker compose -f "$COMPOSE_FILE" build \
+  --build-arg "BUILD_COMMIT=${BUILD_COMMIT}" \
+  --build-arg "BUILD_TIMESTAMP=${BUILD_TIMESTAMP}" \
+  "$COMPOSE_SERVICE" 2>&1 | tee -a "$LOG_FILE" || do_rollback "Docker build 失败"
+success "镜像构建完成 (commit=${BUILD_COMMIT})"
 
 # ── Step 4: 数据库迁移（可选）──
 if [ "$SKIP_MIGRATE" = false ] && [ "$COMPOSE_SERVICE" = "backend" ]; then

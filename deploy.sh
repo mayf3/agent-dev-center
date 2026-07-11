@@ -126,23 +126,26 @@ elif [ "${LOCAL_BRANCH}" != "${DEPLOY_BRANCH}" ]; then
   log "NOTE: Deploying from local branch ${LOCAL_BRANCH} @ ${LOCAL_COMMIT} (DEPLOY_BRANCH defaults to main)"
 fi
 log "Creating deployment archive from branch ${LOCAL_BRANCH} @ ${LOCAL_COMMIT}"
-tar \
-  --exclude='.git' \
-  --exclude='node_modules' \
-  --exclude='backend/node_modules' \
-  --exclude='frontend/node_modules' \
-  --exclude='backend/dist' \
-  --exclude='frontend/dist' \
-  --exclude='*.log' \
-  -czf "${archive}" \
-  .dockerignore \
-  "${COMPOSE_FILE}" \
-  "${ENV_FILE}" \
-  nginx-site.conf \
-  package.json \
-  package-lock.json \
-  backend \
-  frontend
+	BUILD_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+	BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "unknown")
+	log "Build metadata: commit=${BUILD_COMMIT} timestamp=${BUILD_TIMESTAMP}"
+	tar \
+	  --exclude='.git' \
+	  --exclude='node_modules' \
+	  --exclude='backend/node_modules' \
+	  --exclude='frontend/node_modules' \
+	  --exclude='backend/dist' \
+	  --exclude='frontend/dist' \
+	  --exclude='*.log' \
+	  -czf "${archive}" \
+	  .dockerignore \
+	  "${COMPOSE_FILE}" \
+	  "${ENV_FILE}" \
+	  nginx-site.conf \
+	  package.json \
+	  package-lock.json \
+	  backend \
+	  frontend
 
 log "Preparing ${REMOTE_DIR} on remote host"
 ssh_cmd "mkdir -p '${REMOTE_DIR}'"
@@ -155,20 +158,52 @@ scp \
   "${SSH_TARGET}:${REMOTE_ARCHIVE}"
 
 log "Building images and starting services on remote host (branch=${DEPLOY_BRANCH})"
-ssh_cmd "REMOTE_DIR='${REMOTE_DIR}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' COMPOSE_FILE='${COMPOSE_FILE}' ENV_FILE='${ENV_FILE}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash -s" <<'REMOTE_SCRIPT'
-set -Eeuo pipefail
-cd "${REMOTE_DIR}"
-tar -xzf "${REMOTE_ARCHIVE}" -C "${REMOTE_DIR}"
-rm -f "${REMOTE_ARCHIVE}"
-chmod 600 "${ENV_FILE}"
-
-# Deploy metadata (source: build-side git, not target directory)
-echo "[deploy] Source branch: ${DEPLOY_BRANCH} @ ${LOCAL_COMMIT:-archive}"
-
-docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build --pull
-docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --remove-orphans
-docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps
-REMOTE_SCRIPT
+	ssh_cmd "REMOTE_DIR='${REMOTE_DIR}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' COMPOSE_FILE='${COMPOSE_FILE}' ENV_FILE='${ENV_FILE}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' BUILD_COMMIT='${BUILD_COMMIT}' BUILD_TIMESTAMP='${BUILD_TIMESTAMP}' bash -s" <<'REMOTE_SCRIPT'
+	set -Eeuo pipefail
+	cd "${REMOTE_DIR}"
+	
+	# ── 原子 release: 清理旧目录 → 解压 → 守卫 → build ──
+	echo "[deploy] Source branch: ${DEPLOY_BRANCH} @ ${BUILD_COMMIT:-archive}"
+	
+	# Step 1: 清理旧 backend 目录（防止累积嵌套路径）
+	rm -rf backend 2>/dev/null || true
+	
+	# Step 2: 解压新 archive
+	tar -xzf "${REMOTE_ARCHIVE}" -C "${REMOTE_DIR}"
+	rm -f "${REMOTE_ARCHIVE}"
+	chmod 600 "${ENV_FILE}"
+	
+	# Step 3: 部署守卫 — 嵌套目录检查
+	if [ -d "backend/src/src" ]; then
+	  echo "[deploy] ❌ FATAL: 检测到嵌套 backend/src/src/，部署中止" >&2
+	  exit 1
+	fi
+	if find backend -type d -path "*/src/src" 2>/dev/null | grep -q .; then
+	  echo "[deploy] ❌ FATAL: 检测到 src/src 嵌套目录，部署中止" >&2
+	  exit 1
+	fi
+	echo "[deploy] ✅ 嵌套目录检查通过"
+	
+	# Step 4: 注入 build metadata 并构建
+	echo "[deploy] Building with BUILD_COMMIT=${BUILD_COMMIT} BUILD_TIMESTAMP=${BUILD_TIMESTAMP}"
+	docker compose \
+	  --env-file "${ENV_FILE}" \
+	  -f "${COMPOSE_FILE}" \
+	  build \
+	  --pull \
+	  --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
+	  --build-arg BUILD_TIMESTAMP="${BUILD_TIMESTAMP}"
+	
+	# Step 5: Build 后守卫 — 验证 entrypoint
+	if docker images agent-dev-center-backend:prod --format '{{.Repository}}' 2>/dev/null | grep -q .; then
+	  echo "[deploy] ✅ Docker image built: agent-dev-center-backend:prod"
+	else
+	  echo "[deploy] ⚠️  image name may differ, skipping entrypoint verification"
+	fi
+	
+	docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --remove-orphans
+	docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps
+	REMOTE_SCRIPT
 
 log "Deployment complete (branch=${DEPLOY_BRANCH})"
 log "Frontend: http://${SERVER_HOST}"
