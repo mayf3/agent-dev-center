@@ -34,6 +34,8 @@ import {
 } from './workflow-advance-helpers.js';
 import { casUpdateRequirement, txCreateTransition, txReadRequirement } from './workflow-cas-helper.js';
 import { createFeedbackEvent } from './feedback-events.js';
+import { recordRequirementEvent, buildWorkflowEvent } from '../../services/requirement-event-ledger-service.js';
+import { RequirementEventType } from '../../lib/requirement-event-types.js';
 
 export function registerWorkflowRejectRoutes(router: import('express').Router): void {
 
@@ -260,27 +262,43 @@ export function registerWorkflowRejectRoutes(router: import('express').Router): 
 	          updateData.requesterId = effectiveRequesterId;
 	        }
 
-	        // CAS 更新 + stateVersion 递增
-	        const updatedReq = await casUpdateRequirement(
-	          tx as any,
-	          params.id,
-	          currentReq.stateVersion ?? 0,
-	          updateData,
-	        );
+        // CAS 更新 + stateVersion 递增
+        const updatedReq = await casUpdateRequirement(
+          tx as any,
+          params.id,
+          currentReq.stateVersion ?? 0,
+          updateData,
+        );
 
-	        // transition 原子写入
-	        await txCreateTransition(tx as any, {
-	          requirement: { connect: { id: params.id } },
-	          fromStep: requirement.currentStep,
-	          toStep: targetStepName,
-	          action: 'reject',
-	          actorId: req.user!.id,
-	          actorName: req.user!.name,
-	          actorRole: req.user!.internalRole ?? req.user!.role,
-	          comment: body.comment,
-	        } as Prisma.WorkflowTransitionCreateInput);
+        // transition 原子写入
+        const transition = await txCreateTransition(tx as any, {
+          requirement: { connect: { id: params.id } },
+          fromStep: requirement.currentStep,
+          toStep: targetStepName,
+          action: 'reject',
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          actorRole: req.user!.internalRole ?? req.user!.role,
+          comment: body.comment,
+        } as Prisma.WorkflowTransitionCreateInput);
 
-	        return updatedReq;
+        // Record WORKFLOW_REJECTED ledger event within the same transaction
+        await recordRequirementEvent(tx as any, buildWorkflowEvent(RequirementEventType.WORKFLOW_REJECTED, {
+          requirementId: params.id,
+          fromStep: requirement.currentStep,
+          toStep: targetStepName,
+          fromAssigneeId: requirement.assigneeId,
+          toAssigneeId: newAssigneeId,
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          actorType: 'human',
+          relatedTransitionId: transition.id,
+          stateVersionBefore: currentReq.stateVersion ?? 0,
+          stateVersionAfter: updatedReq.stateVersion ?? 0,
+          reasonText: body.comment,
+        }));
+
+        return updatedReq;
 	      });
 
 	      createFeedbackEvent({

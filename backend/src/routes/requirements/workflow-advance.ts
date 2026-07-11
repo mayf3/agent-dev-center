@@ -31,6 +31,9 @@ import {
   TestEnvLockOwnership,
 } from './workflow-advance-helpers.js';
 import { casUpdateRequirement, txCreateTransition, txReadRequirement } from './workflow-cas-helper.js';
+import { recordRequirementEvent, buildWorkflowEvent } from '../../services/requirement-event-ledger-service.js';
+import { RequirementEventType } from '../../lib/requirement-event-types.js';
+import { recordGuardrailBlocked } from '../../lib/record-guardrail-event.js';
 
 export function registerWorkflowAdvanceRoutes(router: import('express').Router): void {
 
@@ -66,6 +69,11 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
 
         if (authorization.mode === 'instance') {
           if (!authorization.authorized) {
+            recordGuardrailBlocked({
+              requirementId: params.id, actorId: req.user!.id, actorName: req.user!.name,
+              reasonCode: 'ROLE_MISMATCH', reasonText: `实例模式授权失败：步骤「${currentStep.displayName}」需分配用户`,
+              fromStep: requirement.currentStep, source: 'workflow-advance',
+            });
             throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要分配给您才能操作`);
           }
           // 实例模式下：roleUserMap 精确授权，不再检查 assignee 或 mapUserRole，
@@ -73,10 +81,20 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         } else {
           // Legacy 模式：保留原有 assignee + mapUserRole + cto_agent 合同
           if (requirement.assigneeId && requirement.assigneeId !== req.user!.id && req.user!.role !== 'cto_agent') {
+            recordGuardrailBlocked({
+              requirementId: params.id, actorId: req.user!.id, actorName: req.user!.name,
+              reasonCode: 'ROLE_MISMATCH', reasonText: `该任务分配给了「${requirement.assignee}」，非当前用户`,
+              fromStep: requirement.currentStep, source: 'workflow-advance',
+            });
             throw new HttpError(403, `该任务当前分配给了「${requirement.assignee}」，你无法操作非自己名下的任务`);
           }
           const matchedRole = mapUserRole(req.user!.internalRole, currentStep.role);
           if (!matchedRole && req.user!.role !== 'cto_agent') {
+            recordGuardrailBlocked({
+              requirementId: params.id, actorId: req.user!.id, actorName: req.user!.name,
+              reasonCode: 'ROLE_MISMATCH', reasonText: `需要「${currentStep.role}」角色，当前为「${req.user!.internalRole ?? req.user!.role}」`,
+              fromStep: requirement.currentStep, source: 'workflow-advance',
+            });
             throw new HttpError(403, `当前步骤「${currentStep.displayName}」需要「${currentStep.role}」角色，你的角色是「${req.user!.internalRole ?? req.user!.role}」`);
           }
         }
@@ -104,6 +122,11 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
             DEV_SELF_CHECK: '开发自检报告', MERGE_REPORT: '合并报告', TEST_REPORT: '测试报告',
             SECURITY_REVIEW: '安全检查报告', CTO_REVIEW: 'CTO验收报告', DEPLOY_CONFIRM: '部署确认报告',
           };
+          recordGuardrailBlocked({
+            requirementId: params.id, actorId: req.user!.id, actorName: req.user!.name,
+            reasonCode: 'REPORT_NOT_APPROVED', reasonText: `缺少报告：${missing.map(t => reportLabels[t] ?? t).join('、')}`,
+            fromStep: requirement.currentStep, source: 'workflow-advance',
+          });
           throw new HttpError(400, `推进失败：当前步骤缺少已通过的报告 — ${missing.map(t => reportLabels[t] ?? t).join('、')}`);
         }
       }
@@ -145,7 +168,14 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
             if (!Array.isArray(items) || !items.some((i: unknown) => typeof i === 'string' && i.includes('[边界测试]'))) issues.push('缺少边界测试');
           }
 
-          if (issues.length > 0) throw new HttpError(400, `DEV_SELF_CHECK 报告质量门禁：\n${issues.join('\n')}`);
+          if (issues.length > 0) {
+            recordGuardrailBlocked({
+              requirementId: params.id, actorId: req.user!.id, actorName: req.user!.name,
+              reasonCode: 'VALIDATION_FAILED', reasonText: `DEV_SELF_CHECK 质量门禁：${issues.join('; ')}`,
+              fromStep: requirement.currentStep, source: 'workflow-advance',
+            });
+            throw new HttpError(400, `DEV_SELF_CHECK 报告质量门禁：\n${issues.join('\n')}`);
+          }
         }
       }
 
@@ -154,13 +184,20 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
         if (body.branch) {
           await prisma.requirement.update({ where: { id: params.id }, data: { branch: body.branch } });
         }
-        const req = await prisma.requirement.findUnique({
+        const mergeReq = await prisma.requirement.findUnique({
           where: { id: params.id }, select: { gitHash: true, branch: true, repoPath: true },
         });
         const errors: string[] = [];
-        if (!req?.gitHash) errors.push('缺少 gitHash，请先提交代码并更新 gitHash');
-        if (!req?.branch) errors.push('缺少 branch，请指定代码分支名');
-        if (errors.length > 0) throw new HttpError(400, `merge_to_main 验证失败：\n${errors.join('\n')}`);
+        if (!mergeReq?.gitHash) errors.push('缺少 gitHash，请先提交代码并更新 gitHash');
+        if (!mergeReq?.branch) errors.push('缺少 branch，请指定代码分支名');
+        if (errors.length > 0) {
+          recordGuardrailBlocked({
+            requirementId: params.id, actorId: req.user!.id, actorName: req.user!.name,
+            reasonCode: 'DEPLOY_FIELD_MISSING', reasonText: `merge_to_main 必填字段：${errors.join('; ')}`,
+            fromStep: requirement.currentStep, source: 'workflow-advance',
+          });
+          throw new HttpError(400, `merge_to_main 验证失败：\n${errors.join('\n')}`);
+        }
       }
 
       // --- Determine target step (next + auto-advance + security skip) ---
@@ -207,6 +244,11 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
             DEV_SELF_CHECK: '开发自检报告', MERGE_REPORT: '合并报告', TEST_REPORT: '测试报告',
             SECURITY_REVIEW: '安全检查报告', CTO_REVIEW: 'CTO验收报告', DEPLOY_CONFIRM: '部署确认报告',
           };
+          recordGuardrailBlocked({
+            requirementId: params.id, actorId: req.user!.id, actorName: req.user!.name,
+            reasonCode: 'REPORT_NOT_APPROVED', reasonText: `进入「${targetStep.displayName}」缺少报告：${targetMissing.map(t => reportLabels[t] ?? t).join('、')}`,
+            fromStep: requirement.currentStep, source: 'workflow-advance',
+          });
           throw new HttpError(400, `推进失败：进入「${targetStep.displayName}」需要已通过的报告 — ${targetMissing.map(t => reportLabels[t] ?? t).join('、')}`);
         }
       }
@@ -262,26 +304,46 @@ export function registerWorkflowAdvanceRoutes(router: import('express').Router):
 	        throw new HttpError(400, `assignee 解析失败: ${msg}`);
 	      }
 
-	      // --- Persist step transition (CAS + transaction) ---
-	      let updated;
-	      try {
-	        updated = await prisma.$transaction(async (tx: any) => {
-	          const currentReq = await txReadRequirement(tx, params.id);
-	          const newAssigneeName = await getAssigneeName(newAssigneeId);
-	          const updatedReq = await casUpdateRequirement(tx, params.id, currentReq.stateVersion ?? 0, {
-	            currentStep: targetStep.name, assigneeId: newAssigneeId, rejectReason: null,
-	          });
-	          await txCreateTransition(tx, {
-	            requirement: { connect: { id: params.id } },
-	            fromStep: requirement.currentStep, toStep: targetStep.name,
-	            action: 'advance', actorId: req.user!.id, actorName: req.user!.name,
-	            actorRole: req.user!.internalRole ?? req.user!.role, comment: body.comment,
-	            metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
-	          });
-	          return { updatedReq, newAssigneeName };
-	        });
-	      } catch (err) {
-	        if (lockOwnership) {
+      // --- Persist step transition (CAS + transaction) ---
+      let updated;
+      try {
+        updated = await prisma.$transaction(async (tx: any) => {
+          const currentReq = await txReadRequirement(tx, params.id);
+          const newAssigneeName = await getAssigneeName(newAssigneeId);
+          const updatedReq = await casUpdateRequirement(tx, params.id, currentReq.stateVersion ?? 0, {
+            currentStep: targetStep.name, assigneeId: newAssigneeId, rejectReason: null,
+          });
+          const transition = await txCreateTransition(tx, {
+            requirement: { connect: { id: params.id } },
+            fromStep: requirement.currentStep, toStep: targetStep.name,
+            action: 'advance', actorId: req.user!.id, actorName: req.user!.name,
+            actorRole: req.user!.internalRole ?? req.user!.role, comment: body.comment,
+            metadata: { skippedAutoStep: targetStep.name !== nextStep.name ? nextStep.name : null },
+          });
+          // Record WORKFLOW_ADVANCED ledger event within the same transaction
+          await recordRequirementEvent(tx, buildWorkflowEvent(RequirementEventType.WORKFLOW_ADVANCED, {
+            requirementId: params.id,
+            fromStep: requirement.currentStep,
+            toStep: targetStep.name,
+            fromAssigneeId: requirement.assigneeId,
+            toAssigneeId: newAssigneeId,
+            actorId: req.user!.id,
+            actorName: req.user!.name,
+            actorType: 'human',
+            relatedTransitionId: transition.id,
+            stateVersionBefore: currentReq.stateVersion ?? 0,
+            stateVersionAfter: updatedReq.stateVersion ?? 0,
+          }));
+          return { updatedReq, newAssigneeName };
+        });
+      } catch (err) {
+        // Record STATE_CONFLICT guardrail on CAS failure
+        recordGuardrailBlocked({
+          requirementId: params.id, actorId: req.user!.id, actorName: req.user!.name,
+          reasonCode: 'STATE_CONFLICT', reasonText: `CAS 并发冲突，stateVersion 不匹配`,
+          fromStep: requirement.currentStep, source: 'workflow-advance',
+        });
+        if (lockOwnership) {
 	          try { await releaseTestEnvLock(lockOwnership); } catch (releaseError) {
 	            console.error('[test-env-lock]', JSON.stringify({
 	              event: 'test_env_lock_release_failed',
