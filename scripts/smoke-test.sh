@@ -555,6 +555,7 @@ main() {
   fi
 
   # 登录
+  # NOTE: email/password from env vars (ADC_EMAIL/ADC_PASSWORD), not hardcoded
   local email="${ADC_EMAIL:-devtools-agent@agent.local}"
   local password="${ADC_PASSWORD:-}"
 

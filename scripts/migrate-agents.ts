@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ADC_BASE_URL = process.env.ADC_BASE_URL || "http://localhost:3000";
+// CLI option: --token=<value> or env var ADC_ADMIN_TOKEN (not hardcoded)
 const ADMIN_TOKEN = process.argv.find((a) => a.startsWith("--token="))?.split("=")[1]
   || process.argv[process.argv.indexOf("--token") + 1]
   || process.env.ADC_ADMIN_TOKEN || "";

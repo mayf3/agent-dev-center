@@ -164,7 +164,7 @@ describe('Unified Agent SSO — E2E Tests', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           agentId: TEST_AGENT_ID,
-          token: 'agent_invalid_token',
+          token: 'test_invalid_token_placeholder_no_real_value',
         }),
       });
 
@@ -252,8 +252,8 @@ describe('Unified Agent SSO — E2E Tests', () => {
 
   describe('Batch Migration', () => {
     const migrationAgents = [
-      { id: 'migrate-test-1', name: '迁移测试1', category: 'test', token: 'placeholder-test-token-001', capabilities: ['test'] },
-      { id: 'migrate-test-2', name: '迁移测试2', category: 'test', token: 'placeholder-test-token-002', capabilities: ['test'] },
+      { id: 'migrate-test-1', name: '迁移测试1', category: 'test', token: 'TEST_MIGRATION_PLACEHOLDER_001', capabilities: ['test'] },
+      { id: 'migrate-test-2', name: '迁移测试2', category: 'test', token: 'TEST_MIGRATION_PLACEHOLDER_002', capabilities: ['test'] },
     ];
 
     afterAll(async () => {

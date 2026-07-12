@@ -18,9 +18,10 @@ async function main() {
     where: { id: user.id },
     data: { passwordHash },
   });
-  console.log('Set password to: test123');
+  console.log('Set password to: test123 (DEV-ONLY, not a production credential)');
 
   await prisma.$disconnect();
 }
 
 main().catch(console.error);
+.error);

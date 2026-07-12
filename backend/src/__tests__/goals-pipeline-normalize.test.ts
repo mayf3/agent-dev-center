@@ -16,7 +16,7 @@ import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
 
 const testSecret = vi.hoisted(() => 'test-jwt-secret-16-chars-here!');
 const testDbUrl = vi.hoisted(() => {
-  const url = process.env.KERNEL_TEST_DATABASE_URL || 'postgresql://yanfenma@localhost:5432/goals_pipeline_http_test?schema=public';
+  const url = process.env.KERNEL_TEST_DATABASE_URL || 'postgresql://user@localhost:5432/goals_pipeline_http_test?schema=public';
   process.env.DATABASE_URL = url;
   return url;
 });

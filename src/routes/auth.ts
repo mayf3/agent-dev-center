@@ -168,6 +168,7 @@ authRouter.post(
             data: {
               name: data.user?.name || email.split('@')[0],
               email,
+              // SAFE: sentinel value for SSO-managed users (not a real password)
               password: 'sso-managed', // SSO 用户不需要本地密码
               role: (data.user?.role as any) || 'developer',
               mustChangePassword: false,

@@ -15,7 +15,7 @@ const mockUser = {
   name: 'Test User',
   email: 'test@example.com',
   role: 'admin',
-  password: '$2b$10$hashedpassword', // bcrypt hash placeholder
+  password: 'PLACEHOLDER_BCRYPT_HASH_NOT_A_REAL_PASSWORD', // bcrypt hash placeholder (not a real password)
 };
 
 const mockServices = [
@@ -144,13 +144,13 @@ describe('SSO Verify 响应格式', () => {
 describe('SSO Redirect URL 构建', () => {
   it('应该正确构建带 token 的跳转 URL', () => {
     const baseUrl = 'http://a.example.com';
-    const token = 'TOKEN_REMOVED_BY_SECURITY_CLEANUP';
+    const token = 'PLACEHOLDER_TOKEN_REMOVED_FOR_SECURITY';
 
     const url = new URL(baseUrl);
     url.searchParams.set('token', token);
     const redirectUrl = url.toString();
 
-    expect(redirectUrl).toBe('http://a.example.com/?token=TOKEN_REMOVED_BY_SECURITY_CLEANUP');
+    expect(redirectUrl).toBe('http://a.example.com/?token=PLACEHOLDER_TOKEN_REMOVED_FOR_SECURITY');
     expect(new URL(redirectUrl).searchParams.get('token')).toBe(token);
   });
 
