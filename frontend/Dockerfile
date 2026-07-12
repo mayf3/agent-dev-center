@@ -15,6 +15,12 @@ COPY frontend ./frontend
 RUN npm --workspace @agent-dev-center/frontend run build
 
 FROM nginx:1.27-alpine AS production
+ARG BUILD_COMMIT=unknown
+ARG BUILD_TIMESTAMP=unknown
+
+LABEL org.opencontainers.image.revision="${BUILD_COMMIT}"
+LABEL org.opencontainers.image.created="${BUILD_TIMESTAMP}"
+
 COPY nginx-site.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
 EXPOSE 80

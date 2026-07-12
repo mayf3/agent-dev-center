@@ -15,6 +15,15 @@ RUN npm --workspace @agent-dev-center/backend run build
 FROM node:20-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
+
+ARG BUILD_COMMIT=unknown
+ARG BUILD_TIMESTAMP=unknown
+ENV BUILD_COMMIT=$BUILD_COMMIT
+ENV BUILD_TIMESTAMP=$BUILD_TIMESTAMP
+
+LABEL org.opencontainers.image.revision="${BUILD_COMMIT}"
+LABEL org.opencontainers.image.created="${BUILD_TIMESTAMP}"
+
 RUN apk add --no-cache openssl tini \
   && addgroup -S app \
   && adduser -S app -G app

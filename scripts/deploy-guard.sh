@@ -11,9 +11,9 @@
 # 检查项:
 #   1. 不存在嵌套的 backend/src/src/ 目录（部署卫生，非历史根因）
 #   2. Runtime entrypoint 指向 dist/src/server.js
-#   3. 编译产物包含 workflowSnapshot 回退逻辑
+#   3. OCI revision 身份标签
 #   4. nginx 配置语法正确
-#   5. build commit 与目标 commit 一致（--build 模式）
+#   5. 编译产物包含 workflowSnapshot 回退逻辑
 #   6. 验证 build 输出目录结构干净
 #
 # 任何检查失败 → 退出码 1，部署中止。
@@ -61,7 +61,7 @@ echo "════════════════════════�
 echo ""
 
 # ─── Guard 1: 不存在嵌套的 backend/src/src/ ──────────────
-echo -n "[1/7] 检查 backend/src/src/ 嵌套目录 ... "
+echo -n "[1/8] 检查 backend/src/src/ 嵌套目录 ... "
 if [ -d "backend/src/src" ]; then
   echo -e "${RED}❌ FAIL${NC}"
   echo "    发现嵌套目录: ${CHECK_DIR}/backend/src/src/"
@@ -71,7 +71,7 @@ else
   echo -e "${GREEN}✅ PASS${NC}"
 fi
 
-echo -n "[2/7] 递归检查 src/src 嵌套 ... "
+echo -n "[2/8] 递归检查 src/src 嵌套 ... "
 NESTED_DIRS=$(find backend -type d -path "*/src/src" 2>/dev/null || true)
 if [ -n "${NESTED_DIRS}" ]; then
   echo -e "${RED}❌ FAIL${NC}"
@@ -83,7 +83,7 @@ else
 fi
 
 # ─── Guard 3: Runtime entrypoint 路径正确性 ──────────────
-echo -n "[3/7] 验证 runtime entrypoint 路径 ... "
+echo -n "[3/8] 验证 runtime entrypoint 路径 ... "
 ENTRYPOINT_ERROR=0
 if [ -f "backend/package.json" ]; then
   START_CMD=$(node -e "const p=require('./backend/package.json'); console.log(p.scripts?.start||'')" 2>/dev/null || echo "")
@@ -116,8 +116,63 @@ else
   echo -e "${YELLOW}⚠️  SKIP${NC} (找不到 backend/package.json)"
 fi
 
-# ─── Guard 4: nginx 配置语法检查 ──────────────────────────
-echo -n "[4/7] 验证 nginx 配置语法 ... "
+# ─── Guard 4: OCI 身份标签 ───────────────────────────────────
+echo -n "[4/8] 验证 OCI revision 身份标签 ... "
+OCI_ERROR=0
+
+check_oci_labels() {
+  local dockerfile="$1"
+  local name="$2"
+  if [ ! -f "${dockerfile}" ]; then
+    echo ""
+    echo "    ${name} Dockerfile 不存在: ${dockerfile}"
+    return 1
+  fi
+  local last_from
+  last_from=$(grep -nE '^FROM\s+\S+\s+AS\s+' "${dockerfile}" 2>/dev/null | tail -1 | cut -d: -f1)
+  if [ -z "${last_from}" ]; then
+    echo ""
+    echo "    无法解析 ${name}: 未找到 FROM ... AS 行"
+    return 1
+  fi
+  local tail_content
+  tail_content=$(tail -n +"${last_from}" "${dockerfile}")
+  if ! echo "${tail_content}" | grep -q 'LABEL org.opencontainers.image.revision'; then
+    echo ""
+    echo "    ${name} 最终 stage 缺少 LABEL org.opencontainers.image.revision"
+    return 1
+  fi
+  if ! echo "${tail_content}" | grep -q 'LABEL org.opencontainers.image.created'; then
+    echo ""
+    echo "    ${name} 最终 stage 缺少 LABEL org.opencontainers.image.created"
+    return 1
+  fi
+  if ! echo "${tail_content}" | grep -q 'ARG BUILD_COMMIT'; then
+    echo ""
+    echo "    ${name} 最终 stage 缺少 ARG BUILD_COMMIT"
+    return 1
+  fi
+  return 0
+}
+
+if ! check_oci_labels "backend/Dockerfile" "Backend"; then
+  OCI_ERROR=1
+fi
+if ! check_oci_labels "frontend/Dockerfile" "Frontend"; then
+  OCI_ERROR=1
+fi
+
+if [ "${OCI_ERROR}" -eq 0 ]; then
+  echo -e "${GREEN}✅ PASS${NC}"
+  echo "    backend/Dockerfile: 最终 stage 已声明 OCI revision + created 标签"
+  echo "    frontend/Dockerfile: 最终 stage 已声明 OCI revision + created 标签"
+else
+  echo -e "${RED}❌ FAIL${NC}"
+  HAS_ERROR=1
+fi
+
+# ─── Guard 5: nginx 配置语法检查 ──────────────────────────
+echo -n "[5/8] 验证 nginx 配置语法 ... "
 if [ -f "nginx-site.conf" ]; then
   if command -v nginx >/dev/null 2>&1; then
     if nginx -t -c /dev/null -g "daemon off; $(cat nginx-site.conf | sed 's/listen 80;/listen 8080;/')" 2>/dev/null; then
@@ -156,8 +211,8 @@ fi
 
 # ─── 构建后检查（仅 --build 模式） ────────────────────
 if [ "${CHECK_MODE}" = "--build" ]; then
-  # Guard 5: Compile output exists
-  echo -n "[5/7] 验证 build 输出 entrypoint ... "
+  # Guard 6: Compile output exists
+  echo -n "[6/8] 验证 build 输出 entrypoint ... "
   if [ -f "backend/dist/src/server.js" ]; then
     echo -e "${GREEN}✅ PASS${NC}"
     ls -la backend/dist/src/server.js | sed 's/^/      /'
@@ -168,8 +223,8 @@ if [ "${CHECK_MODE}" = "--build" ]; then
     HAS_ERROR=1
   fi
 
-  # Guard 6: Compile output contains workflowSnapshot fallback
-  echo -n "[6/7] 验证编译产物包含 workflowSnapshot 逻辑 ... "
+  # Guard 7: Compile output contains workflowSnapshot fallback
+  echo -n "[7/8] 验证编译产物包含 workflowSnapshot 逻辑 ... "
   ADVANCE_FILE="backend/dist/src/routes/requirements/workflow-advance.js"
   REJECT_FILE="backend/dist/src/routes/requirements/workflow-reject.js"
   HELPERS_FILE="backend/dist/src/routes/requirements/workflow-helpers.js"
@@ -204,8 +259,8 @@ if [ "${CHECK_MODE}" = "--build" ]; then
     HAS_ERROR=1
   fi
 
-  # Guard 7: Verify dist directory structure
-  echo -n "[7/7] 验证 dist 目录结构 ... "
+  # Guard 8: Verify dist directory structure
+  echo -n "[8/8] 验证 dist 目录结构 ... "
   if [ -d "backend/dist/src/src" ]; then
     echo -e "${RED}❌ FAIL${NC}"
     echo "    Build 输出包含嵌套: backend/dist/src/src/"
@@ -214,9 +269,9 @@ if [ "${CHECK_MODE}" = "--build" ]; then
     echo -e "${GREEN}✅ PASS${NC}"
   fi
 else
-  echo -e "[5/7] ${YELLOW}⚠️  SKIP${NC} (非 --build 模式)"
-  echo -e "[6/7] ${YELLOW}⚠️  SKIP${NC} (非 --build 模式)"
-  echo -e "[7/7] ${YELLOW}⚠️  SKIP${NC} (非 --build 模式)"
+  echo -e "[6/8] ${YELLOW}⚠️  SKIP${NC} (非 --build 模式)"
+  echo -e "[7/8] ${YELLOW}⚠️  SKIP${NC} (非 --build 模式)"
+  echo -e "[8/8] ${YELLOW}⚠️  SKIP${NC} (非 --build 模式)"
 fi
 
 # ─── 总结 ──────────────────────────────────────────────────

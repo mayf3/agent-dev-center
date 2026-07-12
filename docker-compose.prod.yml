@@ -63,6 +63,9 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       target: production
+      args:
+        BUILD_COMMIT: unknown
+        BUILD_TIMESTAMP: unknown
     image: agent-dev-center-backend:prod
     restart: unless-stopped
     env_file:
@@ -100,6 +103,8 @@ services:
       args:
         VITE_API_BASE_URL: /api
         VITE_IS_PUBLIC_MODE: "true"
+        BUILD_COMMIT: unknown
+        BUILD_TIMESTAMP: unknown
     image: agent-dev-center-frontend:prod
     restart: unless-stopped
     ports:
