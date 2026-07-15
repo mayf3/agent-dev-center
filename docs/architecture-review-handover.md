@@ -107,7 +107,7 @@ agent-dev-center/
 | 角色 | Agent | internalRole | ADC UUID |
 |------|-------|-------------|----------|
 | CTO | cto-agent | cto | 155dde59 |
-| 后端开发(主力) | agent-dev-engineer | backend_developer | df7a1d86 |
+| 后端开发(主力) | agent-dev-engineer | backend_developer | — |
 | 后端开发(二) | backend-engineer-2 | backend_developer | 839e9331 |
 | 资深前端 | devtools-agent | frontend_developer | 4bc63f5a |
 | React前端 | frontend-react-engineer | frontend_developer | 7e828c80 |

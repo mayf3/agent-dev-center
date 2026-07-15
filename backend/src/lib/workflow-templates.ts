@@ -146,22 +146,37 @@ const STANDARD_DEV_MIDDLE_V4: StepDef[] = [
 ];
 
 // ── roleUserMap（role → userId 映射）─────────────────────────
-// 各开发角色的 assignee ID（2026-06-25 生产数据库 UUID）
-const ROLE_USER_MAP: Record<string, string> = {
-  backend_developer: 'df7a1d86-a6e4-4596-902f-aa32e760ac22',
-  frontend_developer: '7e828c80-2187-4d74-957b-839f9ae283f3',
-  mobile_developer: '71385aae-656d-4e93-900b-3367c7529e98',
-  miniapp_developer: '9de01663-c8d9-4e4a-a3c5-5ee3c0da06ae',
-  game_developer: '1ca3edfc-6259-4733-a8c7-4ca10c071b60',
-  tester: 'a4686837-7f76-463f-95a0-67e9705273ae',
-  security: '45bd3243-60ce-4c95-84a9-1a6108e348c8',
-  cto: '155dde59-a089-4de6-9708-63817fa0ac9f',
-  ops: '321e880d-5c43-4f14-b8e1-d41f676b7d2d',
-  pm: '6f874acb-147d-498b-b27b-400a87701819',
-  requester: '6f874acb-147d-498b-b27b-400a87701819', // PM 也充当需求提出者
-  qa: '2bb8e535-375d-4803-a316-77e6ccf0ed0d',
-  architect: 'b2a1af8d-9dcf-4609-931a-804d59db71e3',
-};
+// 通过环境变量 ADC_ROLE_USER_MAP 覆盖，格式：role=uuid,role=uuid
+// 留空时使用占位符 UUID（需在生产环境配置正确的用户 ID）
+function loadRoleUserMap(): Record<string, string> {
+  const envMap = process.env.ADC_ROLE_USER_MAP || '';
+  if (envMap) {
+    const map: Record<string, string> = {};
+    for (const entry of envMap.split(',')) {
+      const [role, uuid] = entry.split('=');
+      if (role && uuid) map[role.trim()] = uuid.trim();
+    }
+    if (Object.keys(map).length > 0) return map;
+  }
+  // 占位符 UUID — 替换为生产环境的实际用户 ID 或通过 ADC_ROLE_USER_MAP 环境变量配置
+  return {
+    backend_developer: '00000000-0000-0000-0000-000000000001',
+    frontend_developer: '00000000-0000-0000-0000-000000000002',
+    mobile_developer: '00000000-0000-0000-0000-000000000003',
+    miniapp_developer: '00000000-0000-0000-0000-000000000004',
+    game_developer: '00000000-0000-0000-0000-000000000005',
+    tester: '00000000-0000-0000-0000-000000000006',
+    security: '00000000-0000-0000-0000-000000000007',
+    cto: '00000000-0000-0000-0000-000000000008',
+    ops: '00000000-0000-0000-0000-000000000009',
+    pm: '00000000-0000-0000-0000-000000000010',
+    requester: '00000000-0000-0000-0000-000000000010', // PM 也充当需求提出者
+    qa: '00000000-0000-0000-0000-000000000011',
+    architect: '00000000-0000-0000-0000-000000000012',
+  };
+}
+
+const ROLE_USER_MAP = loadRoleUserMap();
 
 const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
