@@ -1,0 +1,48 @@
+{
+  "pages": [
+    "pages/requirements/index",
+    "pages/my-tasks/index",
+    "pages/notifications/index",
+    "pages/requirement-detail/index",
+    "pages/requirement-submit/index",
+    "pages/login/index",
+    "pages/my-requirements/index",
+    "pages/reports/index"
+  ],
+  "tabBar": {
+    "color": "#999999",
+    "selectedColor": "#1677ff",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/requirements/index",
+        "text": "需求",
+        "iconPath": "assets/icons/list.png",
+        "selectedIconPath": "assets/icons/list-active.png"
+      },
+      {
+        "pagePath": "pages/my-tasks/index",
+        "text": "我的任务",
+        "iconPath": "assets/icons/task.png",
+        "selectedIconPath": "assets/icons/task-active.png"
+      },
+      {
+        "pagePath": "pages/notifications/index",
+        "text": "通知",
+        "iconPath": "assets/icons/notif.png",
+        "selectedIconPath": "assets/icons/notif-active.png"
+      }
+    ]
+  },
+  "window": {
+    "navigationBarTitleText": "Agent开发中心",
+    "navigationBarBackgroundColor": "#1677ff",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f5f5",
+    "backgroundTextStyle": "dark"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

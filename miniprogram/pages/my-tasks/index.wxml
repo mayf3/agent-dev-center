@@ -1,0 +1,29 @@
+<!-- pages/my-tasks/index.wxml -->
+<view class="page">
+  <view class="page-head">
+    <text class="page-title">我的任务</text>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+
+  <view wx:elif="{{tasks.length === 0}}" class="empty-state">
+    <view class="empty-icon">📋</view>
+    <view class="empty-text">暂无分配的任务</view>
+  </view>
+
+  <view wx:else style="padding:0 24rpx;">
+    <view class="list-item" wx:for="{{tasks}}" wx:key="id" data-rid="{{item.requirementId}}" bindtap="goToDetail">
+      <view class="item-title">{{item.title}}</view>
+      <view class="item-meta">
+        <view class="tag {{item.priorityColor}}" wx:if="{{item.priorityLabel}}">{{item.priorityLabel}}</view>
+        <view class="tag {{item.statusColor}}">{{item.statusLabel}}</view>
+        <view class="meta-item">{{item.agentType}}</view>
+      </view>
+      <view class="item-meta">
+        <view class="meta-item">{{item.timeAgo}}</view>
+      </view>
+    </view>
+  </view>
+</view>
