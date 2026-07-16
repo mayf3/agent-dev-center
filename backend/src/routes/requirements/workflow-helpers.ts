@@ -1,0 +1,363 @@
+/**
+ * Workflow Helpers — Shared types and utility functions
+ *
+ * 从 workflow.ts 拆分出来的共享定义和辅助函数
+ */
+import { z } from 'zod';
+import { prisma } from '../../lib/prisma.js';
+
+// ── Types ────────────────────────────────────────────────
+
+export interface WorkflowStep {
+  name: string;
+  displayName: string;
+  role: string;
+  requiredReports: string[];
+  autoAdvance: boolean;
+  wipLimit?: number; // WIP 上限：该步骤同时处理的需求数量上限（undefined = 无限制）
+  assigneeMode?: 'role-based' | 'creator' | 'fixed'; // assignee 解析模式
+  // role-based: 从 roleUserMap 查角色对应用户
+  // creator: 固定为需求创建者（requesterId）
+  // fixed: 保持当前 assignee 不变
+}
+
+// ── Helpers ──────────────────────────────────────────────
+
+/** Map user internalRole to workflow step role */
+export function mapUserRole(internalRole: string | null | undefined, role: string): string | null {
+  if (!internalRole) return null;
+  const mapping: Record<string, string[]> = {
+    cto: ['cto', 'admin'],
+    admin: ['cto', 'admin'],
+    backend_developer: ['backend_developer'],
+    frontend_developer: ['frontend_developer'],
+    mobile_developer: ['mobile_developer'],
+    miniapp_developer: ['miniapp_developer'],
+    game_developer: ['game_developer'],
+    // developer: deprecated — 各具体角色用自己的名称
+    tester: ['tester'],
+    security: ['security'],
+    ops: ['ops', 'qa'],  // pending_deploy snapshot 遗留 role=qa，临时允许 ops 处理
+    pm: ['pm', 'requester'],
+    architect: ['architect'],
+    qa: ['qa'],
+  };
+  const allowed = mapping[internalRole] || [];
+  return allowed.includes(role) ? role : null;
+}
+
+/** Parse steps from JSONB — 兼容两种格式：
+ * 1. 旧格式：纯数组 [...steps]
+ * 2. 新格式：{ steps: [...steps], roleUserMap: {...} }
+ */
+export function parseSteps(stepsJson: unknown): WorkflowStep[] {
+  let rawSteps: unknown;
+
+  if (Array.isArray(stepsJson)) {
+    // 旧格式：纯数组
+    rawSteps = stepsJson;
+  } else if (stepsJson && typeof stepsJson === 'object' && 'steps' in stepsJson) {
+    // 新格式：{ steps: [...], roleUserMap: {...} }
+    rawSteps = (stepsJson as Record<string, unknown>).steps;
+  } else {
+    rawSteps = [];
+  }
+
+  const steps = z.array(z.object({
+    name: z.string(),
+    displayName: z.string(),
+    role: z.string(),
+    requiredReports: z.array(z.string()),
+    autoAdvance: z.boolean().default(false),
+    wipLimit: z.number().int().positive().optional(),
+    assigneeMode: z.enum(['role-based', 'creator', 'fixed']).optional(),
+  })).parse(rawSteps);
+  return steps;
+}
+
+/** 从模板 JSON 中提取 roleUserMap（兼容新旧格式） */
+export function extractRoleUserMap(stepsJson: unknown): Record<string, string> | undefined {
+  if (!stepsJson || typeof stepsJson !== 'object') return undefined;
+  if (!Array.isArray(stepsJson) && 'roleUserMap' in stepsJson) {
+    return (stepsJson as Record<string, unknown>).roleUserMap as Record<string, string> | undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Strictly normalize and validate a roleUserMap value.
+ *
+ * Returns undefined for any invalid value — never throws.
+ *
+ * Valid roleUserMap must satisfy ALL:
+ *  1. non-null
+ *  2. typeof === 'object'
+ *  3. not an array
+ *  4. at least one entry
+ *  5. all keys are non-empty strings, trimmed == original
+ *  6. all values are non-empty strings, trimmed == original
+ *  7. no dangerous prototype keys: __proto__, prototype, constructor
+ *
+ * Uses Object.keys() (own enumerable only) and builds result via
+ * safe empty-prototype object to avoid prototype pollution.
+ *
+ * Any single invalid entry invalidates the entire map.
+ *
+ * Examples treated as invalid:
+ *  "bad", 123, true, [], [["dev","uuid"]],
+ *  { developer: null }, { developer: 123 }, {}, { "": "x" }, { " ": "x" },
+ *  { dev: "" }, { dev: " " }, { __proto__: "x" }, { constructor: "x" }
+ */
+export function normalizeRoleUserMap(value: unknown): Record<string, string> | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value !== 'object') return undefined;
+  if (Array.isArray(value)) return undefined;
+
+  // Object.keys — only own enumerable properties (safe)
+  const ownKeys = Object.keys(value as Record<string, unknown>);
+  if (ownKeys.length === 0) return undefined;
+
+  const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+  // Build result with null-prototype object (prototype-safe)
+  const result = Object.create(null) as Record<string, string>;
+
+  for (const key of ownKeys) {
+    // Empty key
+    if (key.length === 0) return undefined;
+    // Key with whitespace
+    if (key !== key.trim()) return undefined;
+    // Dangerous prototype key
+    if (DANGEROUS_KEYS.has(key)) return undefined;
+
+    const val = (value as Record<string, unknown>)[key];
+    if (typeof val !== 'string') return undefined;
+    // Empty value
+    if (val.length === 0) return undefined;
+    // Value with whitespace
+    if (val !== val.trim()) return undefined;
+
+    result[key] = val;
+  }
+
+  return result;
+}
+
+/**
+ * Resolve the workflow steps JSON source for a requirement.
+ * Priority: workflowSnapshot (immutable) > workflow.steps (legacy fallback)
+ *
+ * Returns the raw JSONB value from either snapshot or template.
+ * Returns null if no workflow is associated.
+ */
+export function getWorkflowRawJson(
+  requirement: {
+    workflowSnapshot?: unknown;
+    workflow?: { steps: unknown } | null;
+  } | null | undefined,
+): unknown {
+  if (!requirement) return null;
+  // Snapshot first — immutable copy taken at assign time
+  if (requirement.workflowSnapshot !== null && requirement.workflowSnapshot !== undefined) {
+    return requirement.workflowSnapshot;
+  }
+  // Legacy fallback — live template steps
+  if (requirement.workflow?.steps !== undefined && requirement.workflow?.steps !== null) {
+    return requirement.workflow.steps;
+  }
+  return null;
+}
+
+/**
+ * Get parsed workflow steps for a requirement.
+ * Uses workflowSnapshot first, falls back to workflow.steps for legacy data.
+ *
+ * Returns an empty array if no workflow is associated.
+ */
+export function getWorkflowSteps(
+  requirement: {
+    workflowSnapshot?: unknown;
+    workflow?: { steps: unknown } | null;
+  } | null | undefined,
+): WorkflowStep[] {
+  const rawJson = getWorkflowRawJson(requirement);
+  if (!rawJson) return [];
+  return parseSteps(rawJson);
+}
+
+/**
+ * Normalized workflow routing context — unified source of steps and roleUserMap.
+ *
+ * Steps priority:
+ *   1. workflowSnapshot (immutable, taken at assign time)
+ *   2. live template workflow.steps (legacy fallback)
+ *
+ * roleUserMap priority:
+ *   1. workflowSnapshot — if present and has a valid non-empty roleUserMap
+ *   2. live template workflow.steps — fallback when snapshot is legacy array,
+ *      lacks roleUserMap, or has null/empty roleUserMap
+ *   3. missing — no roleUserMap available from any source
+ *
+ * Steps and roleUserMap may come from different sources.
+ * Snapshot steps are NEVER replaced by live template steps.
+ */
+export type WorkflowRoutingContext = {
+  steps: WorkflowStep[];
+  roleUserMap?: Record<string, string>;
+  stepsSource: 'snapshot' | 'template';
+  roleUserMapSource: 'snapshot' | 'template' | 'missing';
+};
+
+export function getWorkflowRoutingContext(requirement: {
+  workflowSnapshot?: unknown;
+  workflow?: { steps: unknown } | null;
+}): WorkflowRoutingContext {
+  const rawJson = getWorkflowRawJson(requirement);
+  const hasSnapshot = requirement.workflowSnapshot !== null
+    && requirement.workflowSnapshot !== undefined;
+
+  // Steps — snapshot first, then template
+  const steps = rawJson ? parseSteps(rawJson) : [];
+  const stepsSource: 'snapshot' | 'template' = hasSnapshot ? 'snapshot' : 'template';
+
+  // roleUserMap — try snapshot (strictly validated), then template fallback
+  let roleUserMap: Record<string, string> | undefined;
+  let roleUserMapSource: 'snapshot' | 'template' | 'missing' = 'missing';
+
+  if (hasSnapshot) {
+    const snapshotRaw = extractRoleUserMap(requirement.workflowSnapshot);
+    const snapshotMap = normalizeRoleUserMap(snapshotRaw);
+    if (snapshotMap) {
+      roleUserMap = snapshotMap;
+      roleUserMapSource = 'snapshot';
+    } else if (requirement.workflow?.steps) {
+      const templateRaw = extractRoleUserMap(requirement.workflow.steps);
+      const templateMap = normalizeRoleUserMap(templateRaw);
+      if (templateMap) {
+        roleUserMap = templateMap;
+        roleUserMapSource = 'template';
+      }
+    }
+  } else if (requirement.workflow?.steps) {
+    const templateRaw = extractRoleUserMap(requirement.workflow.steps);
+    const templateMap = normalizeRoleUserMap(templateRaw);
+    if (templateMap) {
+      roleUserMap = templateMap;
+      roleUserMapSource = 'template';
+    }
+  }
+
+  return { steps, roleUserMap, stepsSource, roleUserMapSource };
+}
+
+/** Get current step definition from workflow */
+export function getCurrentStep(steps: WorkflowStep[], stepName: string): WorkflowStep | undefined {
+  return steps.find(s => s.name === stepName);
+}
+
+/** Get next step (or null if at end) */
+export function getNextStep(steps: WorkflowStep[], currentStepName: string): WorkflowStep | null {
+  const idx = steps.findIndex(s => s.name === currentStepName);
+  if (idx === -1 || idx >= steps.length - 1) return null;
+  return steps[idx + 1];
+}
+
+/** Get previous step (or null if at start) */
+export function getPreviousStep(steps: WorkflowStep[], currentStepName: string): WorkflowStep | null {
+  const idx = steps.findIndex(s => s.name === currentStepName);
+  if (idx <= 0) return null;
+  return steps[idx - 1];
+}
+
+/** Report types that are self-certifying — only need to exist (pending or approved), not QA-approved */
+const SELF_CERTIFY_REPORT_TYPES = new Set([
+  'DEV_SELF_CHECK',    // 开发自检：自己检查，不需要别人批准
+  'ARCH_DESIGN',       // 架构设计：架构师自审（方案由 arch_review 步骤验证）
+  'ARCH_REVIEW',       // 架构审查：架构师审实现，自审自批
+  'DEPLOY_CONFIRM',    // 部署确认：部署者确认完成
+  'CTO_REVIEW',        // CTO验收：CTO 自审自批
+  'MERGE_REPORT',      // 合并报告：合并者自证完成
+]);
+
+/** Check if all required reports are in the required status
+ *  - Self-certify types (DEV_SELF_CHECK, DEPLOY_CONFIRM): status must be 'pending' or 'approved'
+ *  - All other types (TEST_REPORT, SECURITY_REVIEW, CTO_REVIEW, etc.): status must be 'approved'
+ */
+export async function checkReportsApproved(requirementId: string, requiredReports: string[]): Promise<{ ok: boolean; missing: string[] }> {
+  if (requiredReports.length === 0) return { ok: true, missing: [] };
+
+  const selfCertify = requiredReports.filter(t => SELF_CERTIFY_REPORT_TYPES.has(t as string));
+  const needApproval = requiredReports.filter(t => !SELF_CERTIFY_REPORT_TYPES.has(t as string));
+
+  const missing: string[] = [];
+
+  // Self-certify types: pending (submitted) or approved is fine
+  if (selfCertify.length > 0) {
+    const found = await prisma.requirementReport.findMany({
+      where: {
+        requirementId,
+        reportType: { in: selfCertify as any },
+        status: { in: ['pending', 'approved'] },
+      },
+      select: { reportType: true },
+    });
+    const foundTypes = new Set(found.map(r => r.reportType));
+    for (const t of selfCertify) {
+      if (!foundTypes.has(t as any)) missing.push(t);
+    }
+  }
+
+  // Non-self-certify types: must be approved
+  if (needApproval.length > 0) {
+    const approved = await prisma.requirementReport.findMany({
+      where: {
+        requirementId,
+        reportType: { in: needApproval as any },
+        status: 'approved',
+      },
+      select: { reportType: true },
+    });
+    const approvedTypes = new Set(approved.map(r => r.reportType));
+    for (const t of needApproval) {
+      if (!approvedTypes.has(t as any)) missing.push(t);
+    }
+  }
+
+  return { ok: missing.length === 0, missing };
+}
+
+/** Check WIP limit for a step — returns current count of requirements sitting at that step */
+export async function getStepWipCount(stepName: string, excludeRequirementId?: string): Promise<number> {
+  const where: any = { currentStep: stepName };
+  if (excludeRequirementId) {
+    where.id = { not: excludeRequirementId };
+  }
+  return prisma.requirement.count({ where });
+}
+
+/** Write audit transition log */
+export async function logTransition(params: {
+  requirementId: string;
+  fromStep: string;
+  toStep: string;
+  action: string;
+  actorId: string | undefined;
+  actorName: string;
+  actorRole: string;
+  comment?: string;
+  metadata?: any;
+}) {
+  return prisma.workflowTransition.create({
+    data: {
+      requirementId: params.requirementId,
+      fromStep: params.fromStep,
+      toStep: params.toStep,
+      action: params.action,
+      actorId: params.actorId,
+      actorName: params.actorName,
+      actorRole: params.actorRole,
+      comment: params.comment,
+      metadata: params.metadata ?? undefined,
+    },
+  });
+}
