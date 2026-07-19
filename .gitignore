@@ -22,3 +22,5 @@ baby-daily-print/
 .adc-token
 .adc-token-cache*
 .adc-token-cache.d/
+# 安全：禁止提交密钥配置
+/scripts/sso-env

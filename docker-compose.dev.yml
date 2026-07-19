@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: agent_dev_center
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - pgdata:/var/lib/postgresql/data
 

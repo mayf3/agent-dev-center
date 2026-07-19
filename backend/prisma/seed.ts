@@ -9,10 +9,14 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 async function main() {
-  const defaultPassword = process.env.SEED_PASSWORD || 'dev-seed-password-change-in-production';
-  const password = await bcrypt.hash(defaultPassword, 10);
-  const requesterPassword = await bcrypt.hash(process.env.SEED_REQUESTER_PASSWORD || defaultPassword, 10);
-  const developerPassword = await bcrypt.hash(process.env.SEED_DEVELOPER_PASSWORD || defaultPassword, 10);
+  const seedPassword = process.env.SEED_PASSWORD;
+  if (!seedPassword) {
+    console.error('❌ SEED_PASSWORD environment variable is required for seeding. Set it in your .env file.');
+    process.exit(1);
+  }
+  const password = await bcrypt.hash(seedPassword, 10);
+  const requesterPassword = await bcrypt.hash(process.env.SEED_REQUESTER_PASSWORD || seedPassword, 10);
+  const developerPassword = await bcrypt.hash(process.env.SEED_DEVELOPER_PASSWORD || seedPassword, 10);
 
   await prisma.user.upsert({
     where: { email: 'admin@agent.dev' },
@@ -221,9 +225,11 @@ async function main() {
   }
 
   console.log('Seed completed.');
-  console.log(`Admin: admin@agent.dev / ${process.env.SEED_PASSWORD || 'default-seed-password'}`);
-  console.log(`Requester: requester@agent.dev / ${process.env.SEED_REQUESTER_PASSWORD || process.env.SEED_PASSWORD || 'default-seed-password'}`);
-  console.log(`Developer: frontend@agent.dev / ${process.env.SEED_DEVELOPER_PASSWORD || process.env.SEED_PASSWORD || 'default-seed-password'}`);
+  // NOTE: seed passwords are intentionally printed for dev setup convenience.
+  // In production, NODE_ENV check at the top prevents execution.
+  console.log(`Admin: admin@agent.dev / ${process.env.SEED_PASSWORD}`);
+  console.log(`Requester: requester@agent.dev / ${process.env.SEED_REQUESTER_PASSWORD || process.env.SEED_PASSWORD}`);
+  console.log(`Developer: frontend@agent.dev / ${process.env.SEED_DEVELOPER_PASSWORD || process.env.SEED_PASSWORD}`);
 }
 
 main()

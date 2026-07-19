@@ -107,7 +107,7 @@ echo "============================================"
 # Get ADC token
 TOKEN=$(curl -s http://localhost:4000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@agent.dev","password":"PASSWORD_REMOVED_BY_SECURITY_CLEANUP"}' \
+  -d '{"email":"admin@agent.dev","password":"'"${ADMIN_PASSWORD:?ADMIN_PASSWORD env var required}"'"}' \
   | python3 -c "import json,sys;print(json.load(sys.stdin).get('accessToken',''))" 2>/dev/null)
 
 if [ -z "$TOKEN" ]; then
