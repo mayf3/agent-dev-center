@@ -1,41 +1,26 @@
 # Agent Dev Center
 
-Agent 开发中心 — 基于需求驱动开发（Demand-Driven Development）的 Agent 全生命周期管理平台。
-
-## 功能
-
-- 需求管理（Requirement 创建、流转、闭环）
-- Agent 开发工作流
-- 服务注册与发现
-- 自动化发布管理
-- Marketplace 集成
-- Agent SSO 认证
-
-## 技术栈
-
-- **后端**: Node.js + Prisma ORM + PostgreSQL
-- **前端**: Vite + React
-- **认证**: JWT + SSO
-- **部署**: Docker Compose
-
-## 快速开始
-
-```bash
-# 1. 复制环境变量模板
-cp .env.example .env
-
-# 2. 启动数据库
-docker compose up -d postgres
-
-# 3. 初始化数据库
-npx prisma migrate deploy
-
-# 4. 启动后端
-npm run dev
-
-# 5. 启动前端
-cd frontend && npm run dev
 ```
+STATUS=RETIRED
+REPLACED_BY=adc-v2 + svc-workflow + auth-service
+RUNTIME_STATUS=disabled
+DATA_STATUS=preserved
+```
+
+> ⚠️ **旧 ADC V1 不再提供服务。**
+>
+> 禁止根据本仓库重新部署。历史代码和数据仅用于只读追溯。
+> 所有新开发应进入 [adc-v2](https://github.com/mayf3/adc-v2)，不得继续扩展 ADC V1。
+
+## 存档说明
+
+| 项目 | 状态 |
+|---|---|
+| 源码仓库 | ✅ GitHub Archived（只读） |
+| API 服务 | 🔴 已停用 |
+| 数据库/Volume | 🟢 保留（DATA_STATUS=preserved） |
+| Git 历史 | 🟢 完整保留 |
+| 替换方案 | 🔄 adc-v2 + svc-workflow + auth-service |
 
 ## License
 
