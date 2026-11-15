@@ -12,6 +12,7 @@
     "seed:services": "tsx prisma/seed-services.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "smoke:svc-workflow-client": "tsx src/scripts/svc-workflow-client-smoke.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema=prisma/schema.prisma",

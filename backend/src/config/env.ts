@@ -1,6 +1,16 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+const optionalNonEmptyString = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().min(1).optional(),
+);
+
+const optionalUuid = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().uuid().optional(),
+);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -18,6 +28,15 @@ const envSchema = z.object({
   AUTH_JWT_AUDIENCE: z.string().default('agent-platform'),
   // auth-service SSO login endpoint (906e46ab)
   AUTH_SERVICE_URL: z.string().default('http://localhost:4010/api'),
+  // Isolated svc-workflow client smoke only. No production route consumes these values.
+  SVC_WORKFLOW_BASE_URL: z.string().url().default('http://127.0.0.1:8989'),
+  SVC_WORKFLOW_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(35_000),
+  SVC_WORKFLOW_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(3).default(3),
+  SVC_WORKFLOW_SMOKE_CONFIRM: optionalNonEmptyString,
+  SVC_WORKFLOW_SMOKE_ACCESS_TOKEN: optionalNonEmptyString,
+  SVC_WORKFLOW_SMOKE_DOMAIN_ID: optionalUuid,
+  SVC_WORKFLOW_SMOKE_DEFINITION_VERSION_ID: optionalUuid,
+  SVC_WORKFLOW_SMOKE_TRANSITION_DEFINITION_ID: optionalUuid,
   FRONTEND_ORIGIN: z.string().default('http://localhost:5173'),
   REGISTER_INVITE_CODE: z.string().optional(),
   FEISHU_WEBHOOK_URL: z.string().optional(),
