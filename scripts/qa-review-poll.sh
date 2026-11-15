@@ -10,11 +10,14 @@ SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ADC_API_URL="${ADC_API_URL:-http://localhost:4000/api}"
 ADC_HOST="${ADC_HOST:-{your-server-ip}}"
 
-TOKEN=$(ADC_EMAIL="${ADC_EMAIL:-}" ADC_PASSWORD="${ADC_PASSWORD:-}" bash "$SKILL_DIR/scripts/login.sh" 2>/dev/null)
+# Credentials are provided through private environment variables.
+: "${ADC_EMAIL:?Set ADC_EMAIL in a private environment file}"
+: "${ADC_PASSWORD:?Set ADC_PASSWORD in a private environment file}"
+TOKEN=$(bash "$SKILL_DIR/scripts/login.sh" 2>/dev/null)
 if [ -z "$TOKEN" ]; then echo "ERROR: 无法获取 Token" >&2; exit 1; fi
 
 # 通过 SSH 调用 pending-review API
-response=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$ADC_HOST" 2>/dev/null \
+response=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=yes "root@$ADC_HOST" 2>/dev/null \
   "curl -s 'http://localhost:4000/api/reports/pending-review' -H 'Authorization: Bearer $TOKEN'")
 
 count=$(echo "$response" | python3 -c "

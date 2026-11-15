@@ -4,17 +4,16 @@ import { Platform } from 'react-native';
 export const LLM_TODO_BASE_URL = 'http://{your-server-ip}/todo/api';
 export const LLM_TODO_TOKEN_KEY = 'llm-todo-token';
 
-// 默认 token（用户未输入时的兜底）
-const DEFAULT_TOKEN = '__REDACTED_TOKEN__';
-
 async function getToken(): Promise<string> {
-  if (Platform.OS === 'web') return DEFAULT_TOKEN;
-  try {
-    const t = await SecureStore.getItemAsync(LLM_TODO_TOKEN_KEY);
-    return t || DEFAULT_TOKEN;
-  } catch {
-    return DEFAULT_TOKEN;
+  // Never ship a shared credential in a compiled web/mobile bundle.
+  if (Platform.OS === 'web') {
+    throw new Error('LLM Todo web integration requires an authenticated backend session');
   }
+  const token = await SecureStore.getItemAsync(LLM_TODO_TOKEN_KEY);
+  if (!token) {
+    throw new Error('LLM Todo token not configured; sign in before using this integration');
+  }
+  return token;
 }
 
 import type { AxiosInstance } from 'axios';

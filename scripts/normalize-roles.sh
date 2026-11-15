@@ -8,11 +8,14 @@ SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 ADC_HOST="${ADC_HOST:-{your-server-ip}}"
 
-TOKEN=$(ADC_EMAIL="${ADC_EMAIL:-}" ADC_PASSWORD="${ADC_PASSWORD:-}" bash "$SKILL_DIR/scripts/login.sh" 2>/dev/null)
+# Credentials are provided through private environment variables.
+: "${ADC_EMAIL:?Set ADC_EMAIL in a private environment file}"
+: "${ADC_PASSWORD:?Set ADC_PASSWORD in a private environment file}"
+TOKEN=$(bash "$SKILL_DIR/scripts/login.sh" 2>/dev/null)
 if [ -z "$TOKEN" ]; then echo "ERROR: 无法获取 Token" >&2; exit 1; fi
 
 # 查询所有用户
-ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$ADC_HOST" 2>/dev/null \
+ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=yes "root@$ADC_HOST" 2>/dev/null \
   "curl -s 'http://localhost:4000/api/admin/users' -H 'Authorization: Bearer $TOKEN'" | python3 -c "
 import sys, json
 
