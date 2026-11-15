@@ -57,13 +57,13 @@ adc_curl() {
   local token="${4:-$TOKEN}"
 
   if [ -n "$data" ]; then
-    ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "root@$HOST" \
+    ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "root@$HOST" \
       "curl -s -w '\nHTTP_CODE:%{http_code}' -X $method '$API_BASE$path' \
       -H 'Authorization: Bearer $token' \
       -H 'Content-Type: application/json' \
       -d '$(echo "$data" | sed "s/'/'\\\\''/g")'" 2>/dev/null
   else
-    ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "root@$HOST" \
+    ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "root@$HOST" \
       "curl -s -w '\nHTTP_CODE:%{http_code}' -X $method '$API_BASE$path' \
       -H 'Authorization: Bearer $token'" 2>/dev/null
   fi
@@ -83,7 +83,7 @@ login() {
   local password="$2"
 
   local resp
-  resp=$(ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "root@$HOST" \
+  resp=$(ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "root@$HOST" \
     "curl -s -X POST '$API_BASE/auth/login' \
     -H 'Content-Type: application/json' \
     -d '{\"email\":\"$email\",\"password\":\"$password\"}'" 2>/dev/null)
@@ -551,7 +551,7 @@ main() {
 
   # 登录
   local email="${ADC_EMAIL:-devtools-agent@agent.local}"
-  local password="${ADC_PASSWORD:-}"
+  local password=""
 
   if [ -z "$password" ]; then
     echo -e "${RED}❌ ADC_PASSWORD 未设置${NC}"
